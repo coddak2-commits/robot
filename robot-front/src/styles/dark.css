@@ -1,0 +1,25 @@
+.dark {
+  background-color: #0f0f17;
+}
+.dark .leftmenu {
+  background-color: #000;
+  color: #00f9ff;
+}
+.dark .border-color {
+  border-color: #00f9ff;
+}
+.dark .bg-color {
+  background-color: var(--background);
+}
+.dark .btn:hover {
+  background-color: #003333;
+}
+.dark .text-color {
+  color: #00f9ff;
+}
+.dark .text-color-1 {
+  color: #fff;
+}
+.dark .text-gray {
+  color: #9ca3af;
+}

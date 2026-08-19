@@ -1,0 +1,21 @@
+# Robot Core Configuration Template
+# 이 파일을 config.ini로 복사한 후 실제 값으로 변경하세요.
+#
+# 환경변수로 대체 가능:
+#   ROBOT_DB_HOST, ROBOT_DB_USER, ROBOT_DB_PASSWORD, ROBOT_DB_NAME, ROBOT_DB_PORT
+
+[database]
+host=localhost
+user=root
+password=YOUR_PASSWORD_HERE
+name=robot_welding
+port=3306
+
+# 진단 로그 이메일 발송용 SMTP 설정 (설정 시에만 /api/logs/send-email 동작)
+# 465 implicit SSL 서버 기준. user/password가 비어 있으면 메일 발송은 비활성(zip 다운로드는 항상 가능).
+[smtp]
+host=smtp.xos.kr
+port=465
+user=YOUR_SMTP_USER@example.com
+password=YOUR_SMTP_PASSWORD
+from=YOUR_SMTP_USER@example.com

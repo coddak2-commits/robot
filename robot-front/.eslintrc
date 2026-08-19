@@ -1,0 +1,48 @@
+{
+    "env": {
+        "browser": true,
+        "es6": true
+    },
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+        "ecmaVersion": 2021, // ES6(2021) 이상을 지원하도록 설정
+        "sourceType": "module",
+        "ecmaFeatures": {
+            "jsx": true
+        }
+    },
+    "settings": {
+        "react": {
+            "version": "detect"
+        },
+        "import/resolver": {
+            "node": {
+                "extensions": [".js", ".jsx", ".ts", ".tsx"]
+            }
+        }
+    },
+    "extends": [
+        "eslint:recommended",
+        "plugin:react/recommended",
+        "plugin:react-hooks/recommended",
+        "plugin:@typescript-eslint/recommended"
+    ],
+    "plugins": ["react", "react-hooks", "@typescript-eslint"],
+    "rules": {
+        "react/react-in-jsx-scope": "off", // React import 없이 JSX 허용
+        "react/prop-types": "off", // TypeScript에서는 prop-types 불필요
+
+        // TypeScript 불필요한 타입 명시 제거
+        "@typescript-eslint/no-inferrable-types": [
+        "warn",
+        {
+            "ignoreParameters": false,
+            "ignoreProperties": false
+        }
+        ],
+
+        "@typescript-eslint/explicit-function-return-type": "off",
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }]
+    }
+}

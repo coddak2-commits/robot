@@ -1,0 +1,20 @@
+.white {
+  background-color: #fff;
+  color: #000 !important;
+}
+.white .leftmenu {
+  background-color: #000;
+  color: #00f9ff;
+}
+.white .border-color {
+  border-color: #000;
+}
+.white .text-color {
+  color: #000;
+}
+.white .text-color-1 {
+  color: #000;
+}
+.white .text-gray {
+  color: #282727;
+}
