@@ -18,3 +18,51 @@
 .white .text-gray {
   color: #282727;
 }
+body.white {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+.white [class*="bg-black"],
+.white [class*="from-gray-900"],
+.white [class*="from-gray-800"] {
+  background-color: #f1f5f9 !important;
+  background-image: none !important;
+}
+.white [class*="bg-gray-900"] {
+  background-color: #ffffff !important;
+}
+.white [class*="bg-gray-800"],
+.white [class*="bg-slate-800"] {
+  background-color: #ffffff !important;
+}
+.white [class*="bg-gray-700"] {
+  background-color: #e2e8f0 !important;
+}
+.white [class*="bg-gray-600"] {
+  background-color: #cbd5e1 !important;
+}
+.white [class*="bg-gray-500"] {
+  background-color: #94a3b8 !important;
+}
+.white [class*="border-gray-800"],
+.white [class*="border-gray-700"],
+.white [class*="border-gray-600"],
+.white [class*="border-gray-500"],
+.white [class*="border-white"] {
+  border-color: #cbd5e1 !important;
+}
+.white [class*="text-white"] {
+  color: #0f172a !important;
+}
+.white [class*="text-gray-200"] {
+  color: #1e293b !important;
+}
+.white [class*="text-gray-300"] {
+  color: #334155 !important;
+}
+.white [class*="text-gray-400"] {
+  color: #475569 !important;
+}
+.white [class*="text-gray-600"] {
+  color: #334155 !important;
+}

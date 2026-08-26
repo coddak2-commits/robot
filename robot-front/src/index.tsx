@@ -8,7 +8,7 @@ import './styles/white.css';
 import { initDevDebugHelper, initAuditOverlay } from './utils';
 import Router from './router';
 import { LoadingPage_LoadingPage as LoadingPage } from './components';
-import { AlertProvider, UpdaterProvider, useUpdaterContext } from './contexts';
+import { AlertProvider, UpdaterProvider, useUpdaterContext, ThemeProvider, LangProvider } from './contexts';
 import { GapAuthProvider } from './contexts/gapAuth';
 import { AlertModal_AlertModal as AlertModal, ErrorBoundary_ErrorBoundary as ErrorBoundary, NetworkStatusBanner_NetworkStatusBanner as NetworkStatusBanner, UpdateDialog_UpdateDialog as UpdateDialog } from './components/common';
 import { ReportHandler } from 'web-vitals';
@@ -42,12 +42,6 @@ function GlobalUpdateDialog() {
 function AppInner() {
   const [isLoading, setIsLoading] = useState(true);
   useEffect(() => {
-    if (!localStorage.getItem('theme')) {
-      localStorage.setItem('theme', 'dark');
-    }
-    if (!localStorage.getItem('lang')) {
-      localStorage.setItem('lang', 'ko');
-    }
     if (sessionStorage.getItem('loading')) {
       setIsLoading(false);
       return;
@@ -78,11 +72,15 @@ function AppInner() {
 }
 function App() {
   return (
-    <ErrorBoundary name="App">
-      <UpdaterProvider>
-        <AppInner />
-      </UpdaterProvider>
-    </ErrorBoundary>
+    <ThemeProvider>
+      <LangProvider>
+        <ErrorBoundary name="App">
+          <UpdaterProvider>
+            <AppInner />
+          </UpdaterProvider>
+        </ErrorBoundary>
+      </LangProvider>
+    </ThemeProvider>
   );
 }
 export const App_App = App;

@@ -6,7 +6,8 @@ import {
   SystemConfig,
 } from '../../../lib';
 import { isDebugEnabled, setDebugEnabled } from '../../../utils';
-import { useAlert } from '../../../contexts';
+import { isSoundEnabled, getAutoLogoutMinutes, isNotificationsEnabled } from '../../../lib/appSettings';
+import { useAlert, useTheme, useLang } from '../../../contexts';
 import {
   getSystemVersion,
   checkForUpdates,
@@ -31,6 +32,7 @@ import {
   deleteUser,
   UserData,
   logout,
+  checkRobotConnection,
 } from '../../../lib';
 import type { TabType, TouchSensingSettings, UserFormData } from '..';
 const TOUCH_SENSING_DEFAULTS: TouchSensingSettings = {
@@ -66,6 +68,8 @@ const TOUCH_SENSING_DEFAULTS: TouchSensingSettings = {
 export function useSystemSettingsData() {
   const navigate = useNavigate();
   const { show: showAlert } = useAlert();
+  const { theme } = useTheme();
+  const { lang } = useLang();
   const [activeTab, setActiveTab] = useState<TabType>('users');
   const [users, setUsers] = useState<UserData[]>([]);
   const [config, setConfig] = useState<SystemConfig | null>(null);
@@ -87,11 +91,13 @@ export function useSystemSettingsData() {
   const [robotCoordSettings, setRobotCoordSettings] = useState<RobotSettingsData>({
     tool_num: 0, user_num: 0, default_vel: 20, default_acc: 100,
     default_ovl: 100, auto_clear_error: true, min_weaving_distance: 50,
+    collision_detection_enabled: true,
   });
   const [robotError, setRobotError] = useState<RobotErrorData | null>(null);
   const [loadingError, setLoadingError] = useState(false);
   const [resettingError, setResettingError] = useState(false);
   const [touchSensingSettings, setTouchSensingSettings] = useState<TouchSensingSettings>(TOUCH_SENSING_DEFAULTS);
+  const [robotConnected, setRobotConnected] = useState<boolean | null>(null);
   const handleDebugToggle = () => {
     const newValue = !debugMode;
     setDebugMode(newValue);
@@ -101,7 +107,17 @@ export function useSystemSettingsData() {
     try {
       const [usersData, configData] = await Promise.all([getUsers(), mockGetSystemConfig()]);
       setUsers(usersData);
-      setConfig(configData);
+      setConfig({
+        ...configData,
+        systemPreferences: {
+          ...configData.systemPreferences,
+          theme,
+          language: lang,
+          soundEnabled: isSoundEnabled(),
+          autoLogoutMinutes: getAutoLogoutMinutes(),
+          notificationsEnabled: isNotificationsEnabled(),
+        },
+      });
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {
@@ -151,10 +167,22 @@ export function useSystemSettingsData() {
       setLoadingError(false);
     }
   };
+  const fetchRobotConnection = async () => {
+    try {
+      const status = await checkRobotConnection();
+      setRobotConnected(status.connected);
+    } catch (error) {
+      console.error('Failed to check robot connection:', error);
+      setRobotConnected(false);
+    }
+  };
   useEffect(() => {
     fetchData();
     fetchVersionInfo();
     fetchRobotCoordSettings();
+    fetchRobotConnection();
+    const interval = setInterval(fetchRobotConnection, 5000);
+    return () => clearInterval(interval);
   }, []);
   useEffect(() => {
     if (activeTab === 'robot') fetchRobotError();
@@ -317,6 +345,7 @@ export function useSystemSettingsData() {
     checkingUpdate, updating,
     robotCoordSettings, setRobotCoordSettings,
     robotError, loadingError, resettingError,
+    robotConnected,
     touchSensingSettings, setTouchSensingSettings,
     handleDebugToggle,
     handleResetError,

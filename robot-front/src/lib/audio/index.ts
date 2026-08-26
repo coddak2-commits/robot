@@ -1,3 +1,4 @@
+import { isSoundEnabled } from '../appSettings';
 type Beep = { freq: number; durationMs: number };
 let ctx: AudioContext | null = null;
 function getCtx(): AudioContext | null {
@@ -19,6 +20,7 @@ function getCtx(): AudioContext | null {
   return ctx;
 }
 function playTone({ freq, durationMs }: Beep, volume = 0.08): void {
+  if (!isSoundEnabled()) return;
   const c = getCtx();
   if (!c) return;
   try {
@@ -86,6 +88,7 @@ export function playErrorBeep(): void {
 }
 let currentAudio: HTMLAudioElement | null = null;
 function playSoundFile(fileName: string): void {
+  if (!isSoundEnabled()) return;
   const url = `/sound/${encodeURIComponent(fileName)}.mp3`;
   try {
     if (currentAudio) {

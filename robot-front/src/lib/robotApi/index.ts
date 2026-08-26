@@ -1072,6 +1072,7 @@ export interface RobotSettingsData {
   default_ovl: number;
   auto_clear_error: boolean;
   min_weaving_distance: number;
+  collision_detection_enabled: boolean;
   updated_at?: string;
 }
 export interface SdkErrorData {

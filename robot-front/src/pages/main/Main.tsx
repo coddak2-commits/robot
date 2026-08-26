@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Cpu, ClipboardList, Settings, Target, FlaskConical } from 'lucide-react';
+import { LayoutDashboard, Cpu, ClipboardList, Settings, Target, FlaskConical, CheckSquare } from 'lucide-react';
+import { useLang } from '../../contexts';
 interface MenuItem {
   id: string;
   label: string;
@@ -11,6 +12,7 @@ interface MenuItem {
 }
 const Main: React.FC = () => {
   const navigate = useNavigate();
+  const { lang, t } = useLang();
   const mainItems: MenuItem[] = [
     {
       id: 'dashboard',
@@ -45,6 +47,14 @@ const Main: React.FC = () => {
       color: 'from-green-500 to-emerald-500',
     },
     {
+      id: 'promotions',
+      label: '승격 요청',
+      eng: 'Promotions',
+      icon: CheckSquare,
+      path: '/gap/promotions',
+      color: 'from-amber-500 to-yellow-500',
+    },
+    {
       id: 'settings',
       label: '설정',
       eng: 'Settings',
@@ -57,8 +67,8 @@ const Main: React.FC = () => {
     <div className="min-h-screen bg-black p-6">
       {}
       <div className="text-center mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">로봇 용접 제어 시스템</h1>
-        <p className="text-gray-400">Robot Welding Control System</p>
+        <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">{t('mainTitle')}</h1>
+        <p className="text-gray-400">{t('mainSubtitle')}</p>
       </div>
       {}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 max-w-5xl mx-auto">
@@ -103,8 +113,10 @@ const Main: React.FC = () => {
               </div>
               {}
               <div className="text-center z-10">
-                <div className="text-white font-bold text-lg md:text-xl mb-1">{item.label}</div>
-                <div className="text-gray-400 text-sm">{item.eng}</div>
+                <div className="text-white font-bold text-lg md:text-xl mb-1">
+                  {lang === 'en' ? item.eng : item.label}
+                </div>
+                <div className="text-gray-400 text-sm">{lang === 'en' ? item.label : item.eng}</div>
               </div>
             </button>
           );
@@ -115,7 +127,7 @@ const Main: React.FC = () => {
         <div className="flex items-center justify-center gap-8 text-sm">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
-            <span className="text-gray-400">시스템 정상</span>
+            <span className="text-gray-400">{t('systemNormal')}</span>
           </div>
           <div className="text-gray-500">|</div>
           <div className="text-gray-400">

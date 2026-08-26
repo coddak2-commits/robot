@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   List,
   CheckCircle,
@@ -16,8 +16,9 @@ import {
   updateTeachingJobName,
   TeachingJob,
 } from '../../lib';
-import { JobList, JobDetail, useJobExecution } from './components/index';
+import { JobList, JobDetail, useJobExecution, getStatusCategory, StatusFilter } from './components/index';
 import { PointParams, TeachingPoint, getPointParams } from './components';
+type SortKey = 'created_desc' | 'created_asc' | 'name_asc' | 'name_desc';
 const JobManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'list' | 'detail'>('list');
   const [jobs, setJobs] = useState<TeachingJob[]>([]);
@@ -25,6 +26,9 @@ const JobManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const ITEMS_PER_PAGE = 5;
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [sortKey, setSortKey] = useState<SortKey>('created_desc');
   const [editingJobId, setEditingJobId] = useState<number | null>(null);
   const [editingJobName, setEditingJobName] = useState('');
   const [editingPointId, setEditingPointId] = useState<number | null>(null);
@@ -79,19 +83,74 @@ const JobManagement: React.FC = () => {
       console.error('Failed to load job detail:', error);
     }
   };
-  const handleDeleteJob = async (jobId: number) => {
-    if (!confirm('이 작업을 삭제하시겠습니까?')) return;
+  const UNDO_WINDOW_MS = 7000;
+  const pendingDeletesRef = useRef<Map<number, { job: TeachingJob; timer: ReturnType<typeof setTimeout> }>>(new Map());
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<number[]>([]);
+  const syncPendingDeleteIds = () => setPendingDeleteIds(Array.from(pendingDeletesRef.current.keys()));
+  useEffect(() => {
+    return () => {
+      pendingDeletesRef.current.forEach(entry => clearTimeout(entry.timer));
+    };
+  }, []);
+  const finalizeDelete = useCallback(async (jobId: number) => {
+    const entry = pendingDeletesRef.current.get(jobId);
+    pendingDeletesRef.current.delete(jobId);
+    syncPendingDeleteIds();
     try {
       await deleteTeachingJob(jobId);
-      setJobs(prev => prev.filter(j => j.id !== jobId));
-      if (selectedJob?.id === jobId) {
-        setSelectedJob(null);
-        setActiveTab('list');
-      }
     } catch (error) {
       console.error('Failed to delete job:', error);
+      if (entry) {
+        setJobs(prev => (prev.some(j => j.id === jobId) ? prev : [...prev, entry.job]));
+      }
     }
+  }, []);
+  const handleUndoDelete = (jobId: number) => {
+    const entry = pendingDeletesRef.current.get(jobId);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    pendingDeletesRef.current.delete(jobId);
+    syncPendingDeleteIds();
+    setJobs(prev => (prev.some(j => j.id === jobId) ? prev : [...prev, entry.job]));
   };
+  const handleDeleteJob = (jobId: number) => {
+    if (!confirm('이 작업을 삭제하시겠습니까? (삭제 후 7초 이내에는 실행취소할 수 있습니다)')) return;
+    const job = jobs.find(j => j.id === jobId);
+    if (!job) return;
+    setJobs(prev => prev.filter(j => j.id !== jobId));
+    if (selectedJob?.id === jobId) {
+      setSelectedJob(null);
+      setActiveTab('list');
+    }
+    const timer = setTimeout(() => finalizeDelete(jobId), UNDO_WINDOW_MS);
+    pendingDeletesRef.current.set(jobId, { job, timer });
+    syncPendingDeleteIds();
+  };
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, statusFilter, sortKey]);
+  const filteredJobs = jobs
+    .filter(job => {
+      if (statusFilter !== 'all' && getStatusCategory(job.status, job.saved_points, job.total_points) !== statusFilter) {
+        return false;
+      }
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return job.name?.toLowerCase().includes(q) || job.cell_name?.toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      switch (sortKey) {
+        case 'name_asc':
+          return a.name.localeCompare(b.name);
+        case 'name_desc':
+          return b.name.localeCompare(a.name);
+        case 'created_asc':
+          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        case 'created_desc':
+        default:
+          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+      }
+    });
   const handleSaveJobName = async (jobId: number) => {
     if (!editingJobName.trim()) return;
     try {
@@ -154,9 +213,44 @@ const JobManagement: React.FC = () => {
         </button>
       </div>
       {}
+      {activeTab === 'list' && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="작업명 또는 셀 이름 검색"
+            className="flex-1 min-w-[200px] px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+          />
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+            className="px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl text-white focus:outline-none focus:border-cyan-500"
+          >
+            <option value="all">전체 상태</option>
+            <option value="completed">완료</option>
+            <option value="running">진행중</option>
+            <option value="teaching_done">티칭완료</option>
+            <option value="teaching_progress">티칭중</option>
+            <option value="waiting">대기중</option>
+          </select>
+          <select
+            value={sortKey}
+            onChange={e => setSortKey(e.target.value as SortKey)}
+            className="px-4 py-2.5 bg-gray-800/60 border border-gray-700/50 rounded-xl text-white focus:outline-none focus:border-cyan-500"
+          >
+            <option value="created_desc">최신순</option>
+            <option value="created_asc">오래된순</option>
+            <option value="name_asc">이름순</option>
+            <option value="name_desc">이름 역순</option>
+          </select>
+        </div>
+      )}
+      {}
       {activeTab === 'list' ? (
         <JobList
-          jobs={jobs}
+          jobs={filteredJobs}
+          isFiltered={searchQuery.trim() !== '' || statusFilter !== 'all'}
           selectedJobId={selectedJob?.id ?? null}
           page={page}
           itemsPerPage={ITEMS_PER_PAGE}
@@ -193,6 +287,29 @@ const JobManagement: React.FC = () => {
             }
           />
         )
+      )}
+      {}
+      {pendingDeleteIds.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 w-80">
+          {pendingDeleteIds.map(id => {
+            const entry = pendingDeletesRef.current.get(id);
+            if (!entry) return null;
+            return (
+              <div
+                key={id}
+                className="bg-gray-800 border border-gray-600 rounded-xl shadow-lg p-4 flex items-center justify-between gap-3"
+              >
+                <span className="text-sm text-gray-200 truncate">'{entry.job.name}' 삭제됨</span>
+                <button
+                  onClick={() => handleUndoDelete(id)}
+                  className="shrink-0 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg transition"
+                >
+                  실행취소
+                </button>
+              </div>
+            );
+          })}
+        </div>
       )}
     </PageLayout>
   );

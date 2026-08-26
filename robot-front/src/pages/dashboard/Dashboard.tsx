@@ -194,7 +194,7 @@ const Dashboard: React.FC = () => {
                 )}
               </div>
               <button
-                onClick={() => navigate('/pendant')}
+                onClick={() => navigate('/cell-selection')}
                 className="w-full py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl text-white font-medium transition touch-manipulation min-h-[56px]"
               >
                 작업 화면 열기
@@ -205,7 +205,7 @@ const Dashboard: React.FC = () => {
               <Clock className="w-16 h-16 text-gray-600 mx-auto mb-4" />
               <div className="text-gray-400 mb-4">진행 중인 작업 없음</div>
               <button
-                onClick={() => navigate('/pendant')}
+                onClick={() => navigate('/cell-selection')}
                 className="px-6 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl text-white font-medium transition touch-manipulation min-h-[56px]"
               >
                 작업 시작

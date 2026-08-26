@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import styles from './Login.module.css';
 import { login } from '../../lib';
+import { loginGap } from '../../lib/gapApi';
 import { useAlert } from '../../contexts';
 const Login: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTo = new URLSearchParams(location.search).get('redirect') || '/menu';
   const { show: showAlert } = useAlert();
   const [isLoading, setIsLoading] = useState(false);
   React.useEffect(() => {
@@ -31,7 +34,15 @@ const Login: React.FC = () => {
       const user = await login(userId, userPw);
       localStorage.setItem('token', JSON.stringify(user));
       localStorage.setItem('user', JSON.stringify(user));
-      navigate('/menu');
+      // 갭 백엔드(FastAPI) 토큰도 함께 획득
+      try {
+        const gapUser = await loginGap(userId, userPw);
+        localStorage.setItem('gap_token', gapUser.access_token);
+        localStorage.setItem('gap_user', JSON.stringify(gapUser));
+      } catch (e) {
+        console.warn('gap 백엔드 로그인 실패 (계속 진행):', e);
+      }
+      window.location.href = redirectTo;
     } catch (error: any) {
       console.error('로그인 오류:', error);
       if (error.message) {

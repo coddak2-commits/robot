@@ -4,8 +4,14 @@
   background-color: #1f2937;
   color: #fff;
   padding: 8px 20px;
+  margin-bottom: 12px;
   box-shadow: 0 2px 4px rgb(0 0 0 / 0.1);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  :global(.white) & {
+    background-color: #ffffff;
+    color: #0f172a;
+    border-bottom: 1px solid #e2e8f0;
+  }
   .logo {
     font-size: 1.8rem;
     font-weight: bold;

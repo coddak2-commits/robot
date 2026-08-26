@@ -3,6 +3,7 @@ import { AlertTriangle, Edit3, Trash2, Check, X, Clock, FolderOpen, ChevronLeft,
 import { WeldingLogData, getWeldingLogs, deleteWeldingLogs, updateWeldingLog, RealtimeRobotStatus, getRealtimeRobotStatus, getWeldingPartOrder } from '../../../lib';
 import Modal from 'react-modal';
 import { useAlert } from '../../../contexts';
+import { useGapAuth } from '../../../contexts/gapAuth';
 import { TeachingPoint, WeaveParams, WEAVING_TYPE_OPTIONS, UCellData, HEIGHT_OPTIONS } from '..';
 import { Button } from '../../../components/common';
 import { RobotMoveData } from '../../../types/RobotData';
@@ -254,6 +255,8 @@ export interface JobListItemProps {
   onEditChange: (name: string) => void;
   onEditSave: () => void;
   onEditCancel: () => void;
+  isPendingDelete?: boolean;
+  onUndoDelete?: () => void;
 }
 export function JobListItem({
   job,
@@ -266,7 +269,22 @@ export function JobListItem({
   onEditChange,
   onEditSave,
   onEditCancel,
+  isPendingDelete,
+  onUndoDelete,
 }: JobListItemProps) {
+  if (isPendingDelete) {
+    return (
+      <div className="bg-gray-800/30 rounded-xl p-4 border border-red-500/30 flex items-center justify-between gap-3 opacity-70">
+        <span className="text-sm text-gray-400 truncate">'{job.name}' 삭제됨</span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onUndoDelete?.(); }}
+          className="shrink-0 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg transition"
+        >
+          실행취소
+        </button>
+      </div>
+    );
+  }
   return (
     <div
       className={`bg-gray-800/50 rounded-xl p-4 border transition ${
@@ -344,6 +362,8 @@ export interface JobListModalProps {
   onClose: () => void;
   onLoadJob: (id: number) => void;
   onDeleteJob: (id: number, name: string) => void;
+  pendingDeleteJobIds?: number[];
+  onUndoDeleteJob?: (id: number) => void;
   onEditJobId: (id: number | null) => void;
   onEditJobName: (name: string) => void;
   onSaveJobName: (id: number) => void;
@@ -360,6 +380,8 @@ export function JobListModal({
   onClose,
   onLoadJob,
   onDeleteJob,
+  pendingDeleteJobIds,
+  onUndoDeleteJob,
   onEditJobId,
   onEditJobName,
   onSaveJobName,
@@ -402,6 +424,8 @@ export function JobListModal({
                 onEditChange={onEditJobName}
                 onEditSave={() => onSaveJobName(job.id)}
                 onEditCancel={() => onEditJobId(null)}
+                isPendingDelete={pendingDeleteJobIds?.includes(job.id)}
+                onUndoDelete={() => onUndoDeleteJob?.(job.id)}
               />
             ))
           )}
@@ -1008,6 +1032,7 @@ const RobotControlPanel: React.FC<RobotControlPanelProps> = memo(({
   onSimulationModeChange,
 }) => {
   const isRunning = isRobotMoving || isArcTesting;
+  const { isAdmin } = useGapAuth();
   return (
     <div className="space-y-4">
       {}
@@ -1056,20 +1081,22 @@ const RobotControlPanel: React.FC<RobotControlPanelProps> = memo(({
         </div>
       )}
       {}
-      <div className="p-3 bg-gray-800/50 rounded-lg">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm text-gray-300">이동 속도</span>
-          <span className="text-sm text-cyan-400 font-medium">{manualMoveSpeed}%</span>
+      {isAdmin && (
+        <div className="p-3 bg-gray-800/50 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-gray-300">이동 속도 <span className="text-xs text-amber-400 ml-1">관리자</span></span>
+            <span className="text-sm text-cyan-400 font-medium">{manualMoveSpeed}%</span>
+          </div>
+          <input
+            type="range"
+            min="1"
+            max="100"
+            value={manualMoveSpeed}
+            onChange={e => onManualMoveSpeedChange(Number(e.target.value))}
+            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          />
         </div>
-        <input
-          type="range"
-          min="1"
-          max="100"
-          value={manualMoveSpeed}
-          onChange={e => onManualMoveSpeedChange(Number(e.target.value))}
-          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-        />
-      </div>
+      )}
       {}
       <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
         <div className="flex items-center gap-2">
@@ -1957,8 +1984,17 @@ export function TeachingTabContent({
   onReorderPoints,
   onGlobalEmergencyStop,
 }: TeachingTabContentProps) {
+  const { show: showAlert } = useAlert();
   const isRunning = isRobotMoving || isWelding || isTouchSensing;
   const savedPoints = teachingPoints.filter(pt => pt.id !== 'home' && pt.isSaved);
+  const { isAdmin } = useGapAuth();
+  const handleClearAllPoints = () => {
+    showAlert(`저장된 ${savedPointsCount}개 포인트를 모두 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.`, {
+      type: 'warning',
+      title: '전체 초기화 확인',
+      onConfirm: onClearAllPoints,
+    });
+  };
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -1992,7 +2028,7 @@ export function TeachingTabContent({
           <button onClick={onSaveJob} disabled={savedPointsCount === 0 || isSavingJob} className="p-1.5 flex items-center justify-center bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 disabled:opacity-50" title="저장">
             <Save className="w-4 h-4" />
           </button>
-          <button onClick={onClearAllPoints} disabled={savedPointsCount === 0} className="p-1.5 flex items-center justify-center bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 disabled:opacity-50" title="초기화">
+          <button onClick={handleClearAllPoints} disabled={savedPointsCount === 0} className="p-1.5 flex items-center justify-center bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 disabled:opacity-50" title="초기화">
             <Trash2 className="w-4 h-4" />
           </button>
           <div className="w-px h-5 bg-gray-700 mx-1" />
@@ -2007,20 +2043,22 @@ export function TeachingTabContent({
         </div>
       </div>
       {}
-      <div className="bg-gray-800/50 rounded-lg p-3">
-        <div className="flex justify-between mb-2">
-          <span className="text-xs text-gray-400">이동 속도</span>
-          <span className="text-xs text-cyan-400 font-mono">{manualMoveSpeed}%</span>
+      {isAdmin && (
+        <div className="bg-gray-800/50 rounded-lg p-3">
+          <div className="flex justify-between mb-2">
+            <span className="text-xs text-gray-400">이동 속도 <span className="text-amber-400 ml-1">관리자</span></span>
+            <span className="text-xs text-cyan-400 font-mono">{manualMoveSpeed}%</span>
+          </div>
+          <input
+            type="range"
+            min="1"
+            max="100"
+            value={manualMoveSpeed}
+            onChange={(e) => onSpeedChange(Number(e.target.value))}
+            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          />
         </div>
-        <input
-          type="range"
-          min="1"
-          max="100"
-          value={manualMoveSpeed}
-          onChange={(e) => onSpeedChange(Number(e.target.value))}
-          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-        />
-      </div>
+      )}
       {}
       {!simulationMode && (
         <div>
@@ -2283,9 +2321,9 @@ export function ToolbarControls({
       <button
         onClick={() => window.open('/gap/wire-inching', '_blank', 'width=900,height=750')}
         className="px-2 py-1 rounded-lg text-xs font-medium bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition"
-        title="와이어 정밀 조정 (스틱아웃 세팅)"
+        title="와이어 조정 (스틱아웃 세팅)"
       >
-        정밀 조정
+        와이어 조정
       </button>
       <div className="w-px h-4 bg-gray-600" />
       <label
@@ -2455,6 +2493,7 @@ const UnifiedWorkspaceCanvasComponent: React.FC<UnifiedWorkspaceCanvasProps> = (
   onSegmentChange,
   onWeldPointClick,
   onReorderPoints,
+  currentPointId,
   className = '',
 }) => {
   const mergedColors = { ...DEFAULT_COLORS, ...colors };
@@ -2616,6 +2655,7 @@ const UnifiedWorkspaceCanvasComponent: React.FC<UnifiedWorkspaceCanvasProps> = (
           dropTargetId={dropTargetId}
           validTargetIds={dragState?.isDragging ? validTargetIds : undefined}
           onMouseDown={onReorderPoints ? handlePointMouseDown : undefined}
+          currentPointId={currentPointId}
         />
       )}
       {}

@@ -2,10 +2,11 @@ import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin, History } from 'lucide-react';
 import { useTeachingPoints, useRobotControl, useJobManagement, useWeldingOperations, usePathTracking, useSchematicCalculations, usePathVisualization, useCenterlineNavigation, useWeldingHandlers, useWireControl, useCellSelectionHandlers, useAutoSavePoints } from './hooks';
-import { UnifiedWorkspaceCanvas, UCellConfig, TeachingTabContent, JobListModal, OperationHistoryPanel, LeftSidebar, SecondarySidebar, ToolbarControls, TorchOrientationIndicator } from './components/index';
+import { UnifiedWorkspaceCanvas, UCellConfig, TeachingTabContent, JobListModal, OperationHistoryPanel, LeftSidebar, SecondarySidebar, ToolbarControls } from './components/index';
 import { useRobotWebSocket } from '../../hooks';
 import { createLogger } from '../../lib';
 import { getTeachingJobs, getRealtimeRobotStatus } from '../../lib';
+import { getRobotError, resetRobotError } from '../../lib/robotApi/index';
 import { useAlert } from '../../contexts';
 import Ucell01 from './img/Ucell01.png';
 import Ucell02 from './img/Ucell02.png';
@@ -42,6 +43,19 @@ export function CellSelectionCore({
   const [manualMoveSpeed, setManualMoveSpeed] = useState(40);
   const [autoTouchSensing, setAutoTouchSensing] = useState(false);
   // 갭 시스템 파라미터 조회용 작업 레벨 판두께 (18/20/22/23mm)
+  const [hasRobotError, setHasRobotError] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const check = async () => {
+      try {
+        const err = await getRobotError();
+        if (alive) setHasRobotError(!!err?.has_error);
+      } catch { if (alive) setHasRobotError(false); }
+    };
+    check();
+    const i = setInterval(check, 5000);
+    return () => { alive = false; clearInterval(i); };
+  }, []);
   const [thicknessMm, setThicknessMm] = useState<number>(() => {
     const v = typeof localStorage !== 'undefined' ? localStorage.getItem('gap_thickness_mm') : null;
     return v ? Number(v) : 20;
@@ -91,7 +105,9 @@ export function CellSelectionCore({
     fetchJobList,
     saveJob,
     loadJob,
-    deleteJob,
+    pendingDeleteJobIds,
+    requestDeleteJob,
+    undoDeleteJob,
     updateJobName,
     JOBS_PER_PAGE,
   } = useJobManagement();
@@ -163,7 +179,7 @@ export function CellSelectionCore({
     moveToPoint,
     saveJob,
     loadJob,
-    deleteJob,
+    requestDeleteJob,
     updateJobName,
     loadPointsFromJob,
     editingJobName,
@@ -179,7 +195,7 @@ export function CellSelectionCore({
       let savedCount = 0;
       for (const pointId of part.points) {
         const pt = teachingPoints.find(p => p.id === pointId);
-        if (pt?.isSaved && pt?.joints && pt.joints.length > 0) savedCount++;
+        if (pt?.isSaved) savedCount++;
       }
       counts[index] = savedCount;
     });
@@ -352,12 +368,30 @@ export function CellSelectionCore({
   const displayCells = selectedType === 'collar_plate' ? COLLAR_PLATE_CELLS : NORMAL_CELLS;
   return (
     <div className="flex-1 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden flex flex-col">
+      {hasRobotError && (
+        <button
+          onClick={async () => {
+            try {
+              await resetRobotError();
+              showAlert('로봇 에러 리셋 완료', { type: 'success' });
+              setHasRobotError(false);
+            } catch (e: any) {
+              showAlert(`에러 리셋 실패: ${e.response?.data?.detail || e.message}`, { type: 'error' });
+            }
+          }}
+          style={{
+            position: 'fixed', top: 16, right: 16, zIndex: 100,
+            padding: '10px 16px', fontSize: 14, fontWeight: 'bold',
+            background: '#a16207', color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer',
+          }}
+        >에러 리셋</button>
+      )}
       <div className="flex flex-1 min-h-0 pt-2">
         <LeftSidebar
           selectedType={selectedType}
           onTypeSelect={handleTypeSelect}
           onNavigate={navigate}
-          onAdminClick={() => showAlert('구현예정', { type: 'info' })}
+          onAdminClick={() => navigate('/settings')}
         />
         {showSecondarySidebar && (
           <SecondarySidebar
@@ -414,7 +448,12 @@ export function CellSelectionCore({
                 />
               </div>
             )}
-            <div className="flex ml-auto flex-shrink-0">
+            <div className="flex ml-auto flex-shrink-0 items-center">
+              {currentJobName && (
+                <div className="mr-4 px-3 py-1 text-xs font-bold rounded bg-slate-800/80 border border-slate-700 text-slate-300">
+                  작업: <span className="text-white">{currentJobName}</span>
+                </div>
+              )}
               <button
                 onClick={() => setActiveTab('teaching')}
                 className={`px-5 py-2.5 text-sm font-medium transition whitespace-nowrap ${activeTab === 'teaching' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-gray-500 hover:text-gray-300'}`}
@@ -437,23 +476,6 @@ export function CellSelectionCore({
                 <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700/50 flex flex-col items-center justify-center p-6 relative flex-1">
                   {selectedCell ? (
                     <>
-                      {}
-                      <TorchOrientationIndicator
-                        tcpRotation={
-                          teachingRobotState?.tcp && teachingRobotState.tcp.length >= 6
-                            ? [
-                                teachingRobotState.tcp[3],
-                                teachingRobotState.tcp[4],
-                                teachingRobotState.tcp[5],
-                              ]
-                            : null
-                        }
-                        className="absolute left-1/2 z-10 pointer-events-none"
-                        style={{
-                          top: 'calc(50% - 40px)',
-                          transform: 'translate(-50%, -100%)',
-                        }}
-                      />
                       <UnifiedWorkspaceCanvas
                         ucellConfig={ucellConfig}
                         workspaceConfig={{
@@ -479,6 +501,7 @@ export function CellSelectionCore({
                         canvasWidth={1100}
                         canvasHeight={800}
                         animated={true}
+                        currentPointId={isWelding && currentPointIndex >= 0 ? teachingWeldPoints[currentPointIndex]?.id ?? null : null}
                       />
                       <div className="w-full mt-4 flex items-center justify-center gap-4 text-gray-400 text-sm">
                         <span>폭: {selectedWidth}mm x 높이: {selectedHeight || '---'}mm</span>
@@ -608,6 +631,8 @@ export function CellSelectionCore({
         }}
         onLoadJob={handleLoadJob}
         onDeleteJob={handleDeleteJob}
+        pendingDeleteJobIds={pendingDeleteJobIds}
+        onUndoDeleteJob={undoDeleteJob}
         onEditJobId={setEditingJobId}
         onEditJobName={setEditingJobName}
         onSaveJobName={handleSaveJobName}

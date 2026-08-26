@@ -90,6 +90,7 @@ export interface UnifiedWorkspaceCanvasProps {
   onSegmentChange?: (bar: 'left' | 'right' | 'bottom', segment: number, value: number) => void;
   onWeldPointClick?: (point: WeldPoint) => void;
   onReorderPoints?: (activeId: string, overId: string) => void;
+  currentPointId?: string | null;
   className?: string;
 }
 export const DEFAULT_WORKSPACE: WorkspaceConfig = {

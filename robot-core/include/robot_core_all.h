@@ -45,6 +45,7 @@ public:
     int setToolPoint(int toolNum);
     int setUserPoint(int userNum);
     int setSpeed(float speed);
+    int setCollisionDetection(bool enabled);
     int setWeldingCurrentRelation(double currentMin, double currentMax, double voltageMin, double voltageMax, int aoIndex);
     int setWeldingVoltageRelation(double weldVoltageMin, double weldVoltageMax, double voltageMin, double voltageMax, int aoIndex);
     int arcStart(int ioType, int arcNum, int timeout);
@@ -377,6 +378,7 @@ struct RobotSettings {
     int default_ovl = 100;
     bool auto_clear_error = true;
     int min_weaving_distance = 50;
+    bool collision_detection_enabled = true;
     std::string updated_at;
 };
 struct WeldingConfig {

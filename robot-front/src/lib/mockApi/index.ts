@@ -253,7 +253,7 @@ let mockSystemConfig: SystemConfig = {
     preHeatTime: 2, postHeatTime: 3,
   },
   systemPreferences: {
-    language: 'ko', theme: 'dark', autoLogoutMinutes: 30,
+    language: 'ko', theme: 'dark', autoLogoutMinutes: 60,
     soundEnabled: true, notificationsEnabled: true,
   },
 };

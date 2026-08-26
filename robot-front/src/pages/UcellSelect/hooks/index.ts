@@ -4,6 +4,7 @@ import { getErrorMessage, extractResultCode } from '../../../lib/api';
 import { createLogger } from '../../../lib';
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useAlert } from '../../../contexts';
+import { playSaveOkBeep, playErrorBeep } from '../../../lib/audio';
 import { RobotPosition } from '../components/index';
 import { getBlockPointIds, getBlockName } from '..';
 import { TouchSensingOptions, TouchSensingResult, WeldingStartOptions, WeldingResult, ClosestCenterlineResult, UseWeldingOperationsReturn, findClosestCenterlinePoint as findClosestCenterlinePointFn, executeTouchSensing, TouchSensingContext, executeArcTest, ArcTestContext, executeWelding, WeldingExecutionContext } from './weldingCore';
@@ -440,9 +441,10 @@ interface UseCellSelectionHandlersProps {
     cellId: number,
     height: number,
     width: number,
+    jobName?: string,
   ) => Promise<boolean>;
   loadJob: (jobId: number) => Promise<TeachingPoint[] | null>;
-  deleteJob: (jobId: number) => Promise<boolean>;
+  requestDeleteJob: (jobId: number, jobName: string) => void;
   updateJobName: (jobId: number, name: string) => Promise<boolean>;
   loadPointsFromJob: (points: TeachingPoint[]) => void;
   editingJobName: string;
@@ -461,7 +463,7 @@ export function useCellSelectionHandlers({
   moveToPoint,
   saveJob,
   loadJob,
-  deleteJob,
+  requestDeleteJob,
   updateJobName,
   loadPointsFromJob,
   editingJobName,
@@ -543,14 +545,29 @@ export function useCellSelectionHandlers({
       showAlert('셀 타입과 셀을 먼저 선택해주세요.', { type: 'warning', title: '저장 실패' });
       return;
     }
+    if (!teachingPoints.some(pt => pt.isSaved)) {
+      playErrorBeep();
+      showAlert('저장할 포인트가 없습니다.', { type: 'warning', title: '저장 실패' });
+      return;
+    }
+    const defaultName = `작업_${new Date().toLocaleString('ko-KR')}`;
+    const name = window.prompt('작업 이름을 입력하세요', defaultName);
+    if (name === null) return; // 취소
     const success = await saveJob(
       teachingPoints,
       selectedType,
       selectedCell.id,
       selectedHeight || 0,
       selectedWidth,
+      name,
     );
-    if (success) showAlert('작업이 저장되었습니다.', { type: 'success', title: '저장 완료' });
+    if (success) {
+      playSaveOkBeep();
+      showAlert('작업이 저장되었습니다.', { type: 'success', title: '저장 완료' });
+    } else {
+      playErrorBeep();
+      showAlert('작업 저장에 실패했습니다.', { type: 'error', title: '저장 실패' });
+    }
   }, [
     selectedCell,
     selectedType,
@@ -568,10 +585,10 @@ export function useCellSelectionHandlers({
     [loadJob, loadPointsFromJob],
   );
   const handleDeleteJob = useCallback(
-    async (jobId: number, jobName: string) => {
-      if (confirm(`"${jobName}" 작업을 삭제하시겠습니까?`)) await deleteJob(jobId);
+    (jobId: number, jobName: string) => {
+      requestDeleteJob(jobId, jobName);
     },
-    [deleteJob],
+    [requestDeleteJob],
   );
   const handleSaveJobName = useCallback(
     async (jobId: number) => {
@@ -786,9 +803,11 @@ export interface UseJobManagementReturn {
   setEditingJobId: (id: number | null) => void;
   setEditingJobName: (name: string) => void;
   fetchJobList: () => Promise<void>;
-  saveJob: (teachingPoints: TeachingPoint[], cellType: string, cellId: number, height: number, width: number) => Promise<boolean>;
+  saveJob: (teachingPoints: TeachingPoint[], cellType: string, cellId: number, height: number, width: number, jobName?: string) => Promise<boolean>;
   loadJob: (jobId: number) => Promise<TeachingPoint[] | null>;
-  deleteJob: (jobId: number) => Promise<boolean>;
+  pendingDeleteJobIds: number[];
+  requestDeleteJob: (jobId: number, jobName: string) => void;
+  undoDeleteJob: (jobId: number) => void;
   updateJobName: (jobId: number, newName: string) => Promise<boolean>;
   JOBS_PER_PAGE: number;
 }
@@ -816,11 +835,11 @@ export function useJobManagement(): UseJobManagementReturn {
     cellType: string,
     cellId: number,
     height: number,
-    width: number
+    width: number,
+    jobName?: string
   ): Promise<boolean> => {
     const savedPoints = teachingPoints.filter(pt => pt.isSaved);
     if (savedPoints.length === 0) {
-      alert('저장할 포인트가 없습니다.');
       return false;
     }
     setIsSavingJob(true);
@@ -848,7 +867,7 @@ export function useJobManagement(): UseJobManagementReturn {
         gap: pt.gap ?? 0,
       }));
       const result = await createTeachingJob({
-        name: `작업_${new Date().toLocaleString('ko-KR')}`,
+        name: jobName?.trim() || `작업_${new Date().toLocaleString('ko-KR')}`,
         cell_type: cellType,
         cell_id: cellId,
         height,
@@ -858,13 +877,11 @@ export function useJobManagement(): UseJobManagementReturn {
       if (result?.id) {
         setCurrentJobId(result.id);
         await fetchJobList();
-        alert('작업이 저장되었습니다.');
         return true;
       }
       return false;
     } catch (error) {
       console.error('작업 저장 실패:', error);
-      alert('작업 저장에 실패했습니다.');
       return false;
     } finally {
       setIsSavingJob(false);
@@ -925,10 +942,15 @@ export function useJobManagement(): UseJobManagementReturn {
       return null;
     }
   }, []);
-  const deleteJob = useCallback(async (jobId: number): Promise<boolean> => {
-    if (!confirm('이 작업을 삭제하시겠습니까?')) {
-      return false;
-    }
+  const JOB_DELETE_UNDO_WINDOW_MS = 7000;
+  const pendingDeleteJobsRef = useRef<Map<number, { name: string; timer: ReturnType<typeof setTimeout> }>>(new Map());
+  const [pendingDeleteJobIds, setPendingDeleteJobIds] = useState<number[]>([]);
+  useEffect(() => {
+    return () => {
+      pendingDeleteJobsRef.current.forEach(entry => clearTimeout(entry.timer));
+    };
+  }, []);
+  const finalizeDeleteJob = useCallback(async (jobId: number): Promise<boolean> => {
     try {
       await deleteTeachingJob(jobId);
       await fetchJobList();
@@ -938,10 +960,31 @@ export function useJobManagement(): UseJobManagementReturn {
       return true;
     } catch (error) {
       console.error('작업 삭제 실패:', error);
-      alert('작업 삭제에 실패했습니다.');
       return false;
     }
   }, [currentJobId, fetchJobList]);
+  const requestDeleteJob = useCallback((jobId: number, jobName: string) => {
+    if (!window.confirm(`"${jobName}" 작업을 삭제하시겠습니까? (삭제 후 7초 이내에는 실행취소할 수 있습니다)`)) {
+      return;
+    }
+    const timer = setTimeout(async () => {
+      pendingDeleteJobsRef.current.delete(jobId);
+      setPendingDeleteJobIds(Array.from(pendingDeleteJobsRef.current.keys()));
+      const ok = await finalizeDeleteJob(jobId);
+      if (!ok) {
+        alert('작업 삭제에 실패했습니다.');
+      }
+    }, JOB_DELETE_UNDO_WINDOW_MS);
+    pendingDeleteJobsRef.current.set(jobId, { name: jobName, timer });
+    setPendingDeleteJobIds(Array.from(pendingDeleteJobsRef.current.keys()));
+  }, [finalizeDeleteJob]);
+  const undoDeleteJob = useCallback((jobId: number) => {
+    const entry = pendingDeleteJobsRef.current.get(jobId);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    pendingDeleteJobsRef.current.delete(jobId);
+    setPendingDeleteJobIds(Array.from(pendingDeleteJobsRef.current.keys()));
+  }, []);
   const updateJobName = useCallback(async (jobId: number, newName: string): Promise<boolean> => {
     if (!newName.trim()) {
       alert('작업명을 입력해주세요.');
@@ -974,7 +1017,9 @@ export function useJobManagement(): UseJobManagementReturn {
     fetchJobList,
     saveJob,
     loadJob,
-    deleteJob,
+    pendingDeleteJobIds,
+    requestDeleteJob,
+    undoDeleteJob,
     updateJobName,
     JOBS_PER_PAGE,
   };
@@ -1350,6 +1395,7 @@ export interface UseRobotControlReturn {
     tolerance?: number,
   ) => boolean;
 }
+const JOINT_JUMP_WARN_DEG = 45;
 export function useRobotControl(): UseRobotControlReturn {
   const [isRobotMoving, setIsRobotMoving] = useState(false);
   const [teachingRobotState, setTeachingRobotState] = useState<RealtimeRobotStatus | null>(null);
@@ -1399,6 +1445,22 @@ export function useRobotControl(): UseRobotControlReturn {
       if (point.joints.every(j => j === 0)) {
         alert('관절 데이터가 모두 0입니다.');
         return false;
+      }
+      const targetJoints = point.joints;
+      const currentJoints = teachingRobotState?.joints;
+      if (!isAtPosition(currentJoints, targetJoints)) {
+        let confirmMsg = `${point.name ?? point.id} 위치로 이동하시겠습니까?`;
+        if (currentJoints && currentJoints.length === targetJoints.length) {
+          const diffs = currentJoints.map((v, i) => Math.abs(v - targetJoints[i]));
+          const maxDiff = Math.max(...diffs);
+          if (maxDiff > JOINT_JUMP_WARN_DEG) {
+            const jointIdx = diffs.indexOf(maxDiff) + 1;
+            confirmMsg = `⚠ 이동 거리가 큽니다 (J${jointIdx} 관절 약 ${maxDiff.toFixed(1)}도 이동).\n${point.name ?? point.id} 위치로 이동하시겠습니까?`;
+          }
+        }
+        if (!window.confirm(confirmMsg)) {
+          return false;
+        }
       }
       const speed = opts.overrideSpeed ?? point.moveSpeed;
       const totalTimer = log_useRobotControl.startTimer();

@@ -2,6 +2,7 @@ import React from 'react';
 import { Users, Sliders, Shield, Save, Clock, Cpu, Wifi, Download, Database } from 'lucide-react';
 import { PageLayout, LoadingScreen } from '../../components/common/index';
 import { useSystemSettingsData } from './hooks/useSystemSettingsData';
+import { useLang } from '../../contexts';
 import { StatusCard_StatusCard as StatusCard, UserManagementTab_UserManagementTab as UserManagementTab, UserModal_UserModal as UserModal, RobotSettingsTab_RobotSettingsTab as RobotSettingsTab, WeldingDefaultsTab_WeldingDefaultsTab as WeldingDefaultsTab, SystemEnvTab_SystemEnvTab as SystemEnvTab, UpdateTab_UpdateTab as UpdateTab } from './components';
 import { SystemConfig } from '../../lib';
 import { VersionInfo, UpdateCheckResponse, UpdateStatus, SystemInfo, RobotSettingsData, RobotErrorData, UserData } from '../../lib';
@@ -31,6 +32,7 @@ const SystemSettings: React.FC = () => {
     robotError,
     loadingError,
     resettingError,
+    robotConnected,
     touchSensingSettings,
     setTouchSensingSettings,
     handleDebugToggle,
@@ -44,12 +46,13 @@ const SystemSettings: React.FC = () => {
     handleSaveConfig,
     fetchRobotError,
   } = useSystemSettingsData();
+  const { t } = useLang();
   const tabs = [
-    { id: 'users' as TabType, label: '사용자 관리', icon: Users },
-    { id: 'robot' as TabType, label: '로봇 설정', icon: Cpu },
-    { id: 'welding' as TabType, label: '용접 기본값', icon: Sliders },
-    { id: 'system' as TabType, label: '시스템 환경', icon: Shield },
-    { id: 'update' as TabType, label: '업데이트', icon: Download },
+    { id: 'users' as TabType, label: t('tabUsers'), icon: Users },
+    { id: 'robot' as TabType, label: t('tabRobot'), icon: Cpu },
+    { id: 'welding' as TabType, label: t('tabWelding'), icon: Sliders },
+    { id: 'system' as TabType, label: t('tabSystem'), icon: Shield },
+    { id: 'update' as TabType, label: t('tabUpdate'), icon: Download },
   ];
   if (loading) {
     return <LoadingScreen text="로딩 중..." />;
@@ -60,14 +63,14 @@ const SystemSettings: React.FC = () => {
       <div
         className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"
         data-audit="unused"
-        data-audit-note="일부 미사용: '로봇 상태(연결됨)'·'가동 시간(142일)' 카드는 하드코딩 — 실시간 아님 (사용자수/버전은 실제값)"
+        data-audit-note="'가동 시간(142일)' 카드는 하드코딩 — 실시간 아님 (로봇 상태는 실시간 연결 조회로 변경됨, 사용자수/버전도 실제값)"
         data-audit-loc="src/pages/settings/SystemSettings.tsx:69"
       >
         <StatusCard
-          icon={<Wifi className="w-6 h-6 text-green-400" />}
-          bgColor="bg-green-500/20"
-          value="연결됨"
-          valueColor="text-green-400"
+          icon={<Wifi className={`w-6 h-6 ${robotConnected ? 'text-green-400' : 'text-red-400'}`} />}
+          bgColor={robotConnected ? 'bg-green-500/20' : 'bg-red-500/20'}
+          value={robotConnected === null ? '확인중...' : robotConnected ? '연결됨' : '연결 안됨'}
+          valueColor={robotConnected ? 'text-green-400' : 'text-red-400'}
           label="로봇 상태"
         />
         <StatusCard
@@ -113,7 +116,7 @@ const SystemSettings: React.FC = () => {
           className="px-5 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 rounded-xl text-white transition touch-manipulation flex items-center gap-2 font-medium"
         >
           <Save className="w-5 h-5" />
-          <span className="hidden md:inline">{saving ? '저장 중...' : '설정 저장'}</span>
+          <span className="hidden md:inline">{saving ? t('saving') : t('saveSettings')}</span>
         </button>
       </div>
       {}
@@ -139,10 +142,8 @@ const SystemSettings: React.FC = () => {
             onResetError={handleResetError}
           />
         )}
-        {activeTab === 'welding' && config && (
+        {activeTab === 'welding' && (
           <WeldingDefaultsTab
-            config={config}
-            setConfig={setConfig}
             touchSensingSettings={touchSensingSettings}
             setTouchSensingSettings={setTouchSensingSettings}
           />

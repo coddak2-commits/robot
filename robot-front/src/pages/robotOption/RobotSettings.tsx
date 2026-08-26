@@ -33,6 +33,7 @@ const RobotSettings: React.FC = () => {
     default_ovl: 100,
     auto_clear_error: true,
     min_weaving_distance: 50,
+    collision_detection_enabled: true,
   });
   const [isSettingsLoading, setIsSettingsLoading] = useState(false);
   const convertApiDataToTableRow = (pointId: string, pointData: RobotPointData): TableRow => {

@@ -587,6 +587,17 @@ int RobotService::setSpeed(float speed) {
     std::cout << "[RobotService] Setting speed: " << speed << "%" << std::endl;
     return m_robot.SetSpeed(speed);
 }
+int RobotService::setCollisionDetection(bool enabled) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    // SDK SetAnticollision: mode 0 = grade, level range [1-10] (1=most sensitive, 10=least sensitive).
+    // There is no true hardware "off" for this API, so "disabled" is approximated as the
+    // least sensitive grade, not a real bypass of collision protection.
+    const float grade = enabled ? 5.0f : 10.0f;
+    float level[6] = { grade, grade, grade, grade, grade, grade };
+    std::cout << "[RobotService] SetAnticollision: enabled=" << enabled << " grade=" << grade << std::endl;
+    return m_robot.SetAnticollision(0, level, 1);
+}
 int RobotService::startJog(int ref, int nb, int dir, float vel, float acc, float maxDis) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_connected) return -1;
@@ -2959,7 +2970,7 @@ bool HttpServer::start(int port) {
     auto& server = m_impl->server;
     server.Options(".*", [](const httplib::Request&, httplib::Response& res) {
         res.set_header("Access-Control-Allow-Origin", "*");
-        res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
         res.set_header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-refresh-token");
         res.status = 204;
     });
@@ -3125,13 +3136,13 @@ void HttpServer::startEmergencyServer() {
     auto& emergencyServer = m_emergencyImpl->server;
     emergencyServer.Options(".*", [](const httplib::Request&, httplib::Response& res) {
         res.set_header("Access-Control-Allow-Origin", "*");
-        res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
         res.set_header("Access-Control-Allow-Headers", "Content-Type, Authorization");
         res.status = 204;
     });
     emergencyServer.Post("/emergency_stop", [this](const httplib::Request&, httplib::Response& res) {
         res.set_header("Access-Control-Allow-Origin", "*");
-        res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
         res.set_header("Access-Control-Allow-Headers", "Content-Type, Authorization");
         std::cout << "[EmergencyServer] 🚨 EMERGENCY STOP RECEIVED!" << std::endl;
         if (m_dbService && m_dbService->isConnected()) {
@@ -4925,6 +4936,7 @@ void registerSdkRoutes(
             std::cout << "[connect] Applying coordinate settings: tool=" << toolNum << ", user=" << userNum << std::endl;
             robotService.setToolPoint(toolNum);
             robotService.setUserPoint(userNum);
+            robotService.setCollisionDetection(settings.collision_detection_enabled);
         }
         json response;
         response["status_code"] = (result == 0) ? 200 : 500;
@@ -5022,7 +5034,7 @@ void registerSdkRoutes(
         }
         res.set_content(response.dump(), "application/json");
     });
-    server.Put("/robot_sdk/settings", [dbService](const httplib::Request& req, httplib::Response& res) {
+    server.Put("/robot_sdk/settings", [&robotService, dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         json response;
         if (!dbService || !dbService->isConnected()) {
@@ -5034,6 +5046,7 @@ void registerSdkRoutes(
         try {
             json body = json::parse(req.body);
             RobotSettings settings = dbService->getRobotSettings();
+            bool collisionChanged = false;
             if (body.contains("tool_num")) settings.tool_num = body["tool_num"].get<int>();
             if (body.contains("user_num")) settings.user_num = body["user_num"].get<int>();
             if (body.contains("default_vel")) settings.default_vel = body["default_vel"].get<int>();
@@ -5041,8 +5054,18 @@ void registerSdkRoutes(
             if (body.contains("default_ovl")) settings.default_ovl = body["default_ovl"].get<int>();
             if (body.contains("auto_clear_error")) settings.auto_clear_error = body["auto_clear_error"].get<bool>();
             if (body.contains("min_weaving_distance")) settings.min_weaving_distance = body["min_weaving_distance"].get<int>();
+            if (body.contains("collision_detection_enabled")) {
+                settings.collision_detection_enabled = body["collision_detection_enabled"].get<bool>();
+                collisionChanged = true;
+            }
             if (dbService->updateRobotSettings(settings)) {
                 RobotSettings updated = dbService->getRobotSettings();
+                if (collisionChanged && robotService.isConnected()) {
+                    int result = robotService.setCollisionDetection(updated.collision_detection_enabled);
+                    if (result != 0) {
+                        FLOG_SDK_ERROR("setCollisionDetection", result, "enabled=" + std::to_string(updated.collision_detection_enabled));
+                    }
+                }
                 response["status_code"] = 200;
                 response["data"] = DatabaseService::settingsToJson(updated);
             } else {
@@ -7880,7 +7903,7 @@ TeachingPoint DatabaseService::jsonToPoint(const json& j) {
 RobotSettings DatabaseService::getRobotSettings() {
     std::lock_guard<std::mutex> lock(m_mutex);
     RobotSettings settings;
-    MYSQL_RES* result = executeSelect("SELECT tool_num, user_num, default_vel, default_acc, default_ovl, auto_clear_error, min_weaving_distance, updated_at FROM robot_settings WHERE id = 1");
+    MYSQL_RES* result = executeSelect("SELECT tool_num, user_num, default_vel, default_acc, default_ovl, auto_clear_error, min_weaving_distance, collision_detection_enabled, updated_at FROM robot_settings WHERE id = 1");
     if (!result) {
         return settings;
     }
@@ -7893,7 +7916,8 @@ RobotSettings DatabaseService::getRobotSettings() {
         settings.default_ovl = row[4] ? std::stoi(row[4]) : 100;
         settings.auto_clear_error = row[5] ? (std::stoi(row[5]) != 0) : true;
         settings.min_weaving_distance = row[6] ? std::stoi(row[6]) : 50;
-        settings.updated_at = row[7] ? row[7] : "";
+        settings.collision_detection_enabled = row[7] ? (std::stoi(row[7]) != 0) : true;
+        settings.updated_at = row[8] ? row[8] : "";
     }
     mysql_free_result(result);
     return settings;
@@ -7908,7 +7932,8 @@ bool DatabaseService::updateRobotSettings(const RobotSettings& settings) {
           << "default_acc = " << settings.default_acc << ", "
           << "default_ovl = " << settings.default_ovl << ", "
           << "auto_clear_error = " << (settings.auto_clear_error ? 1 : 0) << ", "
-          << "min_weaving_distance = " << settings.min_weaving_distance
+          << "min_weaving_distance = " << settings.min_weaving_distance << ", "
+          << "collision_detection_enabled = " << (settings.collision_detection_enabled ? 1 : 0)
           << " WHERE id = 1";
     return executeQuery(query.str());
 }
@@ -7921,6 +7946,7 @@ json DatabaseService::settingsToJson(const RobotSettings& settings) {
         {"default_ovl", settings.default_ovl},
         {"auto_clear_error", settings.auto_clear_error},
         {"min_weaving_distance", settings.min_weaving_distance},
+        {"collision_detection_enabled", settings.collision_detection_enabled},
         {"updated_at", settings.updated_at}
     };
 }
@@ -7933,6 +7959,7 @@ RobotSettings DatabaseService::jsonToSettings(const json& j) {
     if (j.contains("default_ovl")) settings.default_ovl = j["default_ovl"].get<int>();
     if (j.contains("auto_clear_error")) settings.auto_clear_error = j["auto_clear_error"].get<bool>();
     if (j.contains("min_weaving_distance")) settings.min_weaving_distance = j["min_weaving_distance"].get<int>();
+    if (j.contains("collision_detection_enabled")) settings.collision_detection_enabled = j["collision_detection_enabled"].get<bool>();
     return settings;
 }
 WeldingConfig DatabaseService::getWeldingConfig() {

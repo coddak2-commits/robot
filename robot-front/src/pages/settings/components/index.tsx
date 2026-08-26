@@ -5,6 +5,8 @@ import { sendDiagnosticLogsEmail, downloadLogsZipUrl, updateRobotSettings } from
 import { SettingsToggleRow } from '../../../components/common/index';
 import { formatDateTime } from '../../../utils';
 import { useNavigate } from 'react-router-dom';
+import { useTheme, useLang } from '../../../contexts';
+import { setSoundEnabled, setAutoLogoutMinutes, setNotificationsEnabled } from '../../../lib/appSettings';
 interface ArcTrackingSectionProps {
   settings: TouchSensingSettings;
   updateTouch: (field: keyof TouchSensingSettings, value: boolean | number) => void;
@@ -322,7 +324,7 @@ const RobotSettingsTab: React.FC<RobotSettingsTabProps> = ({
       <div
         className="grid grid-cols-1 md:grid-cols-2 gap-6"
         data-audit="unused"
-        data-audit-note="미사용: SystemSettings 로봇 기본설정(속도/가속도/안전토글)은 mock 저장만 — 실제 동작 미반영"
+        data-audit-note="미사용: 기본 속도/최대 속도/기본 가속도/안전구역 활성화는 mock 저장만 — 실제 동작 미반영 (충돌 감지는 robot_settings 연동으로 수정됨)"
         data-audit-loc="src/pages/settings/components/RobotSettingsTab.tsx:45"
       >
         <div className="space-y-4">
@@ -409,17 +411,10 @@ const RobotSettingsTab: React.FC<RobotSettingsTabProps> = ({
           />
           <SettingsToggleRow
             label="충돌 감지"
-            description="충돌 시 자동 정지"
-            enabled={config.robotSettings.collisionDetection}
+            description="켜짐: 중간 감도 / 꺼짐: 최소 감도 (완전 비활성화 아님)"
+            enabled={robotCoordSettings.collision_detection_enabled}
             onChange={enabled =>
-              setConfig(prev =>
-                prev
-                  ? {
-                      ...prev,
-                      robotSettings: { ...prev.robotSettings, collisionDetection: enabled },
-                    }
-                  : null,
-              )
+              setRobotCoordSettings(prev => ({ ...prev, collision_detection_enabled: enabled }))
             }
           />
         </div>
@@ -707,6 +702,8 @@ const SystemEnvTab: React.FC<SystemEnvTabProps> = ({
   debugMode,
   onDebugToggle,
 }) => {
+  const { setTheme } = useTheme();
+  const { setLang, t } = useLang();
   const updatePref = (field: string, value: unknown) => {
     setConfig(prev =>
       prev ? { ...prev, systemPreferences: { ...prev.systemPreferences, [field]: value } } : null,
@@ -716,23 +713,22 @@ const SystemEnvTab: React.FC<SystemEnvTabProps> = ({
     <div className="p-6">
       <h2 className="text-xl font-semibold text-white flex items-center gap-2 mb-6">
         <Shield className="w-6 h-6 text-cyan-400" />
-        시스템 환경 설정
+        {t('tabSystem')}
       </h2>
-      <div
-        className="grid grid-cols-1 md:grid-cols-2 gap-6"
-        data-audit="unused"
-        data-audit-note="미사용: 시스템 환경(언어/자동로그아웃/테마/알림/효과음)은 mock 저장만 — 실제 적용 로직 없음"
-        data-audit-loc="src/pages/settings/components/SystemEnvTab.tsx:41"
-      >
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-4">
           <div>
             <label className="block text-gray-400 text-sm mb-2 font-medium flex items-center gap-1">
               <Globe className="w-4 h-4" />
-              언어
+              {t('language')}
             </label>
             <select
               value={config.systemPreferences.language}
-              onChange={e => updatePref('language', e.target.value)}
+              onChange={e => {
+                const next = e.target.value as 'ko' | 'en';
+                updatePref('language', next);
+                setLang(next);
+              }}
               className="w-full px-4 py-4 bg-gray-900 border border-gray-700 rounded-xl text-white focus:border-cyan-500 focus:outline-none text-lg"
             >
               <option value="ko">한국어</option>
@@ -747,7 +743,11 @@ const SystemEnvTab: React.FC<SystemEnvTabProps> = ({
             <input
               type="number"
               value={config.systemPreferences.autoLogoutMinutes}
-              onChange={e => updatePref('autoLogoutMinutes', Number(e.target.value))}
+              onChange={e => {
+                const next = Number(e.target.value);
+                updatePref('autoLogoutMinutes', next);
+                setAutoLogoutMinutes(next);
+              }}
               className="w-full px-4 py-4 bg-gray-900 border border-gray-700 rounded-xl text-white focus:border-cyan-500 focus:outline-none text-lg"
               min="1"
             />
@@ -763,16 +763,18 @@ const SystemEnvTab: React.FC<SystemEnvTabProps> = ({
                   <Sun className="w-6 h-6 text-yellow-400" />
                 )}
                 <div>
-                  <div className="text-white font-medium text-lg">테마</div>
+                  <div className="text-white font-medium text-lg">{t('theme')}</div>
                   <div className="text-gray-400 text-sm">
-                    {config.systemPreferences.theme === 'dark' ? '다크 모드' : '라이트 모드'}
+                    {config.systemPreferences.theme === 'dark' ? t('darkMode') : t('lightMode')}
                   </div>
                 </div>
               </div>
               <button
-                onClick={() =>
-                  updatePref('theme', config.systemPreferences.theme === 'dark' ? 'light' : 'dark')
-                }
+                onClick={() => {
+                  const next = config.systemPreferences.theme === 'dark' ? 'light' : 'dark';
+                  updatePref('theme', next);
+                  setTheme(next);
+                }}
                 className={`w-16 h-9 rounded-full transition ${
                   config.systemPreferences.theme === 'dark' ? 'bg-cyan-600' : 'bg-gray-600'
                 }`}
@@ -786,17 +788,23 @@ const SystemEnvTab: React.FC<SystemEnvTabProps> = ({
             </div>
           </div>
           <SettingsToggleRow
-            label="알림"
-            description="푸시 알림 활성화"
+            label={t('notifications')}
+            description={t('notificationsDesc')}
             enabled={config.systemPreferences.notificationsEnabled}
-            onChange={enabled => updatePref('notificationsEnabled', enabled)}
+            onChange={enabled => {
+              updatePref('notificationsEnabled', enabled);
+              setNotificationsEnabled(enabled);
+            }}
             icon={<Bell className="w-6 h-6" />}
           />
           <SettingsToggleRow
-            label="효과음"
-            description="작업 완료 시 효과음"
+            label={t('soundEffect')}
+            description={t('soundEffectDesc')}
             enabled={config.systemPreferences.soundEnabled}
-            onChange={enabled => updatePref('soundEnabled', enabled)}
+            onChange={enabled => {
+              updatePref('soundEnabled', enabled);
+              setSoundEnabled(enabled);
+            }}
             icon={<Settings className="w-6 h-6" />}
           />
           {}
@@ -805,7 +813,7 @@ const SystemEnvTab: React.FC<SystemEnvTabProps> = ({
               <div className="flex items-center gap-3">
                 <Bug className="w-6 h-6 text-green-400" />
                 <div>
-                  <div className="text-white font-medium text-lg">디버그 모드</div>
+                  <div className="text-white font-medium text-lg">{t('debugMode')}</div>
                   <div className="text-gray-400 text-sm">Ctrl + 우클릭으로 className 복사</div>
                 </div>
               </div>
@@ -1372,12 +1380,44 @@ const getRoleBadge = (role: UserData['role']) => {
     </span>
   );
 };
+type UserSortKey = 'name_asc' | 'name_desc' | 'lastLogin_desc' | 'lastLogin_asc';
 const UserManagementTab: React.FC<UserManagementTabProps> = ({
   users,
   onOpenUserModal,
   onDeleteUser,
   onLogout,
 }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | UserData['role']>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [sortKey, setSortKey] = useState<UserSortKey>('name_asc');
+  const isFiltered = searchQuery.trim() !== '' || roleFilter !== 'all' || activeFilter !== 'all';
+  const filteredUsers = users
+    .filter(user => {
+      if (roleFilter !== 'all' && user.role !== roleFilter) return false;
+      if (activeFilter === 'active' && !user.active) return false;
+      if (activeFilter === 'inactive' && user.active) return false;
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        user.name?.toLowerCase().includes(q) ||
+        user.username?.toLowerCase().includes(q) ||
+        user.email?.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      switch (sortKey) {
+        case 'name_desc':
+          return b.name.localeCompare(a.name);
+        case 'lastLogin_desc':
+          return new Date(b.lastLogin || 0).getTime() - new Date(a.lastLogin || 0).getTime();
+        case 'lastLogin_asc':
+          return new Date(a.lastLogin || 0).getTime() - new Date(b.lastLogin || 0).getTime();
+        case 'name_asc':
+        default:
+          return a.name.localeCompare(b.name);
+      }
+    });
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
@@ -1402,8 +1442,46 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
           </button>
         </div>
       </div>
+      <div className="flex flex-wrap gap-2 mb-6">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="이름, 아이디, 이메일 검색"
+          className="flex-1 min-w-[200px] px-4 py-2.5 bg-gray-900/60 border border-gray-700/50 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+        />
+        <select
+          value={roleFilter}
+          onChange={e => setRoleFilter(e.target.value as 'all' | UserData['role'])}
+          className="px-4 py-2.5 bg-gray-900/60 border border-gray-700/50 rounded-xl text-white focus:outline-none focus:border-cyan-500"
+        >
+          <option value="all">전체 권한</option>
+          <option value="admin">관리자</option>
+          <option value="operator">작업자</option>
+          <option value="viewer">조회자</option>
+        </select>
+        <select
+          value={activeFilter}
+          onChange={e => setActiveFilter(e.target.value as 'all' | 'active' | 'inactive')}
+          className="px-4 py-2.5 bg-gray-900/60 border border-gray-700/50 rounded-xl text-white focus:outline-none focus:border-cyan-500"
+        >
+          <option value="all">전체 상태</option>
+          <option value="active">활성</option>
+          <option value="inactive">비활성</option>
+        </select>
+        <select
+          value={sortKey}
+          onChange={e => setSortKey(e.target.value as UserSortKey)}
+          className="px-4 py-2.5 bg-gray-900/60 border border-gray-700/50 rounded-xl text-white focus:outline-none focus:border-cyan-500"
+        >
+          <option value="name_asc">이름순</option>
+          <option value="name_desc">이름 역순</option>
+          <option value="lastLogin_desc">최근 로그인순</option>
+          <option value="lastLogin_asc">오래된 로그인순</option>
+        </select>
+      </div>
       <div className="space-y-4">
-        {users.map(user => (
+        {filteredUsers.map(user => (
           <div
             key={user.id}
             className="bg-gray-900/60 rounded-xl p-5 flex items-center justify-between border border-gray-700/50 hover:border-cyan-500/30 transition"
@@ -1458,9 +1536,9 @@ const UserManagementTab: React.FC<UserManagementTabProps> = ({
             </div>
           </div>
         ))}
-        {users.length === 0 && (
+        {filteredUsers.length === 0 && (
           <div className="text-center py-12 text-gray-500">
-            등록된 사용자가 없습니다.
+            {isFiltered ? '조건에 맞는 사용자가 없습니다.' : '등록된 사용자가 없습니다.'}
           </div>
         )}
       </div>
@@ -1597,23 +1675,14 @@ const UserModal: React.FC<UserModalProps> = ({
 };
 export const UserModal_UserModal = UserModal;
 interface WeldingDefaultsTabProps {
-  config: SystemConfig;
-  setConfig: React.Dispatch<React.SetStateAction<SystemConfig | null>>;
   touchSensingSettings: TouchSensingSettings;
   setTouchSensingSettings: React.Dispatch<React.SetStateAction<TouchSensingSettings>>;
 }
 const WeldingDefaultsTab: React.FC<WeldingDefaultsTabProps> = ({
-  config,
-  setConfig,
   touchSensingSettings,
   setTouchSensingSettings,
 }) => {
   const navigate = useNavigate();
-  const updateWeldingDefault = (field: string, value: number) => {
-    setConfig(prev =>
-      prev ? { ...prev, weldingDefaults: { ...prev.weldingDefaults, [field]: value } } : null,
-    );
-  };
   const updateTouch = (field: keyof TouchSensingSettings, value: boolean | number) => {
     setTouchSensingSettings(prev => ({ ...prev, [field]: value }));
   };
@@ -1623,39 +1692,6 @@ const WeldingDefaultsTab: React.FC<WeldingDefaultsTabProps> = ({
         <Sliders className="w-6 h-6 text-cyan-400" />
         용접 기본 파라미터
       </h2>
-      <div
-        className="grid grid-cols-2 md:grid-cols-3 gap-4"
-        data-audit="unused dup"
-        data-audit-note="미사용+중복: 용접 기본값(전류/전압/속도/가스)은 mock 저장만(미반영). 실제는 /settings/welding 프리셋·welding_config 사용"
-        data-audit-loc="src/pages/settings/components/WeldingDefaultsTab.tsx:40"
-      >
-        {[
-          { label: '기본 전류 (A)', field: 'current', value: config.weldingDefaults.current },
-          { label: '기본 전압 (V)', field: 'voltage', value: config.weldingDefaults.voltage },
-          { label: '기본 속도 (%)', field: 'speed', value: config.weldingDefaults.speed },
-          { label: '가스 유량 (L/min)', field: 'gasFlow', value: config.weldingDefaults.gasFlow },
-          {
-            label: '예열 시간 (초)',
-            field: 'preHeatTime',
-            value: config.weldingDefaults.preHeatTime,
-          },
-          {
-            label: '후열 시간 (초)',
-            field: 'postHeatTime',
-            value: config.weldingDefaults.postHeatTime,
-          },
-        ].map(({ label, field, value }) => (
-          <div key={field}>
-            <label className="block text-gray-400 text-sm mb-2 font-medium">{label}</label>
-            <input
-              type="number"
-              value={value}
-              onChange={e => updateWeldingDefault(field, Number(e.target.value))}
-              className="w-full px-4 py-4 bg-gray-900 border border-gray-700 rounded-xl text-white focus:border-cyan-500 focus:outline-none text-lg"
-            />
-          </div>
-        ))}
-      </div>
       {}
       <ArcTrackingSection settings={touchSensingSettings} updateTouch={updateTouch} />
       {}

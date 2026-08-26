@@ -4,9 +4,11 @@ import { DEFAULT_PART_WELD_ENABLED } from '../UcellSelect';
 import { UnifiedWorkspaceCanvas, TorchOrientationIndicator, UCellConfig } from '../UcellSelect/components';
 import { paramApi, Posture, WeldingParam, ParamLookupResult, deviationApi, overrideApi } from '../../lib/gapApi';
 import { Axios as api } from '../../lib';
-import { getRobotError } from '../../lib/robotApi/index';
+import { isMockMode, mockCheckConnection } from '../../lib';
+import { getRobotError, resetRobotError, connectRobotSDK } from '../../lib/robotApi/index';
 import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
+import { playSaveOkBeep, playErrorBeep } from '../../lib/audio';
 
 const CELL_CONFIG: UCellConfig = {
   type: 'normal',
@@ -28,6 +30,23 @@ const SEGMENTS: { key: string; startId: string; endId: string; label: string; of
   { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 40 },
   { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 40 },
   { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 65 },
+];
+
+// 파트별 "패스(skip)" 체크박스 배치 (U-셀 안쪽)
+const PART_CHECKBOXES: { partIdx: number; refPoint: string; offsetX?: number; offsetY?: number }[] = [
+  { partIdx: 0, refPoint: 'p5', offsetY: -100 },
+  { partIdx: 1, refPoint: 'p2', offsetX: 135 },
+  { partIdx: 2, refPoint: 'p11', offsetY: -100 },
+  { partIdx: 3, refPoint: 'p8', offsetX: -135 },
+];
+
+// 파트별 대표 gap 소스 매핑
+// 파트 실행 순서상 사용될 gap을 어느 세그먼트에서 가져올지
+const PART_GAP_MAP: { points: string[]; gapPoint: string }[] = [
+  { points: ['p4', 'p5', 'p6'], gapPoint: 'p4' },    // 파트1 (하단 좌)
+  { points: ['p3', 'p2', 'p1'], gapPoint: 'p2' },    // 파트2 (좌측 수직)
+  { points: ['p10', 'p11', 'p12'], gapPoint: 'p10' },// 파트3 (하단 우)
+  { points: ['p9', 'p8', 'p7'], gapPoint: 'p8' },    // 파트4 (우측 수직)
 ];
 
 const CANVAS_W = 1100;
@@ -160,12 +179,28 @@ const PendantInner: React.FC = () => {
 
   const homePoint = teachingPoints.find(p => p.id === 'home');
   const homeSaved = !!homePoint?.isSaved;
+  const [homeSaveFlash, setHomeSaveFlash] = useState<'success' | 'error' | null>(null);
+  useEffect(() => {
+    if (!homeSaveFlash) return;
+    const timer = setTimeout(() => setHomeSaveFlash(null), 2000);
+    return () => clearTimeout(timer);
+  }, [homeSaveFlash]);
+  const [teachSaveFlash, setTeachSaveFlash] = useState<{ pointId: string; status: 'success' | 'error' } | null>(null);
+  useEffect(() => {
+    if (!teachSaveFlash) return;
+    const timer = setTimeout(() => setTeachSaveFlash(null), 2000);
+    return () => clearTimeout(timer);
+  }, [teachSaveFlash]);
 
   const handleSaveHome = async () => {
     try {
       await saveCurrentPositionToPoint('home');
+      playSaveOkBeep();
+      setHomeSaveFlash('success');
       showAlert('홈 위치 저장됨', { type: 'success' });
     } catch (e: any) {
+      playErrorBeep();
+      setHomeSaveFlash('error');
       showAlert(`홈 저장 실패: ${e.message}`, { type: 'error' });
     }
   };
@@ -186,6 +221,48 @@ const PendantInner: React.FC = () => {
     return () => stopTeachingPolling();
   }, [startTeachingPolling, stopTeachingPolling]);
 
+  const [needsReconnectAttention, setNeedsReconnectAttention] = useState(false);
+  const [reconnectPanelOpen, setReconnectPanelOpen] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [lastAttemptAt, setLastAttemptAt] = useState<Date | null>(null);
+  const disconnectedSinceRef = useRef<number | null>(null);
+  const RECONNECT_ATTENTION_DELAY_MS = 3000;
+  useEffect(() => {
+    const connected = teachingRobotState?.connected;
+    if (connected) {
+      disconnectedSinceRef.current = null;
+      setNeedsReconnectAttention(false);
+      return;
+    }
+    if (disconnectedSinceRef.current === null) {
+      disconnectedSinceRef.current = Date.now();
+    }
+    const elapsed = Date.now() - disconnectedSinceRef.current;
+    if (elapsed >= RECONNECT_ATTENTION_DELAY_MS) {
+      setNeedsReconnectAttention(true);
+    } else {
+      const timer = setTimeout(() => setNeedsReconnectAttention(true), RECONNECT_ATTENTION_DELAY_MS - elapsed);
+      return () => clearTimeout(timer);
+    }
+  }, [teachingRobotState?.connected]);
+  useEffect(() => {
+    if (!needsReconnectAttention) setReconnectPanelOpen(false);
+  }, [needsReconnectAttention]);
+  const handleManualReconnect = async () => {
+    setIsReconnecting(true);
+    try {
+      if (isMockMode()) {
+        await mockCheckConnection();
+      } else {
+        await connectRobotSDK();
+      }
+    } catch {
+    } finally {
+      setLastAttemptAt(new Date());
+      setIsReconnecting(false);
+    }
+  };
+
   const weldPoints = useMemo(() => teachingPoints.filter(pt => pt.id !== 'home').map(pt => {
     const pos = getSchematicPosition(pt.id);
     return {
@@ -204,6 +281,8 @@ const PendantInner: React.FC = () => {
   const [gapEditValue, setGapEditValue] = useState<string>('');
   const [teachPointId, setTeachPointId] = useState<string | null>(null);
   const [teachBusy, setTeachBusy] = useState(false);
+  const [dryRun, setDryRun] = useState(false);
+  const [partEnabled, setPartEnabled] = useState<[boolean, boolean, boolean, boolean]>([true, true, true, true]);
   const [thickness, setThickness] = useState<number>(() => {
     const v = typeof localStorage !== 'undefined' ? localStorage.getItem('gap_thickness_mm') : null;
     return v ? Number(v) : 20;
@@ -370,6 +449,70 @@ const PendantInner: React.FC = () => {
     }
   };
 
+  const startWithGapLookup = async () => {
+    if (isWelding || isRobotMoving) return;
+    try {
+      // 파트별 gap → 파라미터 조회
+      const lookups = await Promise.all(PART_GAP_MAP.map(async pg => {
+        const src = teachingPoints.find(x => x.id === pg.gapPoint);
+        const gap = src?.gap ?? 0;
+        try {
+          const res = await paramApi.lookup({
+            posture: getPosture(pg.gapPoint),
+            gap,
+            thickness,
+            material: 'SS400',
+            joint: 'fillet',
+          });
+          return { pg, res, gap };
+        } catch (e: any) {
+          return { pg, res: null, gap, err: e };
+        }
+      }));
+
+      // 조회 결과를 파트 내 모든 포인트에 적용
+      const updated = teachingPoints.map(pt => {
+        const idx = PART_GAP_MAP.findIndex(p => p.points.includes(pt.id));
+        if (idx < 0) return pt;
+        const res = lookups[idx]?.res;
+        if (!res?.param) return pt;
+        return {
+          ...pt,
+          weldCurrent: Number(res.param.current_a),
+          weldVoltage: Number(res.param.voltage_v),
+          moveSpeed: Number(res.param.speed_cpm),
+        };
+      });
+      // state에도 반영 (UI/재실행 대비)
+      updated.forEach(pt => {
+        const idx = PART_GAP_MAP.findIndex(p => p.points.includes(pt.id));
+        if (idx < 0 || !lookups[idx]?.res?.param) return;
+        updatePointWeldParams(pt.id, Number(pt.weldVoltage), Number(pt.weldCurrent));
+        updatePointSpeed(pt.id, Number(pt.moveSpeed));
+      });
+
+      const missing = lookups.filter(l => !l.res?.param);
+      if (missing.length) {
+        showAlert(`파라미터 조회 실패: ${missing.length}개 파트 (gap 없음/미매칭)`, { type: 'warning' });
+      }
+
+      clearTrackingPath();
+      startTracking(!dryRun);
+      const currentJob = jobList.find(j => j.id === currentJobId);
+      try {
+        const partWeldEnabled = { 0: partEnabled[0], 1: partEnabled[1], 2: partEnabled[2], 3: partEnabled[3] };
+        await startWelding(updated, teachingRobotState, false, currentJobId ?? undefined, currentJob?.name, {
+          partWeldEnabled,
+          isDryRun: dryRun,
+        });
+      } finally {
+        stopTracking();
+      }
+    } catch (e: any) {
+      showAlert(`용접 시작 실패: ${e.response?.data?.detail || e.message}`, { type: 'error' });
+    }
+  };
+
   const wireStopAll = async () => {
     try {
       await api.post(`/robot_sdk/wire/forward`, { ioType, wireFeed: 0 });
@@ -394,6 +537,7 @@ const PendantInner: React.FC = () => {
           canvasWidth={CANVAS_W}
           canvasHeight={CANVAS_H}
           animated
+          currentPointId={isWelding && currentPointIndex >= 0 ? weldPoints[currentPointIndex]?.id ?? null : null}
         />
 
         {/* 세그먼트별 갭 입력 오버레이 */}
@@ -423,6 +567,46 @@ const PendantInner: React.FC = () => {
               <button onClick={inc} disabled={g >= 6}
                 style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, cursor: g >= 6 ? 'not-allowed' : 'pointer', fontSize: 10, fontWeight: 'bold', opacity: g >= 6 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
               >+</button>
+            </div>
+          );
+        })}
+
+        {/* 파트별 패스 체크박스 */}
+        {PART_CHECKBOXES.map(pc => {
+          const ref = getSchematicPosition(pc.refPoint);
+          const pos = worldToCanvas(ref);
+          const left = pos.x + (pc.offsetX ?? 0);
+          const top = pos.y + (pc.offsetY ?? 0);
+          const enabled = partEnabled[pc.partIdx];
+          const toggle = () => setPartEnabled(prev => {
+            const next = [...prev] as [boolean, boolean, boolean, boolean];
+            next[pc.partIdx] = !next[pc.partIdx];
+            return next;
+          });
+          return (
+            <div key={pc.partIdx} onClick={toggle} style={{
+              position: 'absolute', left, top, transform: 'translate(-50%, -50%)',
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '4px 10px',
+              background: enabled ? 'rgba(34, 197, 94, 0.3)' : 'rgba(107, 114, 128, 0.3)',
+              border: `1.5px solid ${enabled ? '#22c55e' : '#6b7280'}`,
+              borderRadius: 4, cursor: 'pointer', userSelect: 'none', zIndex: 5,
+              fontSize: 12, fontWeight: 'bold',
+              color: enabled ? '#22c55e' : '#9ca3af',
+            }}>
+              <span style={{
+                width: 14, height: 14, borderRadius: 2, boxSizing: 'border-box',
+                background: enabled ? '#22c55e' : 'transparent',
+                border: `1.5px solid ${enabled ? '#22c55e' : '#9ca3af'}`,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {enabled && (
+                  <svg width="10" height="10" viewBox="0 0 10 10">
+                    <path d="M1.5 5 L4 7.5 L8.5 2.5" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
+              <span>{enabled ? '용접' : '패스'}</span>
             </div>
           );
         })}
@@ -456,10 +640,42 @@ const PendantInner: React.FC = () => {
           {/* 로봇 상태 */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
             <span style={{ color: '#94a3b8' }}>로봇</span>
-            <span style={{ color: teachingRobotState?.connected ? '#86efac' : '#f87171', fontWeight: 'bold' }}>
-              {teachingRobotState?.connected ? '● 연결' : '○ 미연결'}
-              {isRobotMoving && ' · 이동 중'}
-            </span>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: teachingRobotState?.connected ? '#86efac' : '#f87171', fontWeight: 'bold' }}>
+                {teachingRobotState?.connected ? '● 연결' : '○ 미연결'}
+                {isRobotMoving && ' · 이동 중'}
+              </span>
+              {needsReconnectAttention && (
+                <button onClick={() => setReconnectPanelOpen(v => !v)}
+                  style={{
+                    padding: '2px 6px', fontSize: 11, fontWeight: 'bold',
+                    background: 'rgba(248,113,113,0.15)', color: '#f87171',
+                    border: '1px solid #f87171', borderRadius: 4, cursor: 'pointer',
+                  }}
+                >재연결 안내</button>
+              )}
+              {needsReconnectAttention && reconnectPanelOpen && (
+                <div style={{
+                  position: 'absolute', top: '100%', right: 0, marginTop: 6, width: 220, zIndex: 20,
+                  background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: 10,
+                  fontSize: 11, color: '#cbd5e1', textAlign: 'left',
+                }}>
+                  <div style={{ marginBottom: 8, lineHeight: 1.5 }}>
+                    로봇과 연결이 끊어졌습니다. 케이블/전원/네트워크를 확인한 뒤 재연결을 시도하세요.
+                  </div>
+                  {lastAttemptAt && (
+                    <div style={{ marginBottom: 8, color: '#64748b' }}>마지막 시도: {lastAttemptAt.toLocaleTimeString()}</div>
+                  )}
+                  <button onClick={handleManualReconnect} disabled={isReconnecting}
+                    style={{
+                      width: '100%', padding: '6px 0', fontSize: 12, fontWeight: 'bold',
+                      background: isReconnecting ? '#334155' : '#0369a1', color: '#fff',
+                      border: 'none', borderRadius: 6, cursor: isReconnecting ? 'not-allowed' : 'pointer',
+                    }}
+                  >{isReconnecting ? '시도 중...' : '지금 재연결 시도'}</button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 와이어 수동 제어 (인라인) */}
@@ -494,8 +710,13 @@ const PendantInner: React.FC = () => {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <span style={{ fontSize: 12, color: '#94a3b8' }}>홈</span>
-              <span style={{ fontSize: 12, color: homeSaved ? '#86efac' : '#f87171', fontWeight: 'bold' }}>
+              <span style={{ fontSize: 12, color: homeSaved ? '#86efac' : '#f87171', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 6 }}>
                 {homeSaved ? '저장됨' : '미저장'}
+                {homeSaveFlash && (
+                  <span style={{ color: homeSaveFlash === 'success' ? '#4ade80' : '#f87171' }}>
+                    {homeSaveFlash === 'success' ? '✓ 저장 완료' : '✗ 저장 실패'}
+                  </span>
+                )}
               </span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
@@ -535,8 +756,38 @@ const PendantInner: React.FC = () => {
         </span>
       </div>
 
-      {/* 우상단 알람 배지 */}
-      <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 30 }}>
+      {/* 우상단 알람 배지 + 로그아웃 */}
+      <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 30, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <button onClick={() => {
+          if (!window.confirm('로그아웃 하시겠습니까?')) return;
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          localStorage.removeItem('gap_token');
+          localStorage.removeItem('gap_user');
+          window.location.href = '/login?redirect=/pendant';
+        }}
+          style={{
+            padding: '10px 16px', fontSize: 14, fontWeight: 'bold',
+            background: '#334155', color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer',
+          }}
+        >로그아웃</button>
+        {errorCount > 0 && (
+          <button onClick={async () => {
+            try {
+              await resetRobotError();
+              showAlert('로봇 에러 리셋 완료', { type: 'success' });
+              const a = await fetchRealAlerts();
+              setAlerts(a);
+            } catch (e: any) {
+              showAlert(`에러 리셋 실패: ${e.response?.data?.detail || e.message}`, { type: 'error' });
+            }
+          }}
+            style={{
+              padding: '10px 16px', fontSize: 14, fontWeight: 'bold',
+              background: '#a16207', color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer',
+            }}
+          >에러 리셋</button>
+        )}
         <button onClick={() => setAlertsOpen(v => !v)}
           style={{
             padding: '10px 16px', fontSize: 14, fontWeight: 'bold',
@@ -577,6 +828,18 @@ const PendantInner: React.FC = () => {
         )}
       </div>
 
+      {/* Dry Run 배지 (상단 중앙) */}
+      {dryRun && (
+        <div style={{
+          position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 30,
+          padding: '14px 40px', fontSize: 28, fontWeight: 900,
+          background: '#f59e0b', color: '#000', border: '3px solid #fde68a', borderRadius: 12,
+          letterSpacing: 4, boxShadow: '0 4px 20px rgba(245,158,11,0.5)',
+          animation: 'pulse 1.5s ease-in-out infinite',
+        }}>⚠ DRY RUN — 아크 OFF ⚠</div>
+      )}
+      <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }`}</style>
+
       {/* 우측 세로 용접 실행 도크 */}
       <div style={{
         position: 'fixed', left: 'calc(50% + 570px)', top: '50%', transform: 'translateY(-50%)', zIndex: 20,
@@ -584,13 +847,17 @@ const PendantInner: React.FC = () => {
         background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(6px)',
         border: '1px solid #334155', borderRadius: 12, padding: 10, minWidth: 140,
       }}>
-        <button onClick={handleStartWelding} disabled={isWelding || isRobotMoving}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#cbd5e1', cursor: 'pointer', padding: '4px 6px', background: dryRun ? '#78350f' : '#1e293b', borderRadius: 6 }}>
+          <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer' }} />
+          Dry Run (아크 OFF)
+        </label>
+        <button onClick={startWithGapLookup} disabled={isWelding || isRobotMoving}
           style={{
             padding: '14px', fontSize: 15, fontWeight: 'bold',
-            background: isWelding || isRobotMoving ? '#334155' : '#0a5', color: '#fff', border: 'none',
+            background: isWelding || isRobotMoving ? '#334155' : (dryRun ? '#2b7ae6' : '#0a5'), color: '#fff', border: 'none',
             borderRadius: 8, cursor: isWelding || isRobotMoving ? 'not-allowed' : 'pointer',
           }}
-        >용접 시작</button>
+        >{dryRun ? '경로 확인 시작' : '용접 시작'}</button>
         <button onClick={handleContinueWelding} disabled={isWelding || isRobotMoving}
           style={{
             padding: '14px', fontSize: 15, fontWeight: 'bold',
@@ -649,9 +916,13 @@ const PendantInner: React.FC = () => {
           setTeachBusy(true);
           try {
             await saveCurrentPositionToPoint(teachPointId);
+            playSaveOkBeep();
+            setTeachSaveFlash({ pointId: teachPointId, status: 'success' });
             showAlert(`${label} 위치 저장됨`, { type: 'success' });
-            setTeachPointId(null);
+            setTimeout(() => setTeachPointId(null), 500);
           } catch (e: any) {
+            playErrorBeep();
+            setTeachSaveFlash({ pointId: teachPointId, status: 'error' });
             showAlert(`저장 실패: ${e.message}`, { type: 'error' });
           } finally {
             setTeachBusy(false);
@@ -675,8 +946,13 @@ const PendantInner: React.FC = () => {
                 <h2 style={{ margin: 0, fontSize: 20 }}>{label} 티칭</h2>
                 <button onClick={() => setTeachPointId(null)} style={{ background: 'none', color: '#94a3b8', border: 'none', fontSize: 22, cursor: 'pointer' }}>×</button>
               </div>
-              <div style={{ marginBottom: 14, fontSize: 14, color: saved ? '#86efac' : '#f87171' }}>
+              <div style={{ marginBottom: 14, fontSize: 14, color: saved ? '#86efac' : '#f87171', display: 'flex', alignItems: 'center', gap: 8 }}>
                 상태: <strong>{saved ? '저장됨' : '미저장'}</strong>
+                {teachSaveFlash?.pointId === teachPointId && (
+                  <span style={{ color: teachSaveFlash.status === 'success' ? '#4ade80' : '#f87171', fontWeight: 'bold' }}>
+                    {teachSaveFlash.status === 'success' ? '✓ 저장 완료' : '✗ 저장 실패'}
+                  </span>
+                )}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <button onClick={doMove} disabled={!saved || isRobotMoving}

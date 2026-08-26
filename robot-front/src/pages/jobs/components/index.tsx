@@ -318,6 +318,7 @@ const JobDetail: React.FC<JobDetailProps> = ({
 export const JobDetail_JobDetail = JobDetail;
 interface JobListProps {
   jobs: TeachingJob[];
+  isFiltered?: boolean;
   selectedJobId: number | null;
   page: number;
   itemsPerPage: number;
@@ -339,6 +340,7 @@ const StatusBadge_JobList: React.FC<{ status: string; savedPoints?: number; tota
 };
 const JobList: React.FC<JobListProps> = ({
   jobs,
+  isFiltered,
   selectedJobId,
   page,
   itemsPerPage,
@@ -356,8 +358,14 @@ const JobList: React.FC<JobListProps> = ({
     return (
       <div className="text-center py-16 text-gray-500">
         <Calendar className="w-16 h-16 mx-auto mb-4 opacity-50" />
-        <p className="text-lg">저장된 작업이 없습니다.</p>
-        <p className="text-sm mt-2">티칭 화면에서 새 작업을 생성해주세요.</p>
+        {isFiltered ? (
+          <p className="text-lg">조건에 맞는 작업이 없습니다.</p>
+        ) : (
+          <>
+            <p className="text-lg">저장된 작업이 없습니다.</p>
+            <p className="text-sm mt-2">티칭 화면에서 새 작업을 생성해주세요.</p>
+          </>
+        )}
       </div>
     );
   }
@@ -517,6 +525,16 @@ export const getPointParams = (
     weaveRightStayTime: 0,
     weaveCircleRadio: 50,
   };
+};
+export type StatusFilter = 'all' | 'completed' | 'running' | 'teaching_done' | 'teaching_progress' | 'waiting';
+export const getStatusCategory = (status: string, savedPoints?: number, totalPoints?: number): Exclude<StatusFilter, 'all'> => {
+  const saved = savedPoints || 0;
+  const total = totalPoints || 10;
+  if (status === 'completed') return 'completed';
+  if (status === 'running') return 'running';
+  if (saved === total) return 'teaching_done';
+  if (saved > 0) return 'teaching_progress';
+  return 'waiting';
 };
 export const getStatusInfo = (status: string, savedPoints?: number, totalPoints?: number) => {
   const saved = savedPoints || 0;
