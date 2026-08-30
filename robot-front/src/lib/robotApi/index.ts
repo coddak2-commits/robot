@@ -1,7 +1,6 @@
 import axios, { AxiosResponse } from 'axios';
-import { Axios as api } from '..';
+import { Axios as api } from '../http';
 import { RobotJoints, RobotTCF, RobotMoveData, RobotStatusResponse } from '@/types/RobotData';
-export * from '../api';
 export { axios, api };
 export type { AxiosResponse };
 export const getRobotStatus = async (): Promise<RobotStatusResponse> => {
@@ -1063,6 +1062,7 @@ export interface SystemInfo {
   architecture: string;
   project_root: string;
   update_server: string;
+  uptime_seconds?: number;
 }
 export interface RobotSettingsData {
   tool_num: number;

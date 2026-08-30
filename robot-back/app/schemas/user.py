@@ -43,3 +43,7 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     role: UserRole | None = None
     is_active: bool | None = None
+
+
+class PasswordResetRequest(BaseModel):
+    new_password: str = Field(min_length=8)

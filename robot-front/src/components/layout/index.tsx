@@ -525,6 +525,7 @@ const Layout: React.FC = () => {
         localStorage.removeItem('user');
         localStorage.removeItem('gap_token');
         localStorage.removeItem('gap_user');
+        window.dispatchEvent(new Event('gap-auth-expired'));
         navigate('/login');
       }
     }, IDLE_CHECK_INTERVAL_MS);

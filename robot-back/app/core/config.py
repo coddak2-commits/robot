@@ -28,3 +28,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# JWT_SECRET_KEY가 기본값(또는 너무 짧은 값)으로 남아있으면 누구나 admin 토큰을 위조할 수 있으므로
+# .env가 누락/오설정된 상태로 조용히 기동되지 않도록 여기서 바로 막는다.
+if "change" in settings.JWT_SECRET_KEY.lower() or len(settings.JWT_SECRET_KEY) < 16:
+    raise RuntimeError(
+        "JWT_SECRET_KEY가 설정되지 않았거나 너무 짧습니다 (.env의 JWT_SECRET_KEY를 "
+        "16자 이상의 랜덤 값으로 설정하세요). 기본값으로는 서버를 시작할 수 없습니다."
+    )

@@ -1,5 +1,5 @@
 import { TeachingPoint, getExecutableParts, flattenExecutableParts, WEAVING_TYPE_OPTIONS, PartWeldEnabled, getPartBoundaryInfo } from '../..';
-import { enableRobot, RealtimeRobotStatus, startArc, endArc, endWeave, getWeldingConfig, WeldingConfigData, moveToJointPositionNonBlocking, checkMotionDone, createWeldingLog, WeldingLogData, WeldingLogSegment, wireSearchEnd, findDx, findDy, findDz, setWeaveParams, startWeave, arcOn, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder } from '../../../../lib';
+import { enableRobot, RealtimeRobotStatus, startArc, endArc, endWeave, getWeldingConfig, WeldingConfigData, moveToJointPositionNonBlocking, checkMotionDone, createWeldingLog, WeldingLogData, WeldingLogSegment, wireSearchEnd, findDx, findDy, findDz, setWeaveParams, startWeave, arcOn, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, isApiSuccess } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { setWeldingPartOrder } from '../..';
@@ -1003,8 +1003,8 @@ async function performRealTouchSensing(
       log_touchSensing.info('touchSensing.findDz.bottom', `${point.name} 하단 터치 시작 (Base -Z)`);
       const dzResult = await findDz(-1);
       if (dzResult?.status_code === 200 && dzResult.data?.delta_z !== undefined) {
-        dz = hasTop ? dz + dzResult.data.delta_z : dzResult.data.delta_z;
-        log_touchSensing.info('touchSensing.findDz.bottom.result', `하단 터치 완료`, { dz });
+        dz = hasTop ? (dz + dzResult.data.delta_z) / 2 : dzResult.data.delta_z;
+        log_touchSensing.info('touchSensing.findDz.bottom.result', `하단 터치 완료`, { dz, averaged: hasTop });
       }
     }
     await wireSearchEnd({});
@@ -1021,6 +1021,7 @@ export async function executeTouchSensing(
   context: TouchSensingContext,
 ): Promise<TouchSensingResult[]> {
   const { stopRef, setCurrentPointIndex, showAlert } = context;
+  stopRef.current = false;
   const totalTimer = log_touchSensing.startTimer();
   const isDryRun = options?.isDryRun ?? false;
   const modeLabel = isDryRun ? '터치 테스트' : '터치 센싱';
@@ -1070,7 +1071,6 @@ export async function executeTouchSensing(
     return [];
   }
   setCurrentPointIndex(0);
-  stopRef.current = false;
   const touchResults: TouchSensingResult[] = [];
   const Z_APPROACH_OFFSET = sequenceSettings.touchApproachOffset;
   try {
@@ -1436,7 +1436,7 @@ export async function safeArcOn(
 ): Promise<boolean> {
   try {
     log_weaveHelpers.info('safeArcOn', '아크 ON 시퀀스 시작', { current, voltage, gasPreFlowMs });
-    await arcOn(
+    const response = await arcOn(
       Math.round(current),
       Math.round(voltage),
       0,
@@ -1444,6 +1444,10 @@ export async function safeArcOn(
       10000,
       gasPreFlowMs
     );
+    if (!isApiSuccess(response)) {
+      log_weaveHelpers.error('safeArcOn.failed', '아크 ON 실패 (응답 오류)', { response });
+      return false;
+    }
     log_weaveHelpers.info('safeArcOn.done', '아크 ON 완료');
     return true;
   } catch (error) {
@@ -1489,7 +1493,8 @@ export async function startPartWelding(
   if (hasWelding && !simMode) {
     const current = point.weldCurrent || fallbackPoint.weldCurrent || 100;
     const voltage = point.weldVoltage || fallbackPoint.weldVoltage || 20;
-    await safeArcOn(current, voltage, gasPreFlowMs);
+    const arcOnOk = await safeArcOn(current, voltage, gasPreFlowMs);
+    if (!arcOnOk) throw new Error(`${point.name}: 아크 ON 실패로 용접을 중단합니다`);
   }
   if (hasWeaving && weaveTypeCode >= 0) {
     await setupAndStartWeave(point, fallbackPoint);
@@ -1708,7 +1713,7 @@ export async function executeWelding(
     } else {
       if (startPoint.tcp && !stopRef.current) {
         log_weldingExecution.info('welding.start.approach', `시작점 +X +${approachOffset}mm 접근`);
-        await moveToCartesianPosition(
+        const approachResult = await moveToCartesianPosition(
           startPoint.tcp,
           30,
           100,
@@ -1721,6 +1726,7 @@ export async function executeWelding(
           startPoint.userNum ?? 0,
           0,
         );
+        if (approachResult?.status_code !== 200) throw new Error('시작점 접근 이동 실패');
       }
     }
     if (stopRef.current) return await handleStopped(0);
@@ -1752,7 +1758,7 @@ export async function executeWelding(
         useStartOffset = true;
       }
       log_weldingExecution.info('welding.finalDescent', '최종 하강', { useOffset: useStartOffset });
-      await moveToCartesianPosition(
+      const descentResult = await moveToCartesianPosition(
         startPoint.tcp,
         30,
         100,
@@ -1765,15 +1771,18 @@ export async function executeWelding(
         startPoint.userNum ?? 0,
         0,
       );
+      if (descentResult?.status_code !== 200) throw new Error('최종 하강 이동 실패');
     }
     if (stopRef.current) return await handleStopped(0);
     const isStartAtPartEnd = partBoundaryInfo.partEndIndices.includes(startPointIndex);
-    if (hasWelding && !simMode && !isStartAtPartEnd && !isWeldingTest)
-      await safeArcOn(
+    if (hasWelding && !simMode && !isStartAtPartEnd && !isWeldingTest) {
+      const arcOnOk = await safeArcOn(
         firstWeldPoint.weldCurrent!,
         firstWeldPoint.weldVoltage!,
         safetySettings.gasPreFlowTime,
       );
+      if (!arcOnOk) throw new Error('아크 ON 실패로 용접을 중단합니다');
+    }
     if (hasWeaving && weaveTypeCode >= 0 && !isStartAtPartEnd)
       await setupAndStartWeave(firstWeldPoint, firstWeldPoint);
     if (!isStartAtPartEnd) setArcActive?.(true);
@@ -1816,7 +1825,7 @@ export async function executeWelding(
               ? `파트 전환 ①: base +X +${approachOffset}mm 후퇴`
               : `파트 전환 ①(횡단): base +X +${CROSS_CLEARANCE_X} / +Z +${CROSS_LIFT_Z}mm 후퇴`,
           );
-          await moveToCartesianPosition(
+          const retractResult = await moveToCartesianPosition(
             prevPoint.tcp,
             transitionSpeed,
             100,
@@ -1829,6 +1838,7 @@ export async function executeWelding(
             prevPoint.userNum ?? 0,
             0,
           );
+          if (retractResult?.status_code !== 200) throw new Error('파트 전환 후퇴 이동 실패');
         }
         if (!stopRef.current) {
           if (isSameSide && point.tcp) {
@@ -1836,7 +1846,7 @@ export async function executeWelding(
               'welding.partTransition.approachSameSide',
               `파트 전환 ②: ${point.name} 같은 쪽 → +X +${approachOffset}mm 정면 이격 (③ 직선 진입)`,
             );
-            await moveToCartesianPosition(
+            const sameSideResult = await moveToCartesianPosition(
               point.tcp,
               transitionSpeed,
               100,
@@ -1849,6 +1859,7 @@ export async function executeWelding(
               point.userNum ?? 0,
               0,
             );
+            if (sameSideResult?.status_code !== 200) throw new Error('파트 전환(같은 쪽) 접근 이동 실패');
           } else if (point.joints && point.joints.length === 6) {
             let liftedJoints: number[] | null = null;
             if (point.tcp) {
@@ -1880,7 +1891,7 @@ export async function executeWelding(
                   'welding.partTransition.descend',
                   `파트 전환 ②.5(횡단): ${point.name} 정면 이격면(+X${CROSS_CLEARANCE_X})으로 하강`,
                 );
-                await moveToCartesianPosition(
+                const descendResult = await moveToCartesianPosition(
                   point.tcp,
                   transitionSpeed,
                   100,
@@ -1893,6 +1904,7 @@ export async function executeWelding(
                   point.userNum ?? 0,
                   0,
                 );
+                if (descendResult?.status_code !== 200) throw new Error('파트 전환(횡단) 하강 이동 실패');
               }
             } else {
               log_weldingExecution.warn(
@@ -1913,7 +1925,7 @@ export async function executeWelding(
               'welding.partTransition.approach',
               `파트 전환 ②: ${point.name} 목표 +X +${approachOffset}mm 접근 (joints 없음 → MoveL 폴백)`,
             );
-            await moveToCartesianPosition(
+            const fallbackResult = await moveToCartesianPosition(
               point.tcp,
               transitionSpeed,
               100,
@@ -1926,6 +1938,7 @@ export async function executeWelding(
               point.userNum ?? 0,
               0,
             );
+            if (fallbackResult?.status_code !== 200) throw new Error('파트 전환(MoveL 폴백) 접근 이동 실패');
           }
         }
         if (point.tcp && !stopRef.current) {
@@ -1946,7 +1959,7 @@ export async function executeWelding(
             'welding.partTransition.final',
             `파트 전환 ③: ${point.name} 정위치${usePointOffset ? ' (touchOffset 적용)' : ''}`,
           );
-          await moveToCartesianPosition(
+          const finalResult = await moveToCartesianPosition(
             point.tcp,
             transitionSpeed,
             100,
@@ -1959,6 +1972,7 @@ export async function executeWelding(
             point.userNum ?? 0,
             0,
           );
+          if (finalResult?.status_code !== 200) throw new Error('파트 전환 정위치 이동 실패');
         }
         await startPartWelding(
           point,
@@ -2057,7 +2071,7 @@ export async function executeWelding(
       const lastWeldPoint = weldingPoints[weldingPoints.length - 1];
       if (lastWeldPoint?.tcp) {
         log_weldingExecution.info('welding.retract', 'TCP Z -100mm 후퇴');
-        await moveToCartesianPosition(
+        const retreatResult = await moveToCartesianPosition(
           lastWeldPoint.tcp,
           30,
           100,
@@ -2070,6 +2084,10 @@ export async function executeWelding(
           lastWeldPoint.userNum ?? 0,
           0,
         );
+        if (retreatResult?.status_code !== 200)
+          log_weldingExecution.warn('welding.retract.failed', '최종 후퇴 이동 실패 (용접 자체는 완료됨)', {
+            status: retreatResult?.status_code,
+          });
       }
     }
     if (!stopRef.current && homePoint?.joints) {

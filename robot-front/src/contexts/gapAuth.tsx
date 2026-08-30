@@ -30,6 +30,14 @@ export const GapAuthProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   }, []);
 
+  // 401 응답, 유휴 타임아웃, 다른 화면에서의 로그아웃 등 컨텍스트 밖에서
+  // 토큰이 지워졌을 때도 컴포넌트 상태를 같이 비워줌
+  useEffect(() => {
+    const onExpired = () => setUser(null);
+    window.addEventListener('gap-auth-expired', onExpired);
+    return () => window.removeEventListener('gap-auth-expired', onExpired);
+  }, []);
+
   const login = useCallback(async (username: string, password: string) => {
     const u = await loginGap(username, password);
     localStorage.setItem('gap_token', u.access_token);

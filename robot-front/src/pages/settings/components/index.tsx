@@ -5,8 +5,9 @@ import { sendDiagnosticLogsEmail, downloadLogsZipUrl, updateRobotSettings } from
 import { SettingsToggleRow } from '../../../components/common/index';
 import { formatDateTime } from '../../../utils';
 import { useNavigate } from 'react-router-dom';
-import { useTheme, useLang } from '../../../contexts';
+import { useTheme, useLang, useUpdaterContext } from '../../../contexts';
 import { setSoundEnabled, setAutoLogoutMinutes, setNotificationsEnabled } from '../../../lib/appSettings';
+import { percent, displayProgress } from '../../../lib/updater';
 interface ArcTrackingSectionProps {
   settings: TouchSensingSettings;
   updateTouch: (field: keyof TouchSensingSettings, value: boolean | number) => void;
@@ -152,7 +153,7 @@ const LS_LOG_EMAIL = 'vot.diagnosticLogs.recipient';
 const LS_LOG_AUTO = 'vot.diagnosticLogs.autoSendOnError';
 const LS_LOG_DAYS = 'vot.diagnosticLogs.days';
 const LS_LOG_MAX = 'vot.diagnosticLogs.maxFiles';
-const DEFAULT_RECIPIENT = 'the@aeokorea.com';
+const DEFAULT_RECIPIENT = 'coddak2@gmail.com';
 const DiagnosticLogsSection: React.FC = () => {
   const [logRecipient, setLogRecipient] = useState<string>(
     () => localStorage.getItem(LS_LOG_EMAIL) || DEFAULT_RECIPIENT,
@@ -294,8 +295,6 @@ const DiagnosticLogsSection: React.FC = () => {
 };
 export const DiagnosticLogsSection_DiagnosticLogsSection = DiagnosticLogsSection;
 interface RobotSettingsTabProps {
-  config: SystemConfig;
-  setConfig: React.Dispatch<React.SetStateAction<SystemConfig | null>>;
   robotCoordSettings: RobotSettingsData;
   setRobotCoordSettings: React.Dispatch<React.SetStateAction<RobotSettingsData>>;
   robotError: RobotErrorData | null;
@@ -305,8 +304,6 @@ interface RobotSettingsTabProps {
   onResetError: () => void;
 }
 const RobotSettingsTab: React.FC<RobotSettingsTabProps> = ({
-  config,
-  setConfig,
   robotCoordSettings,
   setRobotCoordSettings,
   robotError,
@@ -321,94 +318,8 @@ const RobotSettingsTab: React.FC<RobotSettingsTabProps> = ({
         <Cpu className="w-6 h-6 text-cyan-400" />
         로봇 기본 설정
       </h2>
-      <div
-        className="grid grid-cols-1 md:grid-cols-2 gap-6"
-        data-audit="unused"
-        data-audit-note="미사용: 기본 속도/최대 속도/기본 가속도/안전구역 활성화는 mock 저장만 — 실제 동작 미반영 (충돌 감지는 robot_settings 연동으로 수정됨)"
-        data-audit-loc="src/pages/settings/components/RobotSettingsTab.tsx:45"
-      >
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-4">
-          <div>
-            <label className="block text-gray-400 text-sm mb-2 font-medium">기본 속도 (%)</label>
-            <input
-              type="number"
-              value={config.robotSettings.defaultSpeed}
-              onChange={e =>
-                setConfig(prev =>
-                  prev
-                    ? {
-                        ...prev,
-                        robotSettings: {
-                          ...prev.robotSettings,
-                          defaultSpeed: Number(e.target.value),
-                        },
-                      }
-                    : null,
-                )
-              }
-              className="w-full px-4 py-4 bg-gray-900 border border-gray-700 rounded-xl text-white focus:border-cyan-500 focus:outline-none text-lg"
-              min="1"
-              max="100"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-400 text-sm mb-2 font-medium">최대 속도 (%)</label>
-            <input
-              type="number"
-              value={config.robotSettings.maxSpeed}
-              onChange={e =>
-                setConfig(prev =>
-                  prev
-                    ? {
-                        ...prev,
-                        robotSettings: { ...prev.robotSettings, maxSpeed: Number(e.target.value) },
-                      }
-                    : null,
-                )
-              }
-              className="w-full px-4 py-4 bg-gray-900 border border-gray-700 rounded-xl text-white focus:border-cyan-500 focus:outline-none text-lg"
-              min="1"
-              max="100"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-400 text-sm mb-2 font-medium">기본 가속도</label>
-            <input
-              type="number"
-              value={config.robotSettings.defaultAcceleration}
-              onChange={e =>
-                setConfig(prev =>
-                  prev
-                    ? {
-                        ...prev,
-                        robotSettings: {
-                          ...prev.robotSettings,
-                          defaultAcceleration: Number(e.target.value),
-                        },
-                      }
-                    : null,
-                )
-              }
-              className="w-full px-4 py-4 bg-gray-900 border border-gray-700 rounded-xl text-white focus:border-cyan-500 focus:outline-none text-lg"
-            />
-          </div>
-        </div>
-        <div className="space-y-4">
-          <SettingsToggleRow
-            label="안전 구역 활성화"
-            description="로봇 동작 범위 제한"
-            enabled={config.robotSettings.safetyZoneEnabled}
-            onChange={enabled =>
-              setConfig(prev =>
-                prev
-                  ? {
-                      ...prev,
-                      robotSettings: { ...prev.robotSettings, safetyZoneEnabled: enabled },
-                    }
-                  : null,
-              )
-            }
-          />
           <SettingsToggleRow
             label="충돌 감지"
             description="켜짐: 중간 감도 / 꺼짐: 최소 감도 (완전 비활성화 아님)"
@@ -420,12 +331,7 @@ const RobotSettingsTab: React.FC<RobotSettingsTabProps> = ({
         </div>
       </div>
       {}
-      <div
-        className="mt-8 pt-6 border-t border-gray-700"
-        data-audit="dup"
-        data-audit-note="중복: 좌표계 설정 — /settings 와 /settings/robot(CoordinateSettings)가 동일 robot_settings 편집"
-        data-audit-loc="src/pages/settings/components/RobotSettingsTab.tsx:120"
-      >
+      <div className="mt-8 pt-6 border-t border-gray-700">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-white flex items-center gap-2">
             <Settings className="w-5 h-5 text-orange-400" />
@@ -1150,24 +1056,12 @@ export { NumberInput };
 export const TouchSensingSection_TouchSensingSection = TouchSensingSection;
 interface UpdateTabProps {
   versionInfo: VersionInfo | null;
-  updateCheck: UpdateCheckResponse | null;
-  updateStatus: UpdateStatus | null;
   systemInfo: SystemInfo | null;
-  checkingUpdate: boolean;
-  updating: boolean;
-  onCheckUpdate: () => void;
-  onStartUpdate: () => void;
 }
-const UpdateTab: React.FC<UpdateTabProps> = ({
-  versionInfo,
-  updateCheck,
-  updateStatus,
-  systemInfo,
-  checkingUpdate,
-  updating,
-  onCheckUpdate,
-  onStartUpdate,
-}) => {
+const UpdateTab: React.FC<UpdateTabProps> = ({ versionInfo, systemInfo }) => {
+  const updater = useUpdaterContext();
+  const status = updater.status;
+  const isBusy = ['checking', 'downloading', 'verifying', 'installing'].includes(status.kind);
   return (
     <div className="p-6">
       <h2 className="text-xl font-semibold text-white flex items-center gap-2 mb-6">
@@ -1229,26 +1123,24 @@ const UpdateTab: React.FC<UpdateTabProps> = ({
               업데이트 확인
             </h3>
             {}
-            {updateCheck && (
+            {(status.kind === 'up_to_date' || status.kind === 'available' || status.kind === 'pending') && (
               <div
                 className={`mb-4 p-4 rounded-xl ${
-                  updateCheck.update_available
+                  status.kind !== 'up_to_date'
                     ? 'bg-green-500/10 border border-green-500/30'
                     : 'bg-gray-700/30 border border-gray-600/30'
                 }`}
               >
-                {updateCheck.update_available ? (
+                {status.kind !== 'up_to_date' ? (
                   <div className="flex items-center gap-3">
                     <CheckCircle className="w-6 h-6 text-green-400" />
                     <div>
                       <div className="text-green-400 font-medium">새 업데이트 사용 가능!</div>
                       <div className="text-gray-300 text-sm">
-                        v{updateCheck.current_version} → v{updateCheck.latest_version}
+                        v{updater.currentVersion} → v{status.release.version}
                       </div>
-                      {updateCheck.release_notes && (
-                        <div className="text-gray-400 text-sm mt-1">
-                          {updateCheck.release_notes}
-                        </div>
+                      {status.release.notes && (
+                        <div className="text-gray-400 text-sm mt-1">{status.release.notes}</div>
                       )}
                     </div>
                   </div>
@@ -1257,77 +1149,68 @@ const UpdateTab: React.FC<UpdateTabProps> = ({
                     <CheckCircle className="w-6 h-6 text-gray-400" />
                     <div>
                       <div className="text-gray-300 font-medium">최신 버전입니다</div>
-                      <div className="text-gray-400 text-sm">
-                        현재 버전: v{updateCheck.current_version}
-                      </div>
+                      <div className="text-gray-400 text-sm">현재 버전: v{updater.currentVersion}</div>
                     </div>
                   </div>
                 )}
               </div>
             )}
             {}
-            {updateStatus && updating && (
+            {status.kind === 'downloading' && (
               <div className="mb-4 p-4 rounded-xl bg-blue-500/10 border border-blue-500/30">
                 <div className="flex items-center gap-3 mb-3">
                   <RefreshCw className="w-5 h-5 text-blue-400 animate-spin" />
-                  <div className="text-blue-300 font-medium">{updateStatus.message}</div>
+                  <div className="text-blue-300 font-medium">다운로드 중...</div>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2">
                   <div
                     className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${updateStatus.progress}%` }}
+                    style={{ width: `${percent(status.progress)}%` }}
                   />
                 </div>
                 <div className="text-gray-400 text-sm mt-2 text-center">
-                  {updateStatus.progress}%
+                  {displayProgress(status.progress)}
                 </div>
               </div>
             )}
             {}
-            {updateStatus && !updating && updateStatus.status !== 'idle' && (
-              <div
-                className={`mb-4 p-4 rounded-xl ${
-                  updateStatus.status === 'completed'
-                    ? 'bg-green-500/10 border border-green-500/30'
-                    : updateStatus.status === 'error'
-                      ? 'bg-red-500/10 border border-red-500/30'
-                      : ''
-                }`}
-              >
+            {(status.kind === 'verifying' || status.kind === 'installing') && (
+              <div className="mb-4 p-4 rounded-xl bg-blue-500/10 border border-blue-500/30">
                 <div className="flex items-center gap-3">
-                  {updateStatus.status === 'completed' ? (
-                    <CheckCircle className="w-5 h-5 text-green-400" />
-                  ) : (
-                    <AlertCircle className="w-5 h-5 text-red-400" />
-                  )}
-                  <div
-                    className={`font-medium ${
-                      updateStatus.status === 'completed' ? 'text-green-300' : 'text-red-300'
-                    }`}
-                  >
-                    {updateStatus.message}
+                  <RefreshCw className="w-5 h-5 text-blue-400 animate-spin" />
+                  <div className="text-blue-300 font-medium">
+                    {status.kind === 'verifying' ? '파일 검증 중...' : '설치 프로그램 실행 중...'}
                   </div>
+                </div>
+              </div>
+            )}
+            {}
+            {status.kind === 'error' && (
+              <div className="mb-4 p-4 rounded-xl bg-red-500/10 border border-red-500/30">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-400" />
+                  <div className="font-medium text-red-300">{status.message}</div>
                 </div>
               </div>
             )}
             {}
             <div className="flex gap-3">
               <button
-                onClick={onCheckUpdate}
-                disabled={checkingUpdate || updating}
+                onClick={() => updater.checkNow()}
+                disabled={isBusy}
                 className="flex-1 px-5 py-3 bg-gray-700/80 hover:bg-gray-600 disabled:opacity-50 rounded-xl text-white transition flex items-center justify-center gap-2 font-medium border border-gray-600"
               >
-                <RefreshCw className={`w-5 h-5 ${checkingUpdate ? 'animate-spin' : ''}`} />
-                {checkingUpdate ? '확인 중...' : '업데이트 확인'}
+                <RefreshCw className={`w-5 h-5 ${status.kind === 'checking' ? 'animate-spin' : ''}`} />
+                {status.kind === 'checking' ? '확인 중...' : '업데이트 확인'}
               </button>
-              {updateCheck?.update_available && (
+              {(status.kind === 'available' || status.kind === 'pending') && (
                 <button
-                  onClick={onStartUpdate}
-                  disabled={updating}
+                  onClick={() => updater.startUpdate(status.release)}
+                  disabled={isBusy}
                   className="flex-1 px-5 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 rounded-xl text-white transition flex items-center justify-center gap-2 font-medium"
                 >
-                  <Download className={`w-5 h-5 ${updating ? 'animate-bounce' : ''}`} />
-                  {updating ? '업데이트 중...' : '업데이트 설치'}
+                  <Download className="w-5 h-5" />
+                  업데이트 설치
                 </button>
               )}
             </div>

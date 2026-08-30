@@ -54,7 +54,7 @@ export const useAlert = (): AlertContextType => {
 export const AlertContext_AlertContext = AlertContext;
 const UpdaterContext = createContext<UseUpdaterReturn | null>(null);
 export function UpdaterProvider({ children }: { children: ReactNode }) {
-  const updater = useUpdater({ disableAutoCheck: true });
+  const updater = useUpdater();
   return <UpdaterContext.Provider value={updater}>{children}</UpdaterContext.Provider>;
 }
 export function useUpdaterContext(): UseUpdaterReturn {

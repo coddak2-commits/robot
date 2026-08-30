@@ -8,7 +8,7 @@ from app.models.user import User
 from app.models.welding import (
     PromotionRequest, PromotionStatus, WeldingParam,
 )
-from app.schemas.welding import PromotionRequestOut, PromotionReviewRequest
+from app.schemas.welding import PromotionRequestOut, PromotionReviewRequest, ALLOWED_OVERRIDE_FIELDS
 
 router = APIRouter(prefix="/api/promotions", tags=["promotions"])
 
@@ -58,8 +58,8 @@ def review_promotion(
         ).first()
         if not target:
             raise HTTPException(status_code=404, detail="Target param not found (may have been deactivated)")
-        # 필드 이름 검증
-        if not hasattr(target, r.field_name):
+        # 필드 이름 검증 - 화이트리스트에 없는 필드(id, active 등)는 setattr 대상이 될 수 없음
+        if r.field_name not in ALLOWED_OVERRIDE_FIELDS or not hasattr(target, r.field_name):
             raise HTTPException(status_code=400, detail=f"Invalid field {r.field_name}")
         # 값 세팅
         setattr(target, r.field_name, r.requested_value)

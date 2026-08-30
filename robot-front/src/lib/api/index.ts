@@ -1,4 +1,4 @@
-import { Axios as api } from '..';
+import { Axios as api } from '../http';
 export type {
   RealtimeRobotStatus,
   RobotConnectionResponse,

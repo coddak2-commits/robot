@@ -114,6 +114,7 @@ export function CellSelectionCore({
   const {
     isWelding,
     isTouchSensing,
+    isArcTesting,
     currentPointIndex,
     simulationMode,
     dryRunMode,
@@ -175,6 +176,9 @@ export function CellSelectionCore({
     teachingPoints,
     teachingRobotState,
     manualMoveSpeed,
+    isWelding,
+    isTouchSensing,
+    isArcTesting,
     isAtPosition,
     moveToPoint,
     saveJob,

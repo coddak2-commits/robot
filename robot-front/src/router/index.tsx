@@ -63,7 +63,9 @@ const Router = () => {
             <RequireRole roles={['admin']}><PromotionsPage /></RequireRole>
           } />
         </Route>
-        <Route path="pendant" element={<PendantPage />} />
+        <Route path="pendant" element={
+          <RequireRole roles={['admin', 'operator']}><PendantPage /></RequireRole>
+        } />
         <Route path="menu" element={<Main />} />
         <Route path="login" element={<Login />} />
         <Route path="gap/login" element={<GapLoginPage />} />

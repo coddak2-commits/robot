@@ -14,11 +14,20 @@
 #include <chrono>
 #include <nlohmann/json.hpp>
 #include <filesystem>
+#include <vector>
+#include <string>
+#include <algorithm>
 #ifdef _WIN32
 #include <windows.h>
 #include <shellapi.h>
 #endif
 using json = nlohmann::json;
+// 클라이언트가 보낸 이동 파라미터는 로봇 SDK로 그대로 넘기기 전에
+// 반드시 안전 범위로 clamp한다 (vel/acc/ovl은 SDK 퍼센트 단위 0~100).
+namespace {
+    float clampMotionPercent(float v) { return std::min(std::max(v, 0.1f), 100.0f); }
+    float clampMaxDis(float d) { return std::min(std::max(d, 0.1f), 360.0f); }
+}
 bool g_packagedMode = false;
 std::string g_webRoot = "";
 #ifdef _WIN32
@@ -48,6 +57,23 @@ void startFrontendDevServer() {
         std::cerr << "[Main] Failed to start React dev server: " << GetLastError() << std::endl;
     }
 }
+void killRobotBack() {
+    // launcher.bat가 별도로 띄운 robot-back.exe는 robot_core.exe 종료만으로 안 꺼짐 -> 같이 정리
+    STARTUPINFOA killSi{};
+    PROCESS_INFORMATION killPi{};
+    killSi.cb = sizeof(killSi);
+    killSi.dwFlags = STARTF_USESHOWWINDOW;
+    killSi.wShowWindow = SW_HIDE;
+    std::string killCmd = "taskkill /F /IM robot-back.exe";
+    std::vector<char> mutableKillCmd(killCmd.begin(), killCmd.end());
+    mutableKillCmd.push_back('\0');
+    if (CreateProcessA(nullptr, mutableKillCmd.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &killSi, &killPi)) {
+        WaitForSingleObject(killPi.hProcess, 3000);
+        CloseHandle(killPi.hProcess);
+        CloseHandle(killPi.hThread);
+    }
+}
 void stopFrontendDevServer() {
     std::cout << "[Main] Stopping React dev server..." << std::endl;
     STARTUPINFOA si = { sizeof(si) };
@@ -73,6 +99,7 @@ HttpServer* g_httpServer = nullptr;
 std::string g_robotIp = "192.168.58.2";
 std::string g_exePath;
 int g_httpPort = 8080;
+const std::chrono::steady_clock::time_point g_serverStartTime = std::chrono::steady_clock::now();
 #ifdef _WIN32
 TrayIcon* g_trayIcon = nullptr;
 static bool g_consoleAllocated = false;
@@ -194,6 +221,15 @@ int runService() {
             mgmtDialog.show(GetModuleHandle(NULL));
         });
     }
+    // 실행 시 관리자 패널 + 브라우저 자동 오픈
+    mgmtDialog.show(GetModuleHandle(NULL));
+    {
+        std::wstring url = L"http://localhost:" + std::to_wstring(g_packagedMode ? g_httpPort : 3000);
+        int r = (int)(intptr_t)ShellExecuteW(NULL, L"open",
+            L"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            (L"--new-window " + url).c_str(), NULL, SW_SHOWNORMAL);
+        if (r <= 32) ShellExecuteW(NULL, L"open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+    }
 #endif
     robotService.setStateCallback([&zmqServer](const ROBOT_STATE_PKG& state) {
         json stateJson;
@@ -283,6 +319,9 @@ int runService() {
     }
     if (!g_restart && !g_packagedMode) {
         stopFrontendDevServer();
+    }
+    if (!g_restart) {
+        killRobotBack();
     }
 #endif
     robotService.stopStateMonitor();
@@ -433,6 +472,7 @@ int RobotService::setMode(int mode) {
     return m_robot.Mode(mode);
 }
 ROBOT_STATE_PKG RobotService::getState() {
+    std::lock_guard<std::mutex> lock(m_mutex);
     ROBOT_STATE_PKG state = {0};
     if (m_connected) {
         m_robot.GetRobotRealTimeState(&state);
@@ -444,17 +484,31 @@ int RobotService::moveJ(const double joints[6], int tool, int user,
                         uint8_t offsetFlag, const double* offsetPos) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_connected) return -1;
-    JointPos jointPos(joints[0], joints[1], joints[2],
-                      joints[3], joints[4], joints[5]);
+    // 저장된 관절값과 현재 관절값의 회전수(turn)가 다르면 그대로 넘길 때 최단 경로가 아닌
+    // 거의 360도 회전이 발생할 수 있음 -> 축별로 현재값 기준 최단 경로(±180도)로 정규화.
+    double normJoints[6];
+    ROBOT_STATE_PKG curState = {0};
+    m_robot.GetRobotRealTimeState(&curState);
+    for (int i = 0; i < 6; i++) {
+        double diff = joints[i] - curState.jt_cur_pos[i];
+        while (diff > 180.0) diff -= 360.0;
+        while (diff < -180.0) diff += 360.0;
+        normJoints[i] = curState.jt_cur_pos[i] + diff;
+    }
+    JointPos jointPos(normJoints[0], normJoints[1], normJoints[2],
+                      normJoints[3], normJoints[4], normJoints[5]);
     ExaxisPos epos(0, 0, 0, 0);
     DescPose offset(0, 0, 0, 0, 0, 0);
     if (offsetPos) {
         offset = DescPose(offsetPos[0], offsetPos[1], offsetPos[2],
                           offsetPos[3], offsetPos[4], offsetPos[5]);
     }
-    std::cout << "[RobotService] MoveJ: ["
+    std::cout << "[RobotService] MoveJ: requested=["
               << joints[0] << ", " << joints[1] << ", " << joints[2] << ", "
               << joints[3] << ", " << joints[4] << ", " << joints[5]
+              << "] normalized=["
+              << normJoints[0] << ", " << normJoints[1] << ", " << normJoints[2] << ", "
+              << normJoints[3] << ", " << normJoints[4] << ", " << normJoints[5]
               << "] vel=" << vel << std::endl;
     int ret = m_robot.MoveJ(&jointPos, tool, user, vel, acc, ovl,
                             &epos, blendT, offsetFlag, &offset);
@@ -855,6 +909,7 @@ void RobotService::monitorLoop(int intervalMs) {
     }
 }
 bool RobotService::checkConnection() {
+    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_connected) return false;
     try {
         ROBOT_STATE_PKG state = {0};
@@ -878,6 +933,7 @@ bool RobotService::checkConnection() {
     }
 }
 bool RobotService::tryReconnect() {
+    std::lock_guard<std::mutex> lock(m_mutex);
     if (m_lastIp.empty()) return false;
     FLOG_DEBUG("RobotMonitor", "Trying to reconnect to " + m_lastIp);
     std::cout << "[RobotService] Trying to reconnect to " << m_lastIp << "..." << std::endl;
@@ -2999,10 +3055,21 @@ bool HttpServer::start(int port) {
             path == "/system/version") {
             return httplib::Server::HandlerResponse::Unhandled;
         }
-        if (path.find("/updater/") == 0) {
+        if (path.find("/api/logs/download.zip") == 0) {
             return httplib::Server::HandlerResponse::Unhandled;
         }
-        if (path.find("/api/logs/download.zip") == 0) {
+        if (path.find("/updater/") == 0) {
+            // 자동 업데이트는 로그인 전(앱 시작 직후)에도 동작해야 하므로 토큰 대신
+            // "이 기기 자신(localhost)에서 온 요청인가"로 제한한다. 원격에서는 토큰이 있어도 차단.
+            bool isLoopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+            if (!isLoopback) {
+                res.set_header("Access-Control-Allow-Origin", "*");
+                res.status = 403;
+                res.set_content(
+                    "{\"status_code\":403,\"message\":\"Updater endpoints are local-only\"}",
+                    "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
             return httplib::Server::HandlerResponse::Unhandled;
         }
         if (req.method == "GET" &&
@@ -3416,9 +3483,9 @@ void registerRobotRoutes(
             }
             int tool = body.value("tool", 0);
             int user = body.value("user", 0);
-            float vel = body.value("vel", 20.0f);
-            float acc = body.value("acc", 100.0f);
-            float ovl = body.value("ovl", 100.0f);
+            float vel = clampMotionPercent(body.value("vel", 20.0f));
+            float acc = clampMotionPercent(body.value("acc", 100.0f));
+            float ovl = clampMotionPercent(body.value("ovl", 100.0f));
             float blendT = body.value("blendT", -1.0f);
             int result = robotService.moveJ(joints, tool, user, vel, acc, ovl, blendT);
             json data;
@@ -3444,9 +3511,9 @@ void registerRobotRoutes(
             }
             int tool = body.value("tool", 0);
             int user = body.value("user", 0);
-            float vel = body.value("vel", 20.0f);
-            float acc = body.value("acc", 100.0f);
-            float ovl = body.value("ovl", 100.0f);
+            float vel = clampMotionPercent(body.value("vel", 20.0f));
+            float acc = clampMotionPercent(body.value("acc", 100.0f));
+            float ovl = clampMotionPercent(body.value("ovl", 100.0f));
             float blendR = body.value("blendR", -1.0f);
             int result = robotService.moveL(pos, tool, user, vel, acc, ovl, blendR);
             json data;
@@ -4179,6 +4246,17 @@ void registerWeldingBatchRoutes(
             float speedRaw = firstPt.value("speed", 15.0f);
             int velModeIn = firstPt.value("vel_mode", 1);
             float speed = (velModeIn == 1) ? speedRaw * 1.13f / 72.0f : speedRaw;
+            if (dbService && dbService->isConnected()) {
+                RobotSettings ovlSettings = dbService->getRobotSettings();
+                int ovlPct = ovlSettings.default_ovl;
+                if (ovlPct < 10) ovlPct = 10;
+                if (ovlPct > 150) ovlPct = 150;
+                if (ovlPct != 100) {
+                    speed = speed * (ovlPct / 100.0f);
+                    FLOG_INFO("WeldBatch", "속도 오버라이드 적용: " + std::to_string(ovlPct) +
+                        "% -> speed=" + std::to_string(speed));
+                }
+            }
             int velMode = 0;
             int tool = firstPt.value("tool", 3);
             int user = firstPt.value("user", 0);
@@ -5290,9 +5368,9 @@ void registerSdkMotionRoutes(
             int ref = body.value("ref", 0);
             int nb = body.value("nb", 1);
             int dir = body.value("dir", 1);
-            float vel = body.value("vel", 20.0f);
-            float acc = body.value("acc", 100.0f);
-            float maxDis = body.value("max_dis", 360.0f);
+            float vel = clampMotionPercent(body.value("vel", 20.0f));
+            float acc = clampMotionPercent(body.value("acc", 100.0f));
+            float maxDis = clampMaxDis(body.value("max_dis", 360.0f));
             int toolNum = 0, userNum = 0;
             if (dbService && dbService->isConnected()) {
                 RobotSettings settings = dbService->getRobotSettings();
@@ -5374,17 +5452,16 @@ void registerSdkMotionRoutes(
             int tool = body.value("tool", 0);
             int user = body.value("user", 0);
             float vel = body.value("vel", 20.0f);
-            float acc = body.value("acc", 100.0f);
-            float ovl = body.value("ovl", 100.0f);
+            float acc = clampMotionPercent(body.value("acc", 100.0f));
+            float ovl = clampMotionPercent(body.value("ovl", 100.0f));
             float blendT = body.value("blend_t", -1.0f);
             int velMode = body.value("vel_mode", 0);
             float actualVel = vel;
             if (velMode == 1) {
                 actualVel = vel / 15.0f;
-                if (actualVel > 100.0f) actualVel = 100.0f;
-                if (actualVel < 1.0f) actualVel = 1.0f;
                 std::cout << "[MoveJ] vel_mode=CPM, converting " << vel << " CPM to " << actualVel << "%" << std::endl;
             }
+            actualVel = clampMotionPercent(actualVel);
             {
                 std::ostringstream oss;
                 oss << std::fixed << std::setprecision(2) << "MoveJ: joints=[" << joints[0] << "," << joints[1] << "," << joints[2] << "," << joints[3] << "," << joints[4] << "," << joints[5] << "] vel=" << actualVel << " tool=" << tool << " user=" << user;
@@ -5427,8 +5504,8 @@ void registerSdkMotionRoutes(
             int tool = body.value("tool", 3);
             int user = body.value("user", 0);
             float vel = body.value("vel", 20.0f);
-            float acc = body.value("acc", 100.0f);
-            float ovl = body.value("ovl", 100.0f);
+            float acc = clampMotionPercent(body.value("acc", 100.0f));
+            float ovl = clampMotionPercent(body.value("ovl", 100.0f));
             float blendR = body.value("blend_t", -1.0f);
             int velMode = body.value("vel_mode", 0);
             int offsetFlag = body.value("offset_flag", 0);
@@ -5442,10 +5519,9 @@ void registerSdkMotionRoutes(
             float actualVel = vel;
             if (velMode == 1) {
                 actualVel = vel / 15.0f;
-                if (actualVel > 100.0f) actualVel = 100.0f;
-                if (actualVel < 1.0f) actualVel = 1.0f;
                 std::cout << "[MoveL] vel_mode=CPM, converting " << vel << " CPM to " << actualVel << "%" << std::endl;
             }
+            actualVel = clampMotionPercent(actualVel);
             std::ostringstream logDetails;
             logDetails << "pos=[" << descPos[0] << "," << descPos[1] << "," << descPos[2] << ","
                        << descPos[3] << "," << descPos[4] << "," << descPos[5] << "] "
@@ -5664,6 +5740,7 @@ void registerSdkMotionTouchRoutes(
                 FLOG_WARN("TouchSensing", "find-dx MoveL returned error code " + std::to_string(result));
                 std::cout << "[find-dx] WARNING: MoveL returned error code " << result << std::endl;
             }
+            bool searchFailed = (result != 0) || (waitCount >= MAX_WAIT);
             state = robotService.getState();
             double deltaX = state.tl_cur_pos[0] - startX;
             double contactX = state.tl_cur_pos[0];
@@ -5684,8 +5761,11 @@ void registerSdkMotionTouchRoutes(
                 dbService->logDebug("TouchSensing", "FindDx", logDtl.str());
             }
             json response;
-            response["status_code"] = 200;
+            response["status_code"] = searchFailed ? 500 : 200;
             response["result"] = result;
+            if (searchFailed) {
+                response["message"] = "터치 센싱 실패 또는 타임아웃 — 접촉 위치를 신뢰할 수 없습니다";
+            }
             response["data"] = {
                 {"delta_x", deltaX},
                 {"start_x", startX},
@@ -5695,7 +5775,8 @@ void registerSdkMotionTouchRoutes(
                 {"search_dis", searchDis},
                 {"retract_distance", retractDistance},
                 {"tool_num", toolNum},
-                {"user_num", userNum}
+                {"user_num", userNum},
+                {"search_failed", searchFailed}
             };
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
@@ -5781,6 +5862,11 @@ void registerSdkMotionTouchRoutes(
             }
             int wsEnd = robotService.wireSearchEnd(0, 10, 10, 0, 10, 10, 0);
             std::cout << "[find-dy] WireSearchEnd result=" << wsEnd << std::endl;
+            if (result != 0) {
+                FLOG_WARN("TouchSensing", "find-dy MoveL returned error code " + std::to_string(result));
+                std::cout << "[find-dy] WARNING: MoveL returned error code " << result << std::endl;
+            }
+            bool searchFailed = (result != 0) || (waitCount >= MAX_WAIT);
             state = robotService.getState();
             double deltaY = state.tl_cur_pos[1] - startY;
             double contactY = state.tl_cur_pos[1];
@@ -5801,8 +5887,11 @@ void registerSdkMotionTouchRoutes(
                 dbService->logDebug("TouchSensing", "FindDy", logDtl.str());
             }
             json response;
-            response["status_code"] = 200;
+            response["status_code"] = searchFailed ? 500 : 200;
             response["result"] = result;
+            if (searchFailed) {
+                response["message"] = "터치 센싱 실패 또는 타임아웃 — 접촉 위치를 신뢰할 수 없습니다";
+            }
             response["data"] = {
                 {"delta_y", deltaY},
                 {"start_y", startY},
@@ -5812,7 +5901,8 @@ void registerSdkMotionTouchRoutes(
                 {"search_dis", searchDis},
                 {"retract_distance", retractDistance},
                 {"tool_num", toolNum},
-                {"user_num", userNum}
+                {"user_num", userNum},
+                {"search_failed", searchFailed}
             };
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
@@ -5898,6 +5988,11 @@ void registerSdkMotionTouchRoutes(
             }
             int wsEnd = robotService.wireSearchEnd(0, 10, 10, 0, 10, 10, 0);
             std::cout << "[find-dz] WireSearchEnd result=" << wsEnd << std::endl;
+            if (result != 0) {
+                FLOG_WARN("TouchSensing", "find-dz MoveL returned error code " + std::to_string(result));
+                std::cout << "[find-dz] WARNING: MoveL returned error code " << result << std::endl;
+            }
+            bool searchFailed = (result != 0) || (waitCount >= MAX_WAIT);
             state = robotService.getState();
             double deltaZ = state.tl_cur_pos[2] - startZ;
             double contactZ = state.tl_cur_pos[2];
@@ -5918,8 +6013,11 @@ void registerSdkMotionTouchRoutes(
                 dbService->logDebug("TouchSensing", "FindDz", logDtl.str());
             }
             json response;
-            response["status_code"] = 200;
+            response["status_code"] = searchFailed ? 500 : 200;
             response["result"] = result;
+            if (searchFailed) {
+                response["message"] = "터치 센싱 실패 또는 타임아웃 — 접촉 위치를 신뢰할 수 없습니다";
+            }
             response["data"] = {
                 {"delta_z", deltaZ},
                 {"start_z", startZ},
@@ -5929,7 +6027,8 @@ void registerSdkMotionTouchRoutes(
                 {"search_dis", searchDis},
                 {"retract_distance", retractDistance},
                 {"tool_num", toolNum},
-                {"user_num", userNum}
+                {"user_num", userNum},
+                {"search_failed", searchFailed}
             };
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
@@ -5958,6 +6057,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
+#define APP_VERSION_STRING "1.1.18"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -5980,9 +6080,34 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/system/version", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         json data;
-        data["version"] = "1.0.0";
+        data["version"] = APP_VERSION_STRING;
         data["name"] = "Robot Core";
         data["api_type"] = "cpp-http";
+        data["build_date"] = __DATE__ " " __TIME__;
+        data["release_notes"] = "";
+        data["min_compatible_version"] = APP_VERSION_STRING;
+        res.set_content(data.dump(), "application/json");
+    });
+    server.Options("/system/system-info", [](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        res.status = 200;
+    });
+    server.Get("/system/system-info", [](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        json data;
+        data["app_version"] = APP_VERSION_STRING;
+        data["build_date"] = __DATE__ " " __TIME__;
+        data["platform"] = "Windows";
+        data["architecture"] = "x64";
+        char exePath[MAX_PATH] = {0};
+        GetModuleFileNameA(NULL, exePath, MAX_PATH);
+        std::string fullPath(exePath);
+        size_t pos = fullPath.find_last_of("\\/");
+        data["project_root"] = (pos != std::string::npos) ? fullPath.substr(0, pos) : fullPath;
+        data["update_server"] = "https://github.com/coddak2-commits/robot";
+        auto uptimeSec = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - g_serverStartTime).count();
+        data["uptime_seconds"] = uptimeSec;
         res.set_content(data.dump(), "application/json");
     });
     server.Options(R"(/logs.*)", [](const httplib::Request&, httplib::Response& res) {
@@ -6718,6 +6843,10 @@ void bringInstallerToForeground() {
     FLOG_WARN("Updater", "인스톨러 창 탐색 20초 초과 — 기본 동작");
 }
 bool launchInstaller(const std::string& path) {
+    // robot-back.exe는 launcher.bat가 별도로 띄운 프로세스라 robot_core.exe 종료만으로는
+    // 안 꺼짐 -> 인스톨러가 파일 사용 중 경고를 띄우는 원인. 인스톨러 실행 전에 먼저 정리.
+    killRobotBack();
+    Sleep(300);
     AllowSetForegroundWindow(ASFW_ANY);
     STARTUPINFOA si{};
     PROCESS_INFORMATION pi{};
@@ -7391,6 +7520,17 @@ std::string DatabaseService::escapeString(const std::string& str) {
     std::vector<char> buffer(str.length() * 2 + 1);
     mysql_real_escape_string(m_conn, buffer.data(), str.c_str(), str.length());
     return std::string(buffer.data());
+}
+// 비밀번호 salt 생성 (레인보우테이블 방어용, 비밀 값이 아니므로 std::random_device면 충분)
+static std::string generatePasswordSalt() {
+    static const char hexChars[] = "0123456789abcdef";
+    std::random_device rd;
+    std::string salt;
+    salt.reserve(32);
+    for (int i = 0; i < 32; i++) {
+        salt.push_back(hexChars[rd() % 16]);
+    }
+    return salt;
 }
 std::string DatabaseService::getCurrentTimestamp() {
     std::time_t now = std::time(nullptr);
@@ -8762,9 +8902,11 @@ json DatabaseService::getUsers() {
 int DatabaseService::createUser(const std::string& username, const std::string& password,
                                  const std::string& name, const std::string& email, const std::string& role) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    std::string salt = generatePasswordSalt();
     std::ostringstream query;
-    query << "INSERT INTO users (username, password_hash, name, email, role, active) VALUES ('"
-          << escapeString(username) << "', SHA2('" << escapeString(password) << "', 256), '"
+    query << "INSERT INTO users (username, password_hash, salt, name, email, role, active) VALUES ('"
+          << escapeString(username) << "', SHA2(CONCAT('" << salt << "', '" << escapeString(password)
+          << "'), 256), '" << salt << "', '"
           << escapeString(name) << "', '" << escapeString(email) << "', '"
           << escapeString(role) << "', TRUE)";
     if (!executeQuery(query.str())) {
@@ -8794,7 +8936,9 @@ bool DatabaseService::updateUser(int userId, const json& data) {
         first = false;
     }
     if (data.contains("password") && !data["password"].get<std::string>().empty()) {
-        query << (first ? "" : ", ") << "password_hash = SHA2('" << escapeString(data["password"].get<std::string>()) << "', 256)";
+        std::string newSalt = generatePasswordSalt();
+        query << (first ? "" : ", ") << "password_hash = SHA2(CONCAT('" << newSalt << "', '"
+              << escapeString(data["password"].get<std::string>()) << "'), 256), salt = '" << newSalt << "'";
         first = false;
     }
     if (first) {
@@ -8821,10 +8965,12 @@ bool DatabaseService::deleteUser(int userId) {
 }
 json DatabaseService::authenticateUser(const std::string& username, const std::string& password) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    // salt가 없는 기존 계정(레거시)은 COALESCE(salt,'')=''이 되어 SHA2(password,256)와 동일하게
+    // 비교되므로, 마이그레이션 여부와 무관하게 salted/레거시 계정 모두 이 한 쿼리로 검증 가능.
     std::ostringstream query;
-    query << "SELECT id, username, name, email, role, active FROM users "
+    query << "SELECT id, username, name, email, role, active, salt FROM users "
           << "WHERE username = '" << escapeString(username) << "' "
-          << "AND password_hash = SHA2('" << escapeString(password) << "', 256) "
+          << "AND password_hash = SHA2(CONCAT(COALESCE(salt, ''), '" << escapeString(password) << "'), 256) "
           << "AND active = TRUE";
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) {
@@ -8841,9 +8987,18 @@ json DatabaseService::authenticateUser(const std::string& username, const std::s
     user["name"] = row[2] ? row[2] : "";
     user["email"] = row[3] ? row[3] : "";
     user["role"] = row[4] ? row[4] : "operator";
+    bool hasSalt = row[6] && row[6][0] != '\0';
     mysql_free_result(result);
     std::ostringstream updateQuery;
-    updateQuery << "UPDATE users SET last_login = NOW() WHERE id = " << user["id"].get<int>();
+    updateQuery << "UPDATE users SET last_login = NOW()";
+    if (!hasSalt) {
+        // 레거시(무salt) 계정이 로그인에 성공한 시점 = 평문 비밀번호를 아는 유일한 순간이므로
+        // 지금 salt를 발급해 salted 해시로 마이그레이션.
+        std::string newSalt = generatePasswordSalt();
+        updateQuery << ", password_hash = SHA2(CONCAT('" << newSalt << "', '"
+                    << escapeString(password) << "'), 256), salt = '" << newSalt << "'";
+    }
+    updateQuery << " WHERE id = " << user["id"].get<int>();
     executeQuery(updateQuery.str());
     return user;
 }

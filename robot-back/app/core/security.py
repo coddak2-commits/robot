@@ -1,4 +1,6 @@
 import hashlib
+import hmac
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -7,12 +9,18 @@ from jose import JWTError, jwt
 from app.core.config import settings
 
 
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+def generate_salt() -> str:
+    return secrets.token_hex(16)
 
 
-def verify_password(plain: str, hashed: str) -> bool:
-    return hash_password(plain) == (hashed or "").lower()
+def hash_password(password: str, salt: str = "") -> str:
+    # robot-core(C++)와 동일한 방식: SHA256(salt + password). salt=""면 기존 무salt 계정과 동일한 값.
+    return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+
+
+def verify_password(plain: str, hashed: str, salt: Optional[str] = None) -> bool:
+    expected = hash_password(plain, salt or "")
+    return hmac.compare_digest(expected, (hashed or "").lower())
 
 
 def create_access_token(sub: str, role: str, extra: Optional[dict] = None) -> str:

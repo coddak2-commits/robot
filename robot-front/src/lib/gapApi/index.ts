@@ -27,6 +27,7 @@ gapApi.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('gap_token');
       localStorage.removeItem('gap_user');
+      window.dispatchEvent(new Event('gap-auth-expired'));
     }
     return Promise.reject(err);
   }

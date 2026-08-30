@@ -4,14 +4,16 @@
 //   POST /robot_sdk/wire/reverse  { ioType, wireFeed }
 //
 // 원리: wireFeed는 모터 on/off 스위치. 특정 길이 밀려면 시작 → 시간 대기 → 정지
-// 기본 송급 속도 5mm/s 가정 (실측 후 조정 필요)
+// ⚠ FEED_SPEED_MM_PER_SEC은 아직 실측되지 않은 값입니다. 실제 피더 속도와
+//   다르면 요청한 길이의 배수만큼 과송급/과소송급될 수 있으니, 실측 전에는
+//   소량(1mm)으로만 테스트하세요.
 
 import React, { useState } from 'react';
 import { Axios as api } from '../../lib';
 import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 
-// 기본 송급 속도 (mm/s) — 실제 용접기/피더 성능에 맞게 관리자 조정 필요
+// 기본 송급 속도 (mm/s) — 미실측 placeholder 값. 실제 용접기/피더로 캘리브레이션 후 반드시 교체할 것
 const FEED_SPEED_MM_PER_SEC = 1.0;
 
 const TARGET_STICKOUT_MM = 25;

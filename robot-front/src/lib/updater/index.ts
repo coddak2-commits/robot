@@ -1,4 +1,4 @@
-export const UPDATER_REPO = 'matrixism-cmyk/VoTPub';
+export const UPDATER_REPO = 'coddak2-commits/robot';
 interface GitHubAsset {
   name: string;
   browser_download_url: string;

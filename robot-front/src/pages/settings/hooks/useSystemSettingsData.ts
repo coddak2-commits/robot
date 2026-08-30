@@ -300,6 +300,9 @@ export function useSystemSettingsData() {
     } finally {
       localStorage.removeItem('user');
       localStorage.removeItem('token');
+      localStorage.removeItem('gap_token');
+      localStorage.removeItem('gap_user');
+      window.dispatchEvent(new Event('gap-auth-expired'));
       navigate('/');
     }
   };

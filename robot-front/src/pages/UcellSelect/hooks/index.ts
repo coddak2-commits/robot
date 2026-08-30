@@ -430,6 +430,9 @@ interface UseCellSelectionHandlersProps {
   teachingPoints: TeachingPoint[];
   teachingRobotState: { connected?: boolean; joints?: number[] | null } | null;
   manualMoveSpeed: number;
+  isWelding?: boolean;
+  isTouchSensing?: boolean;
+  isArcTesting?: boolean;
   isAtPosition: (joints1: number[], joints2: number[]) => boolean;
   moveToPoint: (
     point: TeachingPoint,
@@ -459,6 +462,9 @@ export function useCellSelectionHandlers({
   teachingPoints,
   teachingRobotState,
   manualMoveSpeed,
+  isWelding,
+  isTouchSensing,
+  isArcTesting,
   isAtPosition,
   moveToPoint,
   saveJob,
@@ -608,15 +614,27 @@ export function useCellSelectionHandlers({
         isAtPosition(robotJoints, pt.joints),
     );
   }, [teachingPoints, teachingRobotState, isAtPosition]);
+  const isRobotBusy = useCallback(
+    () => !!(isWelding || isTouchSensing || isArcTesting),
+    [isWelding, isTouchSensing, isArcTesting],
+  );
   const handleMoveToPoint = useCallback(
     (point: TeachingPoint) => {
+      if (isRobotBusy()) {
+        showAlert('용접/터치센싱/아크테스트 진행 중에는 포인트로 이동할 수 없습니다.', { type: 'warning' });
+        return;
+      }
       const skipRetract = !isAtSavedNonHomePoint();
       moveToPoint(point, { overrideSpeed: manualMoveSpeed, skipRetract });
     },
-    [isAtSavedNonHomePoint, moveToPoint, manualMoveSpeed],
+    [isAtSavedNonHomePoint, moveToPoint, manualMoveSpeed, isRobotBusy, showAlert],
   );
   const handleWeldPointClick = useCallback(
     (weldPoint: { id: string }) => {
+      if (isRobotBusy()) {
+        showAlert('용접/터치센싱/아크테스트 진행 중에는 포인트로 이동할 수 없습니다.', { type: 'warning' });
+        return;
+      }
       const teachingPoint = teachingPoints.find(pt => pt.id === weldPoint.id);
       if (!teachingPoint) return;
       if (!teachingPoint.isSaved) {
@@ -626,7 +644,7 @@ export function useCellSelectionHandlers({
       const skipRetract = !isAtSavedNonHomePoint();
       moveToPoint(teachingPoint, { overrideSpeed: manualMoveSpeed, skipRetract });
     },
-    [teachingPoints, manualMoveSpeed, moveToPoint, showAlert, isAtSavedNonHomePoint],
+    [teachingPoints, manualMoveSpeed, moveToPoint, showAlert, isAtSavedNonHomePoint, isRobotBusy],
   );
   return {
     selectedHeight,
@@ -2170,6 +2188,7 @@ export function useWeldingOperations(): UseWeldingOperationsReturn {
   ): Promise<TouchSensingResult[]> => {
     if (isArcTesting || isWelding || isTouchSensing) return [];
     setIsTouchSensing(true);
+    stopRef.current = false;
     const context: TouchSensingContext = {
       stopRef,
       setCurrentPointIndex,

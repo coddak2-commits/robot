@@ -19,6 +19,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    salt: Mapped[str | None] = mapped_column(String(32), nullable=True)
     full_name: Mapped[str | None] = mapped_column("name", String(100))
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False, default=UserRole.operator)
     email: Mapped[str | None] = mapped_column(String(100))

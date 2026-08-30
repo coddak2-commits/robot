@@ -1,8 +1,21 @@
 from datetime import datetime
 from decimal import Decimal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.welding import Posture, DataSource, PromotionStatus, JobStatus, JobMode, ResumeType
+
+# 오버라이드/승격이 setattr로 직접 수정할 수 있는 welding_params 컬럼 화이트리스트.
+# 여기 없는 필드명(id, active 등 임의 컬럼)은 오버라이드/승격 대상이 될 수 없음.
+ALLOWED_OVERRIDE_FIELDS = frozenset({
+    "current_a",
+    "voltage_v",
+    "speed_cpm",
+    "stickout_mm",
+    "weave_freq_hz",
+    "weave_range_mm",
+    "weave_left_dwell_ms",
+    "weave_right_dwell_ms",
+})
 
 
 # =====================================================================
@@ -167,6 +180,13 @@ class ParamOverrideCreate(BaseModel):
     original_value: Decimal
     override_value: Decimal
     reason: str | None = None
+
+    @field_validator("field_name")
+    @classmethod
+    def _validate_field_name(cls, v: str) -> str:
+        if v not in ALLOWED_OVERRIDE_FIELDS:
+            raise ValueError(f"field_name must be one of {sorted(ALLOWED_OVERRIDE_FIELDS)}")
+        return v
 
 
 class ParamOverrideOut(ParamOverrideCreate):

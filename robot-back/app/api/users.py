@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin, get_current_user
 from app.core.database import get_db
-from app.core.security import hash_password
+from app.core.security import hash_password, generate_salt
 from app.models.user import User
-from app.schemas.user import UserOut, UserCreate, UserUpdate
+from app.schemas.user import UserOut, UserCreate, UserUpdate, PasswordResetRequest
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -32,9 +32,11 @@ def get_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(requ
 def create_user(body: UserCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     if db.query(User).filter(User.username == body.username).first():
         raise HTTPException(status_code=409, detail="Username already exists")
+    salt = generate_salt()
     obj = User(
         username=body.username,
-        password_hash=hash_password(body.password),
+        password_hash=hash_password(body.password, salt),
+        salt=salt,
         full_name=body.full_name,
         email=body.email,
         role=body.role,
@@ -66,16 +68,16 @@ def update_user(
 @router.post("/{user_id}/reset-password", response_model=UserOut)
 def reset_password(
     user_id: int,
-    new_password: str,
+    body: PasswordResetRequest,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="Not found")
-    if len(new_password) < 8:
-        raise HTTPException(status_code=400, detail="Password too short (min 8)")
-    u.password_hash = hash_password(new_password)
+    salt = generate_salt()
+    u.password_hash = hash_password(body.new_password, salt)
+    u.salt = salt
     db.commit()
     db.refresh(u)
     return u

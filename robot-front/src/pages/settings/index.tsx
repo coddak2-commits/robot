@@ -60,12 +60,7 @@ const SystemSettings: React.FC = () => {
   return (
     <PageLayout>
       {}
-      <div
-        className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"
-        data-audit="unused"
-        data-audit-note="'가동 시간(142일)' 카드는 하드코딩 — 실시간 아님 (로봇 상태는 실시간 연결 조회로 변경됨, 사용자수/버전도 실제값)"
-        data-audit-loc="src/pages/settings/SystemSettings.tsx:69"
-      >
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatusCard
           icon={<Wifi className={`w-6 h-6 ${robotConnected ? 'text-green-400' : 'text-red-400'}`} />}
           bgColor={robotConnected ? 'bg-green-500/20' : 'bg-red-500/20'}
@@ -88,7 +83,11 @@ const SystemSettings: React.FC = () => {
         <StatusCard
           icon={<Clock className="w-6 h-6 text-yellow-400" />}
           bgColor="bg-yellow-500/20"
-          value="142일"
+          value={
+            systemInfo?.uptime_seconds != null
+              ? `${Math.floor(systemInfo.uptime_seconds / 86400)}일 ${Math.floor((systemInfo.uptime_seconds % 86400) / 3600)}시간`
+              : '---'
+          }
           label="가동 시간"
         />
       </div>
@@ -131,8 +130,6 @@ const SystemSettings: React.FC = () => {
         )}
         {activeTab === 'robot' && config && (
           <RobotSettingsTab
-            config={config}
-            setConfig={setConfig}
             robotCoordSettings={robotCoordSettings}
             setRobotCoordSettings={setRobotCoordSettings}
             robotError={robotError}
@@ -159,13 +156,7 @@ const SystemSettings: React.FC = () => {
         {activeTab === 'update' && (
           <UpdateTab
             versionInfo={versionInfo}
-            updateCheck={updateCheck}
-            updateStatus={updateStatus}
             systemInfo={systemInfo}
-            checkingUpdate={checkingUpdate}
-            updating={updating}
-            onCheckUpdate={handleCheckUpdate}
-            onStartUpdate={handleStartUpdate}
           />
         )}
       </div>
