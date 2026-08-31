@@ -1,7 +1,6 @@
 // 작업자용 갭 입력 + 파라미터 미리보기 화면
 import React, { useState } from 'react';
 import { paramApi, Posture, WeldingParam, ParamLookupResult } from '../../lib/gapApi';
-import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 
 const THICKNESS_OPTIONS = [18, 20, 22, 23];
@@ -138,10 +137,7 @@ const ParamCard: React.FC<{ param: WeldingParam; compact?: boolean }> = ({ param
   </div>
 );
 
-const GapInputPage: React.FC = () => (
-  <RequireRole roles={['admin', 'operator']}>
-    <GapInputInner />
-  </RequireRole>
-);
+// 권한 체크는 router/index.tsx에서 RequireRole로 이미 적용됨 (이중 적용 제거)
+const GapInputPage: React.FC = () => <GapInputInner />;
 
 export default GapInputPage;

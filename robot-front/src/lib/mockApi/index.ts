@@ -1,4 +1,6 @@
 import { RobotJoints, RobotTCF, RobotStatusResponse } from '@/types/RobotData';
+// 이 프로젝트에는 @types/node가 없어 process 전역 타입이 없음 - 이 파일 한정 최소 선언
+declare const process: { env: { REACT_APP_MOCK_PASSWORD?: string } };
 export interface WeldingJob {
   id: string;
   name: string;
@@ -305,8 +307,14 @@ export const mockGetDashboardStats = async (): Promise<DashboardStats> => {
 };
 export const mockLogin = async (username: string, password: string) => {
   await delay(500);
+  // 하드코딩된 비밀번호를 번들에 남기지 않기 위해 개발자가 로컬에서만
+  // REACT_APP_MOCK_PASSWORD를 설정해야 목업 로그인이 동작함 (미설정 시 항상 비활성).
+  const devPassword = process.env.REACT_APP_MOCK_PASSWORD;
+  if (!devPassword) {
+    throw new Error('Mock login is disabled (REACT_APP_MOCK_PASSWORD not set)');
+  }
   const user = mockUsers.find(u => u.username === username && u.active);
-  if (user && password === '1234') {
+  if (user && password === devPassword) {
     return {
       status_code: 200,
       data: {

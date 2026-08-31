@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from statistics import mean, stdev
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.welding import (
@@ -118,7 +119,14 @@ def detect_promotion_candidates(db: Session) -> list[dict]:
             reason=reason,
             status=PromotionStatus.pending,
         )
-        db.add(req)
+        # DB unique 제약(pending_dedupe_key)으로 동시 실행 시 중복 삽입을 최종 방어.
+        # savepoint로 감싸서 충돌 시 이 요청만 건너뛰고 나머지 배치는 유지.
+        try:
+            with db.begin_nested():
+                db.add(req)
+                db.flush()
+        except IntegrityError:
+            continue
         created_requests.append({
             "condition": f"{posture.value}/{gap_mm}mm/{material}/{thickness_mm}mm/{joint_type}",
             "field": field_name,

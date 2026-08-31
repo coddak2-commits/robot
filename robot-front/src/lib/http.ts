@@ -26,6 +26,21 @@ export const emergencyApi = axios.create({
   baseURL: getInitialBaseURL(),
   timeout: 2000,
 });
+emergencyApi.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    const customConfig = config as CustomAxiosRequestConfig;
+    if (!customConfig.headers) {
+      customConfig.headers = {} as AxiosRequestHeaders;
+    }
+    const tokenStr = localStorage.getItem('token');
+    if (tokenStr) {
+      const tokenData: TokenData = JSON.parse(tokenStr);
+      customConfig.headers.Authorization = `Bearer ${tokenData.accessToken}`;
+    }
+    return customConfig;
+  },
+  error => Promise.reject(error),
+);
 let isDetecting = false;
 const detectBackendPort = async (): Promise<string | null> => {
   if (isDetecting) return null;

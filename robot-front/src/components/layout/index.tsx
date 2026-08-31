@@ -7,7 +7,7 @@ import { getAutoLogoutMinutes } from '../../lib/appSettings';
 import { APP_VERSION } from '../../lib';
 import { isMockMode, mockChangeMode, mockCheckConnection } from '../../lib';
 import { Axios as axios } from '../../lib';
-import { setRobotMode, setAutoReconnect, getRealtimeRobotStatus, RealtimeRobotStatus, getRobotError, resetRobotError, RobotErrorData, getErrorMessageFromDB } from '../../lib';
+import { setRobotMode, setAutoReconnect, getRealtimeRobotStatus, RealtimeRobotStatus, getRobotError, resetRobotError, RobotErrorData } from '../../lib';
 import { getRobotAlarmMessage } from '../../lib/api';
 import { Wifi, WifiOff, Home, AlertTriangle, RefreshCw } from 'lucide-react';
 const footer: React.FC = () => {
@@ -182,20 +182,11 @@ const Header: React.FC = () => {
     };
   }, [connText, fetchRobotError]);
   useEffect(() => {
-    const fetchErrorMessage = async () => {
-      if (robotError?.has_error && (robotError.main_code !== 0 || robotError.sub_code !== 0)) {
-        const dbError = await getErrorMessageFromDB(robotError.main_code, robotError.sub_code);
-        if (dbError?.found && dbError.description) {
-          const recoverText = dbError.recoverable ? '복구 가능' : '복구 불가';
-          setErrorMessage(`${dbError.description}, ${recoverText}`);
-        } else {
-          setErrorMessage(getRobotAlarmMessage(robotError.main_code, robotError.sub_code));
-        }
-      } else {
-        setErrorMessage(null);
-      }
-    };
-    fetchErrorMessage();
+    if (robotError?.has_error && (robotError.main_code !== 0 || robotError.sub_code !== 0)) {
+      setErrorMessage(getRobotAlarmMessage(robotError.main_code, robotError.sub_code));
+    } else {
+      setErrorMessage(null);
+    }
   }, [robotError]);
   useEffect(() => {
     if (robotStatus?.robot_mode !== undefined) {

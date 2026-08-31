@@ -40,11 +40,38 @@ def lookup_params(
 
     # 정확 없어도 같은 두께에 인접 갭 있으면 보간
     if result and result.get("interpolated"):
-        # 임시 응답용 최근접값 반환 (실제 시스템에서는 보간값 별도 스키마로 확장 가능)
+        interp = result["interpolated"]
+        base = result.get("base_lower") or result.get("base_upper")
+        interpolated_param = WeldingParamOut(
+            id=base.id,
+            posture=base.posture,
+            gap_mm=gap_clamped,
+            current_a=interp["current_a"],
+            voltage_v=interp["voltage_v"],
+            speed_cpm=interp["speed_cpm"],
+            stickout_mm=interp["stickout_mm"],
+            weave_enabled=base.weave_enabled,
+            weave_type=base.weave_type,
+            weave_freq_hz=interp["weave_freq_hz"],
+            weave_range_mm=interp["weave_range_mm"],
+            weave_left_dwell_ms=interp["weave_left_dwell_ms"],
+            weave_right_dwell_ms=interp["weave_right_dwell_ms"],
+            material=base.material,
+            thickness_mm=base.thickness_mm,
+            joint_type=base.joint_type,
+            source=base.source,
+            notes="갭 인접값 선형 보간",
+            active=base.active,
+            deactivated_at=base.deactivated_at,
+            deactivated_by=base.deactivated_by,
+            deactivation_reason=base.deactivation_reason,
+            created_at=base.created_at,
+            updated_at=base.updated_at,
+        )
         return ParamLookupResult(
             matched=False, fallback_level=1,
             warning=(warning or "") + " 갭 인접값 선형 보간 사용",
-            param=result.get("base_lower") or result.get("base_upper"),
+            param=interpolated_param,
         )
 
     # 2. 두께 근접 폴백

@@ -591,16 +591,6 @@ export const resetRobotError = async () => {
     throw error;
   }
 };
-export const getErrorMessageFromDB = async (mainCode: number, subCode: number): Promise<ErrorMessageData | null> => {
-  try {
-    const response = await api.get('/teaching/error_message', {
-      params: { main_code: mainCode, sub_code: subCode }
-    });
-    return response.data.data;
-  } catch {
-    return null;
-  }
-};
 export const getTeachingJobs = async (status?: string, limit = 50, offset = 0) => {
   const params = new URLSearchParams();
   if (status) params.append('status', status);
@@ -1088,13 +1078,6 @@ export interface RobotErrorData {
   has_error: boolean;
   message: string;
   sdk_error?: SdkErrorData | null;
-}
-export interface ErrorMessageData {
-  main_code: number;
-  sub_code: number;
-  description: string | null;
-  recoverable: boolean;
-  found: boolean;
 }
 export const getUsers = async (): Promise<UserData[]> => {
   try {

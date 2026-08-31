@@ -46,16 +46,16 @@ class WeldingParamCreate(WeldingParamBase):
 
 
 class WeldingParamUpdate(BaseModel):
-    current_a: int | None = None
-    voltage_v: Decimal | None = None
-    speed_cpm: int | None = None
-    stickout_mm: int | None = None
+    current_a: int | None = Field(default=None, gt=0)
+    voltage_v: Decimal | None = Field(default=None, gt=0)
+    speed_cpm: int | None = Field(default=None, gt=0)
+    stickout_mm: int | None = Field(default=None, ge=0)
     weave_enabled: bool | None = None
     weave_type: int | None = None
-    weave_freq_hz: Decimal | None = None
-    weave_range_mm: Decimal | None = None
-    weave_left_dwell_ms: int | None = None
-    weave_right_dwell_ms: int | None = None
+    weave_freq_hz: Decimal | None = Field(default=None, gt=0)
+    weave_range_mm: Decimal | None = Field(default=None, gt=0)
+    weave_left_dwell_ms: int | None = Field(default=None, ge=0)
+    weave_right_dwell_ms: int | None = Field(default=None, ge=0)
     notes: str | None = None
 
 

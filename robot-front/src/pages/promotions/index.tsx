@@ -1,7 +1,6 @@
 // 관리자 승격 요청 검토 화면
 import React, { useState, useEffect, useCallback } from 'react';
 import { promotionApi, adminApi, PromotionRequest, PromotionStatus } from '../../lib/gapApi';
-import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 
 const PromotionsInner: React.FC = () => {
@@ -141,10 +140,7 @@ const PromotionsInner: React.FC = () => {
   );
 };
 
-const PromotionsPage: React.FC = () => (
-  <RequireRole roles={['admin']}>
-    <PromotionsInner />
-  </RequireRole>
-);
+// 권한 체크는 router/index.tsx에서 RequireRole로 이미 적용됨 (이중 적용 제거)
+const PromotionsPage: React.FC = () => <PromotionsInner />;
 
 export default PromotionsPage;

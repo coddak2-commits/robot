@@ -63,13 +63,18 @@ robot-back/
 
 ## 관리자 계정 생성 (최초 1회)
 
-DBeaver 등으로 users 테이블에 직접 삽입:
+`create_admin.py` 스크립트 실행 (salt+SHA-256 해시를 자동 생성해 삽입):
+```powershell
+python create_admin.py
+```
+DB에 직접 삽입해야 한다면 컬럼명이 `name`/`active`(Python 속성명 full_name/is_active와 다름)이고
+`salt` 컬럼도 함께 채워야 함:
 ```sql
 USE robot_welding;
--- bcrypt 해시 생성은 파이썬으로:
--- python -c "from passlib.context import CryptContext; print(CryptContext(schemes=['bcrypt']).hash('admin1234'))"
-INSERT INTO users (username, password_hash, full_name, role, is_active)
-VALUES ('admin', '위에서 생성한 해시', '관리자', 'admin', TRUE);
+-- salt+SHA-256 해시 생성은 파이썬으로:
+-- python -c "import hashlib,secrets; s=secrets.token_hex(16); print(s, hashlib.sha256((s+'admin1234').encode()).hexdigest())"
+INSERT INTO users (username, password_hash, salt, name, role, active)
+VALUES ('admin', '위에서 생성한 해시', '위에서 생성한 salt', '관리자', 'admin', TRUE);
 ```
 
 ## API 엔드포인트 (초기)

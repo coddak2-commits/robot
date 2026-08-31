@@ -3024,6 +3024,7 @@ bool HttpServer::start(int port) {
     }
     m_port = port;
     auto& server = m_impl->server;
+    server.new_task_queue = [] { return new httplib::ThreadPool(64); };
     server.Options(".*", [](const httplib::Request&, httplib::Response& res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
@@ -3774,37 +3775,39 @@ void registerWeldingRoutes(
         }
         json results;
         results["steps"] = json::array();
+        // 실제 e-stop 경로(emergencyStop)와 동일하게 모션 정지를 최우선으로 실행한 뒤
+        // 아크/위빙/가스를 정리한다 (물리적 정지가 프로세스 정리보다 우선).
+        try {
+            int r = robotService.stopMotion();
+            FLOG_INFO("WeldingRoute", "Emergency step 1/4 StopMotion: result=" + std::to_string(r));
+            results["steps"].push_back({{"step", "stop_motion"}, {"result", r}});
+        } catch (...) {
+            FLOG_ERROR("WeldingRoute", "Emergency step 1/4 StopMotion: EXCEPTION");
+            results["steps"].push_back({{"step", "stop_motion"}, {"result", -1}, {"error", "exception"}});
+        }
         try {
             int r = robotService.arcEnd(0, 0, 1000);
-            FLOG_INFO("WeldingRoute", "Emergency step 1/4 Arc OFF: result=" + std::to_string(r));
+            FLOG_INFO("WeldingRoute", "Emergency step 2/4 Arc OFF: result=" + std::to_string(r));
             results["steps"].push_back({{"step", "arc_off"}, {"result", r}});
         } catch (...) {
-            FLOG_ERROR("WeldingRoute", "Emergency step 1/4 Arc OFF: EXCEPTION");
+            FLOG_ERROR("WeldingRoute", "Emergency step 2/4 Arc OFF: EXCEPTION");
             results["steps"].push_back({{"step", "arc_off"}, {"result", -1}, {"error", "exception"}});
         }
         try {
             int r = robotService.weaveEnd(0);
-            FLOG_INFO("WeldingRoute", "Emergency step 2/4 Weave OFF: result=" + std::to_string(r));
+            FLOG_INFO("WeldingRoute", "Emergency step 3/4 Weave OFF: result=" + std::to_string(r));
             results["steps"].push_back({{"step", "weave_off"}, {"result", r}});
         } catch (...) {
-            FLOG_ERROR("WeldingRoute", "Emergency step 2/4 Weave OFF: EXCEPTION");
+            FLOG_ERROR("WeldingRoute", "Emergency step 3/4 Weave OFF: EXCEPTION");
             results["steps"].push_back({{"step", "weave_off"}, {"result", -1}, {"error", "exception"}});
         }
         try {
             int r = robotService.setAspirated(0, 0);
-            FLOG_INFO("WeldingRoute", "Emergency step 3/4 Gas OFF: result=" + std::to_string(r));
+            FLOG_INFO("WeldingRoute", "Emergency step 4/4 Gas OFF: result=" + std::to_string(r));
             results["steps"].push_back({{"step", "gas_off"}, {"result", r}});
         } catch (...) {
-            FLOG_ERROR("WeldingRoute", "Emergency step 3/4 Gas OFF: EXCEPTION");
+            FLOG_ERROR("WeldingRoute", "Emergency step 4/4 Gas OFF: EXCEPTION");
             results["steps"].push_back({{"step", "gas_off"}, {"result", -1}, {"error", "exception"}});
-        }
-        try {
-            int r = robotService.stopMotion();
-            FLOG_INFO("WeldingRoute", "Emergency step 4/4 StopMotion: result=" + std::to_string(r));
-            results["steps"].push_back({{"step", "stop_motion"}, {"result", r}});
-        } catch (...) {
-            FLOG_ERROR("WeldingRoute", "Emergency step 4/4 StopMotion: EXCEPTION");
-            results["steps"].push_back({{"step", "stop_motion"}, {"result", -1}, {"error", "exception"}});
         }
         if (dbService && dbService->isConnected()) {
             dbService->logDebug("EmergencyShutdown", "COMPLETE", results.dump());
@@ -4848,27 +4851,6 @@ void registerTeachingLogRoutes(
         }
         res.set_content(response.dump(), "application/json");
     });
-    server.Get("/teaching/error_message", [dbService](const httplib::Request& req, httplib::Response& res) {
-        HttpRouteHelpers::setCorsHeaders(res);
-        json response;
-        response["status_code"] = 200;
-        if (dbService && dbService->isConnected()) {
-            int mainCode = 0;
-            int subCode = 0;
-            if (req.has_param("main_code")) {
-                try { mainCode = std::stoi(req.get_param_value("main_code")); } catch (...) {}
-            }
-            if (req.has_param("sub_code")) {
-                try { subCode = std::stoi(req.get_param_value("sub_code")); } catch (...) {}
-            }
-            json errorData = dbService->getErrorMessage(mainCode, subCode);
-            response["data"] = errorData;
-        } else {
-            response["status_code"] = 500;
-            response["message"] = "Database not connected";
-        }
-        res.set_content(response.dump(), "application/json");
-    });
     server.Get("/teaching/debug_logs", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         json response;
@@ -5318,7 +5300,12 @@ void registerSdkMotionRoutes(
         }
         int mode = 0;
         if (req.has_param("mode")) {
-            mode = std::stoi(req.get_param_value("mode"));
+            try {
+                mode = std::stoi(req.get_param_value("mode"));
+            } catch (const std::exception& e) {
+                res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", std::string("Invalid mode parameter: ") + e.what()}}).dump(), "application/json");
+                return;
+            }
         }
         FLOG_INFO("SdkMotion", "Set mode: " + std::to_string(mode));
         int result = robotService.setMode(mode);
@@ -5410,7 +5397,11 @@ void registerSdkMotionRoutes(
         }
         int ref = 1;
         if (req.has_param("ref")) {
-            ref = std::stoi(req.get_param_value("ref"));
+            try {
+                ref = std::stoi(req.get_param_value("ref"));
+            } catch (const std::exception&) {
+                ref = 1;
+            }
         } else if (!req.body.empty()) {
             try {
                 json body = json::parse(req.body);
@@ -8850,31 +8841,6 @@ json DatabaseService::getAppLogs(int limit, const std::string& level, const std:
     mysql_free_result(result);
     return logsArray;
 }
-json DatabaseService::getErrorMessage(int mainCode, int subCode) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    json result = {
-        {"main_code", mainCode},
-        {"sub_code", subCode},
-        {"description", nullptr},
-        {"recoverable", true},
-        {"found", false}
-    };
-    std::ostringstream query;
-    query << "SELECT description_ko, recoverable FROM robot_error_codes "
-          << "WHERE main_code = " << mainCode << " AND sub_code = " << subCode;
-    MYSQL_RES* res = executeSelect(query.str());
-    if (!res) {
-        return result;
-    }
-    MYSQL_ROW row = mysql_fetch_row(res);
-    if (row) {
-        result["description"] = row[0] ? row[0] : "";
-        result["recoverable"] = row[1] ? (std::stoi(row[1]) != 0) : true;
-        result["found"] = true;
-    }
-    mysql_free_result(res);
-    return result;
-}
 json DatabaseService::getUsers() {
     std::lock_guard<std::mutex> lock(m_mutex);
     json usersArray = json::array();
@@ -9022,37 +8988,39 @@ void SafeShutdownManager::emergencyWeldingShutdown() {
     }
     FLOG_FATAL("SafeShutdown", "=== EMERGENCY WELDING SHUTDOWN START ===");
     std::cout << "[SafeShutdown] === EMERGENCY WELDING SHUTDOWN START ===" << std::endl;
+    // 실제 e-stop 경로(emergencyStop)와 동일하게 모션 정지를 최우선으로 실행한 뒤
+    // 아크/위빙/가스를 정리한다 (물리적 정지가 프로세스 정리보다 우선).
+    try {
+        int stopResult = m_robotService.stopMotion();
+        FLOG_INFO("SafeShutdown", "Step 1/4 StopMotion: result=" + std::to_string(stopResult));
+        std::cout << "[SafeShutdown] Step 1/4: StopMotion -> " << (stopResult == 0 ? "OK" : "WARN") << std::endl;
+    } catch (...) {
+        FLOG_ERROR("SafeShutdown", "Step 1/4 StopMotion: EXCEPTION (continuing)");
+        std::cerr << "[SafeShutdown] Step 1/4: StopMotion -> EXCEPTION (continuing)" << std::endl;
+    }
     try {
         int arcResult = m_robotService.arcEnd(0, 0, 1000);
-        FLOG_INFO("SafeShutdown", "Step 1/4 Arc OFF: result=" + std::to_string(arcResult));
-        std::cout << "[SafeShutdown] Step 1/4: Arc OFF -> " << (arcResult == 0 ? "OK" : "WARN") << std::endl;
+        FLOG_INFO("SafeShutdown", "Step 2/4 Arc OFF: result=" + std::to_string(arcResult));
+        std::cout << "[SafeShutdown] Step 2/4: Arc OFF -> " << (arcResult == 0 ? "OK" : "WARN") << std::endl;
     } catch (...) {
-        FLOG_ERROR("SafeShutdown", "Step 1/4 Arc OFF: EXCEPTION (continuing)");
-        std::cerr << "[SafeShutdown] Step 1/4: Arc OFF -> EXCEPTION (continuing)" << std::endl;
+        FLOG_ERROR("SafeShutdown", "Step 2/4 Arc OFF: EXCEPTION (continuing)");
+        std::cerr << "[SafeShutdown] Step 2/4: Arc OFF -> EXCEPTION (continuing)" << std::endl;
     }
     try {
         int weaveResult = m_robotService.weaveEnd(0);
-        FLOG_INFO("SafeShutdown", "Step 2/4 Weave OFF: result=" + std::to_string(weaveResult));
-        std::cout << "[SafeShutdown] Step 2/4: Weave OFF -> " << (weaveResult == 0 ? "OK" : "WARN") << std::endl;
+        FLOG_INFO("SafeShutdown", "Step 3/4 Weave OFF: result=" + std::to_string(weaveResult));
+        std::cout << "[SafeShutdown] Step 3/4: Weave OFF -> " << (weaveResult == 0 ? "OK" : "WARN") << std::endl;
     } catch (...) {
-        FLOG_ERROR("SafeShutdown", "Step 2/4 Weave OFF: EXCEPTION (continuing)");
-        std::cerr << "[SafeShutdown] Step 2/4: Weave OFF -> EXCEPTION (continuing)" << std::endl;
+        FLOG_ERROR("SafeShutdown", "Step 3/4 Weave OFF: EXCEPTION (continuing)");
+        std::cerr << "[SafeShutdown] Step 3/4: Weave OFF -> EXCEPTION (continuing)" << std::endl;
     }
     try {
         int gasResult = m_robotService.setAspirated(0, 0);
-        FLOG_INFO("SafeShutdown", "Step 3/4 Gas OFF: result=" + std::to_string(gasResult));
-        std::cout << "[SafeShutdown] Step 3/4: Gas OFF -> " << (gasResult == 0 ? "OK" : "WARN") << std::endl;
+        FLOG_INFO("SafeShutdown", "Step 4/4 Gas OFF: result=" + std::to_string(gasResult));
+        std::cout << "[SafeShutdown] Step 4/4: Gas OFF -> " << (gasResult == 0 ? "OK" : "WARN") << std::endl;
     } catch (...) {
-        FLOG_ERROR("SafeShutdown", "Step 3/4 Gas OFF: EXCEPTION (continuing)");
-        std::cerr << "[SafeShutdown] Step 3/4: Gas OFF -> EXCEPTION (continuing)" << std::endl;
-    }
-    try {
-        int stopResult = m_robotService.stopMotion();
-        FLOG_INFO("SafeShutdown", "Step 4/4 StopMotion: result=" + std::to_string(stopResult));
-        std::cout << "[SafeShutdown] Step 4/4: StopMotion -> " << (stopResult == 0 ? "OK" : "WARN") << std::endl;
-    } catch (...) {
-        FLOG_ERROR("SafeShutdown", "Step 4/4 StopMotion: EXCEPTION (continuing)");
-        std::cerr << "[SafeShutdown] Step 4/4: StopMotion -> EXCEPTION (continuing)" << std::endl;
+        FLOG_ERROR("SafeShutdown", "Step 4/4 Gas OFF: EXCEPTION (continuing)");
+        std::cerr << "[SafeShutdown] Step 4/4: Gas OFF -> EXCEPTION (continuing)" << std::endl;
     }
     m_weldingActive = false;
     FLOG_FATAL("SafeShutdown", "=== EMERGENCY WELDING SHUTDOWN COMPLETE ===");

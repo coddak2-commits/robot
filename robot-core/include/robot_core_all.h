@@ -514,7 +514,6 @@ public:
     static json weldingLogToJson(const WeldingLog& log);
     static WeldingLog jsonToWeldingLog(const json& j);
     std::string getLastError() const { return m_lastError; }
-    json getErrorMessage(int mainCode, int subCode);
     bool logDebug(const std::string& source, const std::string& action, const std::string& details);
     json getDebugLogs(int limit = 100);
     bool clearDebugLogs();

@@ -89,7 +89,15 @@ const JobManagement: React.FC = () => {
   const syncPendingDeleteIds = () => setPendingDeleteIds(Array.from(pendingDeletesRef.current.keys()));
   useEffect(() => {
     return () => {
-      pendingDeletesRef.current.forEach(entry => clearTimeout(entry.timer));
+      // 페이지 이탈 시 undo 타이머를 그냥 취소하면 서버 삭제가 호출되지 않아
+      // 다음 방문 시 삭제된 작업이 되살아남 -> 타이머 대신 즉시 서버 삭제 반영
+      pendingDeletesRef.current.forEach((entry, jobId) => {
+        clearTimeout(entry.timer);
+        deleteTeachingJob(jobId).catch(error => {
+          console.error('Failed to delete job on unmount:', error);
+        });
+      });
+      pendingDeletesRef.current.clear();
     };
   }, []);
   const finalizeDelete = useCallback(async (jobId: number) => {

@@ -240,7 +240,10 @@ const RobotSettings: React.FC = () => {
     }
   };
   const handleSave = () => {
-    showAlert('저장 기능은 아직 구현되지 않았습니다.', { type: 'info' });
+    showAlert(
+      '이 표는 최신 작업(job)의 포인트를 보여주는 화면이라 여기서는 저장할 수 없습니다. 포인트를 수정하려면 작업 관리 화면에서 해당 작업을 열어 티칭으로 수정해주세요.',
+      { type: 'info' },
+    );
   };
   const handleMoveRobot = async (row: TableRow) => {
     if (isMoving) return;

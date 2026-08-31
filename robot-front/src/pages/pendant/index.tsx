@@ -41,12 +41,12 @@ const PART_CHECKBOXES: { partIdx: number; refPoint: string; offsetX?: number; of
 ];
 
 // 파트별 대표 gap 소스 매핑
-// 파트 실행 순서상 사용될 gap을 어느 세그먼트에서 가져올지
-const PART_GAP_MAP: { points: string[]; gapPoint: string }[] = [
-  { points: ['p4', 'p5', 'p6'], gapPoint: 'p4' },    // 파트1 (하단 좌)
-  { points: ['p3', 'p2', 'p1'], gapPoint: 'p2' },    // 파트2 (좌측 수직)
-  { points: ['p10', 'p11', 'p12'], gapPoint: 'p10' },// 파트3 (하단 우)
-  { points: ['p9', 'p8', 'p7'], gapPoint: 'p8' },    // 파트4 (우측 수직)
+// 파트 실행 순서상 사용될 gap을 어느 세그먼트에서 가져올지 (수직 파트는 세그먼트 2개 평균)
+const PART_GAP_MAP: { points: string[]; gapPoints: string[] }[] = [
+  { points: ['p4', 'p5', 'p6'], gapPoints: ['p4'] },       // 파트1 (하단 좌) - 세그먼트 p4-p6
+  { points: ['p3', 'p2', 'p1'], gapPoints: ['p1', 'p2'] }, // 파트2 (좌측 수직) - 세그먼트 p1-p2, p2-p3 평균
+  { points: ['p10', 'p11', 'p12'], gapPoints: ['p10'] },   // 파트3 (하단 우) - 세그먼트 p10-p12
+  { points: ['p9', 'p8', 'p7'], gapPoints: ['p7', 'p8'] }, // 파트4 (우측 수직) - 세그먼트 p7-p8, p8-p9 평균
 ];
 
 const CANVAS_W = 1100;
@@ -454,11 +454,11 @@ const PendantInner: React.FC = () => {
     try {
       // 파트별 gap → 파라미터 조회
       const lookups = await Promise.all(PART_GAP_MAP.map(async pg => {
-        const src = teachingPoints.find(x => x.id === pg.gapPoint);
-        const gap = src?.gap ?? 0;
+        const gaps = pg.gapPoints.map(id => teachingPoints.find(x => x.id === id)?.gap ?? 0);
+        const gap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
         try {
           const res = await paramApi.lookup({
-            posture: getPosture(pg.gapPoint),
+            posture: getPosture(pg.gapPoints[0]),
             gap,
             thickness,
             material: 'SS400',

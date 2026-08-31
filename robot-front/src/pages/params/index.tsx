@@ -1,7 +1,6 @@
 // 관리자용 파라미터 매트릭스 CRUD 화면
 import React, { useState, useEffect, useCallback } from 'react';
 import { paramApi, WeldingParam, WeldingParamCreate, Posture } from '../../lib/gapApi';
-import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 
 const THICKNESS_OPTIONS = [18, 20, 22, 23];
@@ -250,10 +249,7 @@ const ParamEditModal: React.FC<ModalProps> = ({ param, initialPosture, initialTh
   );
 };
 
-const ParamsPage: React.FC = () => (
-  <RequireRole roles={['admin']}>
-    <ParamsInner />
-  </RequireRole>
-);
+// 권한 체크는 router/index.tsx에서 RequireRole로 이미 적용됨 (이중 적용 제거)
+const ParamsPage: React.FC = () => <ParamsInner />;
 
 export default ParamsPage;

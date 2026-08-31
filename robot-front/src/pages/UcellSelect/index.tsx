@@ -661,16 +661,16 @@ export function getWeldingParts(): readonly { name: string; points: readonly str
   return _dynamicParts ?? DEFAULT_WELDING_PARTS;
 }
 export function getBlockPointIds(pointId: string): string[] {
-  for (const part of WELDING_PARTS) {
-    if ((part.points as readonly string[]).includes(pointId)) {
+  for (const part of getWeldingParts()) {
+    if (part.points.includes(pointId)) {
       return [...part.points];
     }
   }
   return [];
 }
 export function getBlockName(pointId: string): string {
-  for (const part of WELDING_PARTS) {
-    if ((part.points as readonly string[]).includes(pointId)) {
+  for (const part of getWeldingParts()) {
+    if (part.points.includes(pointId)) {
       return part.name;
     }
   }
