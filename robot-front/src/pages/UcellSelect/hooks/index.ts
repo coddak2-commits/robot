@@ -892,8 +892,9 @@ export function useJobManagement(): UseJobManagementReturn {
         width,
         points: pointsData,
       });
-      if (result?.id) {
-        setCurrentJobId(result.id);
+      const createdId = result?.data?.id ?? result?.id;
+      if (createdId) {
+        setCurrentJobId(createdId);
         await fetchJobList();
         return true;
       }
