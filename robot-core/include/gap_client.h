@@ -1,6 +1,12 @@
 // gap_client.h - FR3-WMS 갭 시스템 백엔드(Python FastAPI :8000) HTTP 클라이언트
 // 헤더 전용 (header-only) — 다른 곳에서 #include 하고 바로 사용
 //
+// [미사용/참고용] robot_core_all.cpp 어디에서도 include되지 않음 — 실제 빌드에
+// 포함되지 않는다(gap_integration_example.cpp만 참조하며, 그 파일도 빌드 대상 아님).
+// 현재 갭 기반 파라미터 조회는 프론트(robot-front)가 FastAPI를 직접 호출하는
+// 경로로 동작 중이다. 이 헤더를 robot-core 쪽에서 실제로 쓰기 전까지는 설계
+// 참고 자료로만 취급할 것.
+//
 // 의존성: httplib.h (이미 include/에 있음), nlohmann/json (이미 vcpkg로 링크됨)
 //
 // 사용 예:

@@ -14,6 +14,9 @@
 ## 계정
 - admin / 1234 (SHA-256 통합)
 
+## 버전 배포 상태
+- 1.1.30: 빌드/릴리즈 완료, 노트북(현장) 배포까지 완료
+
 ## 서버 실행
 - Robot Core: `cd robot-core\build-unity && .\robot_core.exe`
 - FastAPI: `cd robot-back && .\venv\Scripts\Activate.ps1 && $env:PYTHONPATH="" && python main.py`
@@ -70,13 +73,11 @@
 - 해결책: 회사 IT에 방화벽 예외 요청 (go.microsoft.com, download.microsoft.com, download.visualstudio.microsoft.com) 또는 집에서 오프라인 layout 다운로드 후 USB 이동
 - 재빌드 명령: `cd robot-core && .\build_unity.bat`
 
-### Robot Core 재빌드 후 처리: 설정 - 로봇 설정 탭 필드 정합
-- 위치: `robot-front/src/pages/settings/components/index.tsx:330-421` (`config.robotSettings`: 기본 속도/최대 속도/기본 가속도/안전구역 활성화/충돌 감지) — 현재 로컬 state만 바뀌고 저장 버튼 눌러도 서버 반영 안 됨
-- 기본 속도/기본 가속도: 같은 탭 "좌표계 설정" 섹션의 `default_vel`/`default_acc`(정상 저장됨, `/robot_sdk/settings`)와 완전 중복 UI. 재빌드 불필요 — 프론트에서 가짜 필드 제거하고 좌표계 설정 값 쓰도록 고치면 됨.
-- 최대 속도/안전구역 활성화/충돌 감지: `robot_settings` 테이블(컬럼 7개: tool_num/user_num/default_vel/default_acc/default_ovl/auto_clear_error/min_weaving_distance)에 해당 개념 자체가 없음. `PUT /robot_sdk/settings` 핸들러(`robot_core_all.cpp:5012-5057`) 확장 + DB 컬럼 추가 필요 → 재빌드 필요.
-  - 최대 속도: 컬럼 추가는 쉬우나, 실제로 로봇 속도를 제한하려면 MoveL/SetSpeed 호출 전 clamp 로직을 추가해야 의미가 생김.
-  - 안전구역 활성화: Fairino SDK에 "구역" 개념 자체가 없음(가장 가까운 게 조인트 소프트리밋 `SetLimitPositive`/`SetLimitNegative`, `robot.h:1041/1048`). 사실상 신규 기능.
-  - 충돌 감지: SDK에 `SetAnticollision`/충돌가드 on-off 함수 있음(`robot.h:1017-1034`, ~1790), 지금 `robot_core_all.cpp`에서 미사용 — 연결만 하면 됨. 셋 중 가장 실현 가능성 높음.
+### 설정 - 로봇 설정 탭: 최대 속도 / 안전구역 미구현
+- 충돌 감지는 연결 완료: `robot_settings` 테이블에 `collision_detection_enabled` 컬럼 추가됨, `PUT /robot_sdk/settings` 핸들러(`robot_core_all.cpp:5436-5453`)가 변경 시 `robotService.setCollisionDetection()` → SDK `SetAnticollision`(`robot_core_all.cpp:724-730`) 호출. 프론트 `robot-front/src/pages/settings/components/index.tsx:323-330`에 토글 연결됨. 기본 속도/기본 가속도 중복 가짜 필드도 제거됨.
+- 최대 속도 / 안전구역 활성화는 여전히 미구현: `PUT /robot_sdk/settings` 핸들러에 해당 필드 없음, 프론트에도 UI 없음(제거된 상태).
+  - 최대 속도: DB 컬럼 추가는 쉬우나, 실제로 로봇 속도를 제한하려면 MoveL/SetSpeed 호출 전 clamp 로직을 추가해야 의미가 생김.
+  - 안전구역: Fairino SDK에 "구역" 개념 자체가 없음(가장 가까운 게 조인트 소프트리밋 `SetLimitPositive`/`SetLimitNegative`, `robot.h:1041/1048`). 사실상 신규 기능.
 
 ### 실제 로봇 관련
 - FR3 실물 연결 테스트 (192.168.58.2)

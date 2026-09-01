@@ -248,6 +248,14 @@ export const emergencyStop = async () => {
   console.log('[EMERGENCY STOP] 비상 정지 요청 시작');
   const baseUrl = api.defaults.baseURL || 'http://localhost:8000';
   const emergencyServerUrl = baseUrl.replace(/:8000\/?$/, ':8001').replace(/:8080\/?$/, ':8001');
+  let authHeaders: { Authorization: string } | undefined;
+  const tokenStr = localStorage.getItem('token');
+  if (tokenStr) {
+    try {
+      const { accessToken } = JSON.parse(tokenStr);
+      if (accessToken) authHeaders = { Authorization: `Bearer ${accessToken}` };
+    } catch { /* ignore */ }
+  }
   const stopAttempts = [
     axios
       .post(`${emergencyServerUrl}/emergency_stop`, {}, { timeout: 2000 })
@@ -260,7 +268,7 @@ export const emergencyStop = async () => {
         return null;
       }),
     axios
-      .post(`${baseUrl}/robot_sdk/robot/emergency_stop`, {}, { timeout: 2000 })
+      .post(`${baseUrl}/robot_sdk/robot/emergency_stop`, {}, { timeout: 2000, headers: authHeaders })
       .then((res: AxiosResponse) => {
         console.log('[EMERGENCY] emergency_stop 성공:', res.data);
         return res;
@@ -270,7 +278,7 @@ export const emergencyStop = async () => {
         return null;
       }),
     axios
-      .post(`${baseUrl}/robot_sdk/robot/stop_motion`, {}, { timeout: 2000 })
+      .post(`${baseUrl}/robot_sdk/robot/stop_motion`, {}, { timeout: 2000, headers: authHeaders })
       .then((res: AxiosResponse) => {
         console.log('[EMERGENCY] stop_motion 성공:', res.data);
         return res;
@@ -280,7 +288,7 @@ export const emergencyStop = async () => {
         return null;
       }),
     axios
-      .post(`${baseUrl}/robot_sdk/robot/stop_move`, {}, { timeout: 2000 })
+      .post(`${baseUrl}/robot_sdk/robot/stop_move`, {}, { timeout: 2000, headers: authHeaders })
       .then((res: AxiosResponse) => {
         console.log('[EMERGENCY] stop_move 성공:', res.data);
         return res;
@@ -589,6 +597,24 @@ export const resetRobotError = async () => {
   } catch (error) {
     console.error('로봇 에러 초기화 오류:', error);
     throw error;
+  }
+};
+export const getRobotErrorHistory = async (
+  days = 30,
+  limit = 50,
+  offset = 0,
+): Promise<RobotErrorEvent[]> => {
+  try {
+    const params = new URLSearchParams({
+      days: days.toString(),
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    const response = await api.get(`/robot_sdk/robot/error-history?${params.toString()}`);
+    return response.data.data || [];
+  } catch (error) {
+    console.error('로봇 에러 이력 조회 오류:', error);
+    return [];
   }
 };
 export const getTeachingJobs = async (status?: string, limit = 50, offset = 0) => {
@@ -1078,6 +1104,16 @@ export interface RobotErrorData {
   has_error: boolean;
   message: string;
   sdk_error?: SdkErrorData | null;
+}
+export interface RobotErrorEvent {
+  id: number;
+  main_code: number;
+  sub_code: number;
+  message: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_sec: number | null;
+  ongoing: boolean;
 }
 export const getUsers = async (): Promise<UserData[]> => {
   try {

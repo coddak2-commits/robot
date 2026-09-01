@@ -19,3 +19,9 @@ port=465
 user=YOUR_SMTP_USER@example.com
 password=YOUR_SMTP_PASSWORD
 from=YOUR_SMTP_USER@example.com
+
+# robot-core는 로그인을 직접 처리하지 않고, robot-back(FastAPI)이 발급한 JWT를
+# 검증만 한다. 아래 값은 robot-back의 .env에 있는 JWT_SECRET_KEY와 반드시 동일해야
+# 하며, 다르면 모든 API 요청이 401로 거부된다. 16자 이상의 무작위 값으로 설정할 것.
+[auth]
+jwt_secret=YOUR_JWT_SECRET_HERE

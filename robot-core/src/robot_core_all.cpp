@@ -7,6 +7,7 @@
 #include "robot_core_all.h"
 #include "robot_core_all.h"
 #include "robot_core_all.h"
+#include "jwt_verify.h"
 #include <iostream>
 #include <csignal>
 #include <atomic>
@@ -17,6 +18,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <limits>
 #ifdef _WIN32
 #include <windows.h>
 #include <shellapi.h>
@@ -48,7 +50,9 @@ void startFrontendDevServer() {
     PROCESS_INFORMATION pi;
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
-    if (CreateProcessA(NULL, const_cast<char*>(cmdLine.c_str()), NULL, NULL, FALSE,
+    std::vector<char> mutableCmdLine(cmdLine.begin(), cmdLine.end());
+    mutableCmdLine.push_back('\0');
+    if (CreateProcessA(NULL, mutableCmdLine.data(), NULL, NULL, FALSE,
                        CREATE_NO_WINDOW, NULL, frontendDir.c_str(), &si, &pi)) {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
@@ -83,7 +87,9 @@ void stopFrontendDevServer() {
     std::string cmdLine = "powershell.exe -WindowStyle Hidden -Command \""
         "Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | "
         "ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }\"";
-    if (CreateProcessA(NULL, const_cast<char*>(cmdLine.c_str()), NULL, NULL, FALSE,
+    std::vector<char> mutableCmdLine(cmdLine.begin(), cmdLine.end());
+    mutableCmdLine.push_back('\0');
+    if (CreateProcessA(NULL, mutableCmdLine.data(), NULL, NULL, FALSE,
                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
         WaitForSingleObject(pi.hProcess, 5000);
         CloseHandle(pi.hProcess);
@@ -140,6 +146,54 @@ void restartApplication() {
     g_restart = true;
     g_running = false;
 }
+// robot_core.exe가 띄운 kiosk/브라우저 창들의 프로세스 핸들을 추적한다.
+// ShellExecuteW는 핸들을 안 남겨(추적 불가) CreateProcessW를 쓰되, user-data-dir은 고정
+// 경로로 재사용한다 (사유는 launchKioskBrowser 주석 참고).
+std::vector<HANDLE> g_kioskBrowserHandles;
+std::mutex g_kioskBrowserMutex;
+void launchKioskBrowser(const std::wstring& url, bool kiosk) {
+    // 매번 새 프로필을 쓰면 사용자가 맞춰둔 브라우저 확대/축소 값이 재시작마다 초기화되므로
+    // 고정 경로를 재사용한다. Chrome은 동일 user-data-dir로 이미 실행 중인 프로세스가 있으면
+    // 새 요청을 그 프로세스로 넘기고 자신은 바로 종료하는데, 이 경우에도 최초 실행 때 잡아둔
+    // 진짜 프로세스 핸들이 g_kioskBrowserHandles에 남아있어 종료 시 정상적으로 닫힌다.
+    wchar_t localAppData[MAX_PATH] = {0};
+    DWORD localAppDataLen = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, MAX_PATH);
+    std::wstring profileDir;
+    if (localAppDataLen > 0 && localAppDataLen < MAX_PATH) {
+        profileDir = std::wstring(localAppData) + L"\\RobotWeldingKiosk\\ChromeProfile";
+    } else {
+        wchar_t tempPath[MAX_PATH] = {0};
+        GetTempPathW(MAX_PATH, tempPath);
+        profileDir = std::wstring(tempPath) + L"RobotWeldingKiosk_ChromeProfile";
+    }
+    std::wstring args = std::wstring(kiosk ? L"--kiosk " : L"--new-window ")
+        + L"--no-first-run --no-default-browser-check --disable-sync --disable-signin-promo "
+        + L"--user-data-dir=\"" + profileDir + L"\" " + url;
+    std::wstring cmdLine = L"\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" " + args;
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    std::vector<wchar_t> mutableCmd(cmdLine.begin(), cmdLine.end());
+    mutableCmd.push_back(L'\0');
+    if (CreateProcessW(NULL, mutableCmd.data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        CloseHandle(pi.hThread);
+        std::lock_guard<std::mutex> lock(g_kioskBrowserMutex);
+        g_kioskBrowserHandles.push_back(pi.hProcess);
+    } else {
+        // chrome.exe가 해당 경로에 없는 등 실패 시 기본 브라우저로라도 연다(이 경우 추적/자동종료는 불가).
+        ShellExecuteW(NULL, L"open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+    }
+}
+void closeKioskBrowsers() {
+    std::lock_guard<std::mutex> lock(g_kioskBrowserMutex);
+    for (HANDLE h : g_kioskBrowserHandles) {
+        if (h) {
+            TerminateProcess(h, 0);
+            CloseHandle(h);
+        }
+    }
+    g_kioskBrowserHandles.clear();
+}
 #endif
 void signalHandler(int signum) {
     std::cout << "\n[Main] Received signal " << signum << ", shutting down..." << std::endl;
@@ -173,6 +227,17 @@ int runService() {
     }
 #endif
     ConfigService::instance().loadFromFile();
+    {
+        // robot-back(.env의 JWT_SECRET_KEY)과 동일해야 하는 값. 비어있거나 너무 짧으면
+        // 모든 API 요청이 401로 거부되므로(fail-closed) 원인을 바로 알 수 있도록 경고한다.
+        std::string jwtSecret = ConfigService::instance().getJwtSecret();
+        if (jwtSecret.empty() || jwtSecret.size() < 16) {
+            std::cerr << "[Main] 경고: config.ini의 [auth] jwt_secret이 설정되지 않았거나 너무 짧습니다. "
+                       << "robot-back(.env)의 JWT_SECRET_KEY와 동일한 값을 16자 이상으로 설정하세요. "
+                       << "설정 전까지는 모든 인증 요청이 401로 거부됩니다." << std::endl;
+            FLOG_ERROR("Main", "config.ini [auth] jwt_secret 누락/짧음 - 모든 인증 요청이 401로 거부됨");
+        }
+    }
     RobotService robotService;
     ZmqServer zmqServer(robotService);
     DatabaseService dbService;
@@ -225,10 +290,7 @@ int runService() {
     mgmtDialog.show(GetModuleHandle(NULL));
     {
         std::wstring url = L"http://localhost:" + std::to_wstring(g_packagedMode ? g_httpPort : 3000);
-        int r = (int)(intptr_t)ShellExecuteW(NULL, L"open",
-            L"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-            (L"--new-window " + url).c_str(), NULL, SW_SHOWNORMAL);
-        if (r <= 32) ShellExecuteW(NULL, L"open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+        launchKioskBrowser(url, /*kiosk=*/false);
     }
 #endif
     robotService.setStateCallback([&zmqServer](const ROBOT_STATE_PKG& state) {
@@ -254,8 +316,20 @@ int runService() {
         };
         zmqServer.publishState(stateJson.dump());
     });
-    robotService.setErrorCallback([](int code, const std::string& message) {
-        std::cerr << "[Main] Robot error: " << code << " - " << message << std::endl;
+    robotService.setErrorCallback([&dbService](int mainCode, int subCode, const std::string& message, bool resolved) {
+        // monitorLoop는 전용 스레드 하나에서만 이 콜백을 호출하므로 static 지역변수로
+        // "현재 열려 있는 에러 이벤트 id"를 안전하게 들고 있을 수 있다.
+        static int openEventId = -1;
+        if (!resolved) {
+            std::cerr << "[Main] Robot error: " << mainCode << " - " << message << std::endl;
+            openEventId = dbService.logRobotErrorStart(mainCode, subCode, message);
+        } else {
+            std::cerr << "[Main] Robot error cleared: main=" << mainCode << " sub=" << subCode << std::endl;
+            if (openEventId > 0) {
+                dbService.closeRobotErrorEvent(openEventId);
+                openEventId = -1;
+            }
+        }
     });
     robotService.setReconnectCallback([
 #ifdef _WIN32
@@ -322,6 +396,8 @@ int runService() {
     }
     if (!g_restart) {
         killRobotBack();
+        // 프로그램 종료 시 우리가 띄운 kiosk 브라우저 창도 같이 닫는다. (재시작 때는 그대로 둠)
+        closeKioskBrowsers();
     }
 #endif
     robotService.stopStateMonitor();
@@ -472,12 +548,22 @@ int RobotService::setMode(int mode) {
     return m_robot.Mode(mode);
 }
 ROBOT_STATE_PKG RobotService::getState() {
-    std::lock_guard<std::mutex> lock(m_mutex);
     ROBOT_STATE_PKG state = {0};
-    if (m_connected) {
-        m_robot.GetRobotRealTimeState(&state);
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_connected) {
+            m_robot.GetRobotRealTimeState(&state);
+        }
+    }
+    {
+        std::lock_guard<std::mutex> cacheLock(m_stateCacheMutex);
+        m_cachedState = state;
     }
     return state;
+}
+ROBOT_STATE_PKG RobotService::getCachedState() {
+    std::lock_guard<std::mutex> lock(m_stateCacheMutex);
+    return m_cachedState;
 }
 int RobotService::moveJ(const double joints[6], int tool, int user,
                         float vel, float acc, float ovl, float blendT,
@@ -621,6 +707,48 @@ int RobotService::moveLWithJoints(const double joints[6], const double descPos[6
             " acc=" + std::to_string(acc) + " ovl=" + std::to_string(ovl));
     }
     return ret;
+}
+int RobotService::relativeMoveJ(const double jointDeltas[6], int tool, int user,
+                                 float vel, float acc, float ovl, float blendT) {
+    double targetJoints[6];
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_connected) return -1;
+        ROBOT_STATE_PKG curState = {0};
+        m_robot.GetRobotRealTimeState(&curState);
+        for (int i = 0; i < 6; i++) {
+            targetJoints[i] = curState.jt_cur_pos[i] + jointDeltas[i];
+        }
+    }
+    std::cout << "[RobotService] RelativeMoveJ: delta=["
+              << jointDeltas[0] << ", " << jointDeltas[1] << ", " << jointDeltas[2] << ", "
+              << jointDeltas[3] << ", " << jointDeltas[4] << ", " << jointDeltas[5]
+              << "] target=["
+              << targetJoints[0] << ", " << targetJoints[1] << ", " << targetJoints[2] << ", "
+              << targetJoints[3] << ", " << targetJoints[4] << ", " << targetJoints[5]
+              << "] vel=" << vel << std::endl;
+    return moveJ(targetJoints, tool, user, vel, acc, ovl, blendT);
+}
+int RobotService::relativeMoveL(const double descPosDeltas[6], int tool, int user,
+                                 float vel, float acc, float ovl, float blendR) {
+    double targetPos[6];
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_connected) return -1;
+        ROBOT_STATE_PKG curState = {0};
+        m_robot.GetRobotRealTimeState(&curState);
+        for (int i = 0; i < 6; i++) {
+            targetPos[i] = curState.tl_cur_pos[i] + descPosDeltas[i];
+        }
+    }
+    std::cout << "[RobotService] RelativeMoveL: delta=["
+              << descPosDeltas[0] << ", " << descPosDeltas[1] << ", " << descPosDeltas[2] << ", "
+              << descPosDeltas[3] << ", " << descPosDeltas[4] << ", " << descPosDeltas[5]
+              << "] target=["
+              << targetPos[0] << ", " << targetPos[1] << ", " << targetPos[2] << ", "
+              << targetPos[3] << ", " << targetPos[4] << ", " << targetPos[5]
+              << "] vel=" << vel << std::endl;
+    return moveL(targetPos, tool, user, vel, acc, ovl, blendR);
 }
 int RobotService::stopMotion() {
     if (!m_connected) return -1;
@@ -843,14 +971,20 @@ void RobotService::monitorLoop(int intervalMs) {
                 if (m_errorCallback) {
                     if (state.main_code != 0) {
                         if (state.main_code != lastErrorCode || state.sub_code != lastSubCode) {
-                            m_errorCallback(state.main_code,
+                            // 이전 에러가 해제되지 않은 채 다른 코드로 바뀐 경우, 먼저 이전 건을
+                            // 닫아준 뒤 새 에러를 시작한다 (열린 이벤트가 겹치지 않도록).
+                            if (lastErrorCode != 0) {
+                                m_errorCallback(lastErrorCode, lastSubCode, "", true);
+                            }
+                            m_errorCallback(state.main_code, state.sub_code,
                                 "Robot error: main=" + std::to_string(state.main_code) +
-                                " sub=" + std::to_string(state.sub_code));
+                                " sub=" + std::to_string(state.sub_code), false);
                             lastErrorCode = state.main_code;
                             lastSubCode = state.sub_code;
                         }
                     } else {
                         if (lastErrorCode != 0) {
+                            m_errorCallback(lastErrorCode, lastSubCode, "", true);
                             lastErrorCode = 0;
                             lastSubCode = 0;
                         }
@@ -1548,10 +1682,7 @@ LRESULT CALLBACK TrayIcon::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             s_instance->showMainWindow();
         } else if (lParam == WM_LBUTTONDBLCLK) {
             std::wstring url = L"http://localhost:" + std::to_wstring(g_packagedMode ? g_httpPort : 3000);
-            int r = (int)(intptr_t)ShellExecuteW(NULL, L"open",
-                L"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-                (L"--kiosk " + url).c_str(), NULL, SW_SHOWNORMAL);
-            if (r <= 32) ShellExecuteW(NULL, L"open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+            launchKioskBrowser(url, /*kiosk=*/true);
         }
         return 0;
     case WM_COMMAND:
@@ -1673,7 +1804,9 @@ void TrayIcon::runCommand(const std::wstring& cmd, bool show, bool wait) {
     std::wstring wpath(m_projectPath.begin(), m_projectPath.end());
     if (show) {
         std::wstring fullCmd = L"cmd /c " + cmd;
-        if (CreateProcessW(NULL, const_cast<wchar_t*>(fullCmd.c_str()),
+        std::vector<wchar_t> mutableFullCmd(fullCmd.begin(), fullCmd.end());
+        mutableFullCmd.push_back(L'\0');
+        if (CreateProcessW(NULL, mutableFullCmd.data(),
                            NULL, NULL, FALSE, 0,
                            NULL, wpath.c_str(), &si, &pi)) {
             if (wait) {
@@ -1686,7 +1819,9 @@ void TrayIcon::runCommand(const std::wstring& cmd, bool show, bool wait) {
         si.dwFlags = STARTF_USESHOWWINDOW;
         si.wShowWindow = SW_HIDE;
         std::wstring fullCmd = L"powershell.exe -WindowStyle Hidden -Command \"" + cmd + L"\"";
-        if (CreateProcessW(NULL, const_cast<wchar_t*>(fullCmd.c_str()),
+        std::vector<wchar_t> mutableFullCmd(fullCmd.begin(), fullCmd.end());
+        mutableFullCmd.push_back(L'\0');
+        if (CreateProcessW(NULL, mutableFullCmd.data(),
                            NULL, NULL, FALSE,
                            CREATE_NO_WINDOW | DETACHED_PROCESS,
                            NULL, wpath.c_str(), &si, &pi)) {
@@ -1741,7 +1876,9 @@ void TrayIcon::startFrontend() {
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
     std::wstring cmdLine = L"cmd.exe /c \"set BROWSER=none && set PORT=3000 && npm start\"";
-    if (CreateProcessW(NULL, const_cast<wchar_t*>(cmdLine.c_str()), NULL, NULL, FALSE,
+    std::vector<wchar_t> mutableCmdLine(cmdLine.begin(), cmdLine.end());
+    mutableCmdLine.push_back(L'\0');
+    if (CreateProcessW(NULL, mutableCmdLine.data(), NULL, NULL, FALSE,
                        CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, frontendDir.c_str(), &si, &pi)) {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
@@ -1764,7 +1901,9 @@ void TrayIcon::restartFrontend() {
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
     std::wstring cmdLine = L"cmd.exe /c \"set BROWSER=none && set PORT=3000 && npm start\"";
-    if (CreateProcessW(NULL, const_cast<wchar_t*>(cmdLine.c_str()), NULL, NULL, FALSE,
+    std::vector<wchar_t> mutableCmdLine(cmdLine.begin(), cmdLine.end());
+    mutableCmdLine.push_back(L'\0');
+    if (CreateProcessW(NULL, mutableCmdLine.data(), NULL, NULL, FALSE,
                        CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, frontendDir.c_str(), &si, &pi)) {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
@@ -2000,10 +2139,7 @@ void TrayIcon::onMenuCommand(int cmdId) {
     case ID_TRAY_BROWSER: {
         std::cout << "[TrayIcon] Opening browser (Chrome kiosk)..." << std::endl;
         std::wstring url = L"http://localhost:" + std::to_wstring(g_packagedMode ? g_httpPort : 3000);
-        int r = (int)(intptr_t)ShellExecuteW(NULL, L"open",
-            L"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-            (L"--kiosk " + url).c_str(), NULL, SW_SHOWNORMAL);
-        if (r <= 32) ShellExecuteW(NULL, L"open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+        launchKioskBrowser(url, /*kiosk=*/true);
         break;
     }
     case ID_TRAY_RESTART:
@@ -2197,7 +2333,9 @@ std::string ManagementDialog::captureCommand(const std::wstring& cmd, int timeou
     PROCESS_INFORMATION pi;
     std::wstring fullCmd = L"cmd /c " + cmd;
     std::string output;
-    if (CreateProcessW(NULL, const_cast<wchar_t*>(fullCmd.c_str()), NULL, NULL, TRUE,
+    std::vector<wchar_t> mutableFullCmd(fullCmd.begin(), fullCmd.end());
+    mutableFullCmd.push_back(L'\0');
+    if (CreateProcessW(NULL, mutableFullCmd.data(), NULL, NULL, TRUE,
                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
         CloseHandle(hWrite);
         hWrite = NULL;
@@ -2265,7 +2403,9 @@ void ManagementDialog::runHiddenCommand(const std::wstring& cmd, bool wait) {
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
     std::wstring fullCmd = L"powershell.exe -WindowStyle Hidden -Command \"" + cmd + L"\"";
-    if (CreateProcessW(NULL, const_cast<wchar_t*>(fullCmd.c_str()), NULL, NULL, FALSE,
+    std::vector<wchar_t> mutableFullCmd(fullCmd.begin(), fullCmd.end());
+    mutableFullCmd.push_back(L'\0');
+    if (CreateProcessW(NULL, mutableFullCmd.data(), NULL, NULL, FALSE,
                        CREATE_NO_WINDOW, NULL, wpath.c_str(), &si, &pi)) {
         if (wait) WaitForSingleObject(pi.hProcess, 120000);
         CloseHandle(pi.hProcess);
@@ -2329,7 +2469,9 @@ std::string ManagementDialog::runWithProgress(const std::wstring& cmd,
         }
         si.wShowWindow = SW_HIDE;
         std::wstring fullCmd = L"cmd /c " + cmd;
-        if (CreateProcessW(NULL, const_cast<wchar_t*>(fullCmd.c_str()),
+        std::vector<wchar_t> mutableFullCmd(fullCmd.begin(), fullCmd.end());
+        mutableFullCmd.push_back(L'\0');
+        if (CreateProcessW(NULL, mutableFullCmd.data(),
                            NULL, NULL, TRUE, CREATE_NO_WINDOW,
                            NULL, NULL, &si, &pi)) {
             if (hWrite) { CloseHandle(hWrite); hWrite = NULL; }
@@ -2733,7 +2875,9 @@ void ManagementDialog::doStartFrontend() {
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
     std::wstring cmd = L"cmd.exe /c \"set BROWSER=none && set PORT=3000 && npm start\"";
-    if (CreateProcessW(NULL, const_cast<wchar_t*>(cmd.c_str()), NULL, NULL, FALSE,
+    std::vector<wchar_t> mutableCmd(cmd.begin(), cmd.end());
+    mutableCmd.push_back(L'\0');
+    if (CreateProcessW(NULL, mutableCmd.data(), NULL, NULL, FALSE,
                        CREATE_NO_WINDOW, NULL, frontDir.c_str(), &si, &pi)) {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
@@ -2940,12 +3084,7 @@ LRESULT CALLBACK ManagementDialog::WndProc(HWND hwnd, UINT msg, WPARAM wParam, L
             break;
         case IDC_BTN_BROWSER: {
             std::wstring url = L"http://localhost:" + std::to_wstring(g_packagedMode ? g_httpPort : 3000);
-            int chromeResult = (int)(intptr_t)ShellExecuteW(NULL, L"open",
-                L"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-                (L"--kiosk " + url).c_str(), NULL, SW_SHOWNORMAL);
-            if (chromeResult <= 32) {
-                ShellExecuteW(NULL, L"open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
-            }
+            launchKioskBrowser(url, /*kiosk=*/true);
             break;
         }
         case IDC_CHK_AUTOSTART:
@@ -3051,8 +3190,7 @@ bool HttpServer::start(int port) {
             path.find(".txt") != std::string::npos) {
             return httplib::Server::HandlerResponse::Unhandled;
         }
-        if (path == "/auth/login" ||
-            path == "/health" ||
+        if (path == "/health" ||
             path == "/system/version") {
             return httplib::Server::HandlerResponse::Unhandled;
         }
@@ -3100,12 +3238,15 @@ bool HttpServer::start(int port) {
                 "application/json");
             return httplib::Server::HandlerResponse::Handled;
         }
-        auto user = AuthService::instance().validateSession(token);
-        if (user.is_null()) {
+        // robot-back(FastAPI)이 발급한 JWT(HS256)를 로컬에서 검증한다.
+        // 세션 저장소가 없으므로 robot-core 재시작(자동 업데이트 등)과 무관하게
+        // 토큰 만료 전까지는 계속 유효하다.
+        auto claims = jwtauth::verifyToken(token, ConfigService::instance().getJwtSecret());
+        if (claims.is_null()) {
             res.set_header("Access-Control-Allow-Origin", "*");
             res.status = 401;
             res.set_content(
-                "{\"status_code\":401,\"message\":\"Invalid or expired session\"}",
+                "{\"status_code\":401,\"message\":\"Invalid or expired token\"}",
                 "application/json");
             return httplib::Server::HandlerResponse::Handled;
         }
@@ -4201,6 +4342,7 @@ void registerWeldingConfigRoutes(
 #include <vector>
 using json = nlohmann::json;
 static std::atomic<bool> g_batchStopFlag{false};
+static std::atomic<bool> g_batchInProgress{false};
 void requestBatchStop() {
     g_batchStopFlag = true;
 }
@@ -4210,6 +4352,19 @@ void resetBatchStop() {
 bool isBatchStopped() {
     return g_batchStopFlag.load();
 }
+// 배치 이동 요청 하나가 실행되는 동안만 g_batchInProgress를 true로 점유한다.
+// 생성 시 compare_exchange로 선점을 시도하고, 소멸 시(정상 반환/예외 모두) 자동 해제되므로
+// 동시에 들어온 다른 배치 요청이 진행 중인 배치의 정지 플래그를 덮어쓰는 걸 막는다.
+struct BatchInProgressGuard {
+    bool owns = false;
+    BatchInProgressGuard() {
+        bool expected = false;
+        owns = g_batchInProgress.compare_exchange_strong(expected, true);
+    }
+    ~BatchInProgressGuard() {
+        if (owns) g_batchInProgress = false;
+    }
+};
 void registerWeldingBatchRoutes(
     httplib::Server& server,
     RobotService& robotService,
@@ -4225,10 +4380,19 @@ void registerWeldingBatchRoutes(
             res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
             return;
         }
+        BatchInProgressGuard batchGuard;
+        if (!batchGuard.owns) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(409, {{"message", "다른 배치 이동이 이미 진행 중입니다"}}).dump(), "application/json");
+            return;
+        }
         try {
             json body = json::parse(req.body);
             auto points = body["points"];
             int total = static_cast<int>(points.size());
+            if (total <= 0) {
+                res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "points 배열이 비어 있습니다"}}).dump(), "application/json");
+                return;
+            }
             FLOG_INFO("WeldBatch", "Batch MoveL start: " + std::to_string(total) + " points");
             robotService.setSpeed(60);
             FLOG_INFO("WeldBatch", "SetSpeed(60) - global override");
@@ -4401,6 +4565,22 @@ void registerTeachingLogRoutes(
     RobotService& robotService,
     DatabaseService* dbService
 );
+// 라우트 경로의 (\d+) 캡처(req.matches[N])를 안전하게 int로 변환한다.
+// std::stoi는 매우 긴 숫자 문자열(예: 자릿수 20개 이상)이 들어오면 std::out_of_range를
+// 던지는데, 기존 코드는 이를 잡지 않아 해당 요청 처리 중 예외가 그대로 전파됐다.
+static bool parseIdMatch(const std::string& s, int& out) {
+    try {
+        size_t idx = 0;
+        long v = std::stol(s, &idx);
+        if (idx != s.size() || v < 0 || v > static_cast<long>(std::numeric_limits<int>::max())) {
+            return false;
+        }
+        out = static_cast<int>(v);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
 void registerTeachingRoutes(
     httplib::Server& server,
     RobotService& robotService,
@@ -4442,7 +4622,12 @@ void registerTeachingRoutes(
     });
     server.Get(R"(/teaching/jobs/(\d+))", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        int jobId = std::stoi(req.matches[1]);
+        int jobId;
+        if (!parseIdMatch(req.matches[1], jobId)) {
+            res.status = 400;
+            res.set_content(json{{"status_code", 400}, {"message", "Invalid job id"}}.dump(), "application/json");
+            return;
+        }
         json response;
         if (dbService && dbService->isConnected()) {
             auto job = dbService->getJob(jobId);
@@ -4508,7 +4693,12 @@ void registerTeachingRoutes(
     });
     server.Put(R"(/teaching/jobs/(\d+))", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        int jobId = std::stoi(req.matches[1]);
+        int jobId;
+        if (!parseIdMatch(req.matches[1], jobId)) {
+            res.status = 400;
+            res.set_content(json{{"status_code", 400}, {"message", "Invalid job id"}}.dump(), "application/json");
+            return;
+        }
         json response;
         if (dbService && dbService->isConnected()) {
             try {
@@ -4534,7 +4724,12 @@ void registerTeachingRoutes(
     });
     server.Patch(R"(/teaching/jobs/(\d+)/name)", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        int jobId = std::stoi(req.matches[1]);
+        int jobId;
+        if (!parseIdMatch(req.matches[1], jobId)) {
+            res.status = 400;
+            res.set_content(json{{"status_code", 400}, {"message", "Invalid job id"}}.dump(), "application/json");
+            return;
+        }
         json response;
         if (dbService && dbService->isConnected()) {
             try {
@@ -4566,7 +4761,12 @@ void registerTeachingRoutes(
     });
     server.Patch(R"(/teaching/jobs/(\d+)/status)", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        int jobId = std::stoi(req.matches[1]);
+        int jobId;
+        if (!parseIdMatch(req.matches[1], jobId)) {
+            res.status = 400;
+            res.set_content(json{{"status_code", 400}, {"message", "Invalid job id"}}.dump(), "application/json");
+            return;
+        }
         json response;
         if (dbService && dbService->isConnected()) {
             try {
@@ -4598,7 +4798,12 @@ void registerTeachingRoutes(
     });
     server.Delete(R"(/teaching/jobs/(\d+))", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        int jobId = std::stoi(req.matches[1]);
+        int jobId;
+        if (!parseIdMatch(req.matches[1], jobId)) {
+            res.status = 400;
+            res.set_content(json{{"status_code", 400}, {"message", "Invalid job id"}}.dump(), "application/json");
+            return;
+        }
         json response;
         if (dbService && dbService->isConnected()) {
             if (dbService->deleteJob(jobId)) {
@@ -4616,7 +4821,12 @@ void registerTeachingRoutes(
     });
     server.Post(R"(/teaching/jobs/(\d+)/points)", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        int jobId = std::stoi(req.matches[1]);
+        int jobId;
+        if (!parseIdMatch(req.matches[1], jobId)) {
+            res.status = 400;
+            res.set_content(json{{"status_code", 400}, {"message", "Invalid job id"}}.dump(), "application/json");
+            return;
+        }
         json response;
         if (dbService && dbService->isConnected()) {
             try {
@@ -4644,8 +4854,12 @@ void registerTeachingRoutes(
     });
     server.Put(R"(/teaching/jobs/(\d+)/points/(\d+))", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        int jobId = std::stoi(req.matches[1]);
-        int pointId = std::stoi(req.matches[2]);
+        int jobId, pointId;
+        if (!parseIdMatch(req.matches[1], jobId) || !parseIdMatch(req.matches[2], pointId)) {
+            res.status = 400;
+            res.set_content(json{{"status_code", 400}, {"message", "Invalid job/point id"}}.dump(), "application/json");
+            return;
+        }
         json response;
         if (dbService && dbService->isConnected()) {
             try {
@@ -4672,7 +4886,12 @@ void registerTeachingRoutes(
     });
     server.Delete(R"(/teaching/jobs/(\d+)/points/(\d+))", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        int pointId = std::stoi(req.matches[2]);
+        int pointId;
+        if (!parseIdMatch(req.matches[2], pointId)) {
+            res.status = 400;
+            res.set_content(json{{"status_code", 400}, {"message", "Invalid point id"}}.dump(), "application/json");
+            return;
+        }
         json response;
         if (dbService && dbService->isConnected()) {
             if (dbService->deletePoint(pointId)) {
@@ -4740,7 +4959,12 @@ void registerTeachingLogRoutes(
     });
     server.Get(R"(/welding-logs/(\d+))", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        int logId = std::stoi(req.matches[1]);
+        int logId;
+        if (!parseIdMatch(req.matches[1], logId)) {
+            res.status = 400;
+            res.set_content(json{{"status_code", 400}, {"message", "Invalid log id"}}.dump(), "application/json");
+            return;
+        }
         json response;
         if (dbService && dbService->isConnected()) {
             auto log = dbService->getWeldingLog(logId);
@@ -4785,7 +5009,12 @@ void registerTeachingLogRoutes(
     });
     server.Put(R"(/welding-logs/(\d+))", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        int logId = std::stoi(req.matches[1]);
+        int logId;
+        if (!parseIdMatch(req.matches[1], logId)) {
+            res.status = 400;
+            res.set_content(json{{"status_code", 400}, {"message", "Invalid log id"}}.dump(), "application/json");
+            return;
+        }
         json response;
         if (dbService && dbService->isConnected()) {
             try {
@@ -4893,7 +5122,124 @@ void registerTeachingLogRoutes(
 #include "robot_core_all.h"
 #include "robot_core_all.h"
 #include <sstream>
+#include <cctype>
 using json = nlohmann::json;
+
+// find-dx/dy/dz는 검색할 축(axis: 0=X,1=Y,2=Z)만 다르고 로직이 동일해서 공통화했다.
+// axisChar는 로그 태그/DB 로그 이름에 쓰는 소문자 x/y/z ("find-dx", "FindDx" 등).
+struct AxisTouchSearchResult {
+    int result = 0;
+    bool searchFailed = false;
+    double delta = 0;
+    double start = 0;
+    double end = 0;
+    float searchVel = 0;
+    float searchDis = 0;
+    float retractDistance = 0;
+    int toolNum = 0;
+    int userNum = 0;
+    int direction = 0;
+};
+
+AxisTouchSearchResult performAxisTouchSearch(
+    RobotService& robotService, DatabaseService* dbService,
+    const nlohmann::json& body, int axis, int defaultDirection, char axisChar
+) {
+    AxisTouchSearchResult r;
+    r.direction = body.value("direction", defaultDirection);
+    r.searchDis = 100.0f;
+    r.searchVel = 3.0f;
+    r.retractDistance = 10.0f;
+    double searchMoveDist = 0.5;
+    if (dbService && dbService->isConnected()) {
+        RobotSettings settings = dbService->getRobotSettings();
+        r.toolNum = settings.tool_num;
+        r.userNum = settings.user_num;
+        WeldingConfig config = dbService->getWeldingConfig();
+        r.searchDis = static_cast<float>(config.touch_distance);
+        r.searchVel = static_cast<float>(config.touch_sensing_search_speed);
+        r.retractDistance = static_cast<float>(config.touch_sensing_retract_distance);
+        searchMoveDist = config.touch_sensing_move_distance;
+    }
+    r.searchDis = body.value("search_dis", r.searchDis);
+    r.searchVel = body.value("search_vel", r.searchVel);
+    r.retractDistance = body.value("retract_distance", r.retractDistance);
+
+    ROBOT_STATE_PKG state = robotService.getState();
+    r.start = state.tl_cur_pos[axis];
+    double curPos[6];
+    for (int i = 0; i < 6; ++i) curPos[i] = state.tl_cur_pos[i];
+    const double SEARCH_MOVE_DIST = searchMoveDist;
+    double searchTarget[6];
+    for (int i = 0; i < 6; ++i) searchTarget[i] = curPos[i];
+    searchTarget[axis] += r.direction * SEARCH_MOVE_DIST;
+
+    const std::string tag = std::string("find-d") + axisChar;
+    const float LUA_SEARCH_DIS = 30.0f;
+    FLOG_INFO("TouchSensing", tag + " START: dir=" + std::to_string(r.direction) +
+        " searchDis=" + std::to_string(r.searchDis) + "mm vel=" + std::to_string(r.searchVel) +
+        " (LUA_SEARCH_DIS=" + std::to_string(LUA_SEARCH_DIS) + "mm)");
+
+    int wsStart = robotService.wireSearchStart(0, r.searchVel, LUA_SEARCH_DIS, 0, 10, 10, 0);
+    if (wsStart != 0) {
+        FLOG_SDK_ERROR("wireSearchStart", wsStart, tag + " WireSearchStart failed");
+    }
+
+    robotService.moveL(curPos, r.toolNum, r.userNum, r.searchVel, 3.0f, 100, -1.0f, 0, 0, nullptr, 0);
+    {
+        int motionDone = 0;
+        int waitCnt = 0;
+        while (waitCnt < 100) {
+            robotService.getMotionDone(&motionDone);
+            if (motionDone == 1) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            waitCnt++;
+        }
+    }
+
+    r.result = robotService.moveL(searchTarget, r.toolNum, r.userNum, r.searchVel, 3.0f, 100, -1.0f, 1, 0, nullptr, 0);
+
+    int motionDone = 0;
+    int waitCount = 0;
+    const int MAX_WAIT = 300;
+    while (waitCount < MAX_WAIT) {
+        robotService.getMotionDone(&motionDone);
+        if (motionDone == 1) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        waitCount++;
+    }
+    if (waitCount >= MAX_WAIT) {
+        FLOG_WARN("TouchSensing", tag + " motion wait timeout after 30s");
+    }
+
+    int wsEnd = robotService.wireSearchEnd(0, 10, 10, 0, 10, 10, 0);
+    if (wsEnd != 0) {
+        FLOG_SDK_ERROR("wireSearchEnd", wsEnd, tag + " WireSearchEnd failed");
+    }
+    if (r.result != 0) {
+        FLOG_WARN("TouchSensing", tag + " MoveL returned error code " + std::to_string(r.result));
+    }
+    r.searchFailed = (r.result != 0) || (waitCount >= MAX_WAIT);
+
+    state = robotService.getState();
+    r.end = state.tl_cur_pos[axis];
+    r.delta = r.end - r.start;
+    FLOG_INFO("TouchSensing", tag + " COMPLETE: delta=" + std::to_string(r.delta) + " contact=" + std::to_string(r.end));
+
+    double retractPos[6];
+    for (int i = 0; i < 6; ++i) retractPos[i] = state.tl_cur_pos[i];
+    retractPos[axis] -= r.direction * r.retractDistance;
+    robotService.moveL(retractPos, r.toolNum, r.userNum, 30.0f, 30.0f, 100, -1.0f, 0, 0, nullptr, 0);
+
+    if (dbService && dbService->isConnected()) {
+        std::ostringstream logDtl;
+        logDtl << "delta_" << axisChar << "=" << std::fixed << std::setprecision(3) << r.delta
+               << " start=" << r.start << " end=" << r.end << " dir=" << r.direction;
+        dbService->logDebug("TouchSensing", std::string("FindD") + axisChar, logDtl.str());
+    }
+    return r;
+}
+
 void registerSdkRoutes(
     httplib::Server& server,
     RobotService& robotService,
@@ -4919,7 +5265,7 @@ void registerSdkRoutes(
             return;
         }
         try {
-            ROBOT_STATE_PKG state = robotService.getState();
+            ROBOT_STATE_PKG state = robotService.getCachedState();
             json data;
             data["connected"] = true;
             data["joints"] = json::array({
@@ -5080,6 +5426,27 @@ void registerSdkRoutes(
         response["status_code"] = (result == 0) ? 200 : 500;
         response["result"] = result;
         res.set_content(response.dump(), "application/json");
+    });
+    // 로봇 에러 발생 이력 조회. 현재 상태(/robot_sdk/robot/error)와 달리 로봇 연결
+    // 여부와 무관하게 과거에 기록된 에러 발생~해제 구간을 최신순으로 반환한다.
+    server.Get("/robot_sdk/robot/error-history", [dbService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!dbService || !dbService->isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", "Database not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            int limit = 50;
+            int offset = 0;
+            int days = 30;
+            if (req.has_param("limit")) limit = std::max(1, std::min(500, std::stoi(req.get_param_value("limit"))));
+            if (req.has_param("offset")) offset = std::max(0, std::stoi(req.get_param_value("offset")));
+            if (req.has_param("days")) days = std::max(1, std::stoi(req.get_param_value("days")));
+            json data = dbService->getRobotErrorEvents(limit, offset, days);
+            res.set_content(HttpRouteHelpers::makeStatusResponse(200, data).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", e.what()}}).dump(), "application/json");
+        }
     });
     server.Get("/robot_sdk/settings", [dbService](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -5541,6 +5908,110 @@ void registerSdkMotionRoutes(
             res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
         }
     });
+    server.Post("/robot_sdk/move/relative-joint", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            double jointDeltas[6] = {0};
+            if (body.contains("joint_pos")) {
+                auto jp = body["joint_pos"];
+                jointDeltas[0] = jp.value("j1", 0.0);
+                jointDeltas[1] = jp.value("j2", 0.0);
+                jointDeltas[2] = jp.value("j3", 0.0);
+                jointDeltas[3] = jp.value("j4", 0.0);
+                jointDeltas[4] = jp.value("j5", 0.0);
+                jointDeltas[5] = jp.value("j6", 0.0);
+            }
+            int tool = body.value("tool", 0);
+            int user = body.value("user", 0);
+            float vel = body.value("vel", 20.0f);
+            float acc = clampMotionPercent(body.value("acc", 100.0f));
+            float ovl = clampMotionPercent(body.value("ovl", 100.0f));
+            float blendT = body.value("blend_t", -1.0f);
+            int velMode = body.value("vel_mode", 0);
+            float actualVel = vel;
+            if (velMode == 1) {
+                actualVel = vel / 15.0f;
+                std::cout << "[RelativeMoveJ] vel_mode=CPM, converting " << vel << " CPM to " << actualVel << "%" << std::endl;
+            }
+            actualVel = clampMotionPercent(actualVel);
+            {
+                std::ostringstream oss;
+                oss << std::fixed << std::setprecision(2) << "RelativeMoveJ: delta=[" << jointDeltas[0] << "," << jointDeltas[1] << "," << jointDeltas[2] << "," << jointDeltas[3] << "," << jointDeltas[4] << "," << jointDeltas[5] << "] vel=" << actualVel << " tool=" << tool << " user=" << user;
+                FLOG_INFO("SdkMotion", oss.str());
+            }
+            int result = robotService.relativeMoveJ(jointDeltas, tool, user, actualVel, acc, ovl, blendT);
+            if (result != 0) {
+                FLOG_SDK_ERROR("relativeMoveJ", result, "vel=" + std::to_string(actualVel));
+            }
+            json response;
+            response["status_code"] = (result == 0) ? 200 : 500;
+            response["result"] = result;
+            if (result != 0) {
+                response["message"] = "RelativeMoveJ failed with code " + std::to_string(result);
+            }
+            res.set_content(response.dump(), "application/json");
+        } catch (const std::exception& e) {
+            FLOG_ERROR("SdkMotion", std::string("RelativeMoveJ exception: ") + e.what());
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
+        }
+    });
+    server.Post("/robot_sdk/move/relative-linear", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            double descPosDeltas[6] = {0};
+            if (body.contains("desc_pos")) {
+                auto dp = body["desc_pos"];
+                descPosDeltas[0] = dp.value("x", 0.0);
+                descPosDeltas[1] = dp.value("y", 0.0);
+                descPosDeltas[2] = dp.value("z", 0.0);
+                descPosDeltas[3] = dp.value("rx", 0.0);
+                descPosDeltas[4] = dp.value("ry", 0.0);
+                descPosDeltas[5] = dp.value("rz", 0.0);
+            }
+            int tool = body.value("tool", 3);
+            int user = body.value("user", 0);
+            float vel = body.value("vel", 20.0f);
+            float acc = clampMotionPercent(body.value("acc", 100.0f));
+            float ovl = clampMotionPercent(body.value("ovl", 100.0f));
+            float blendR = body.value("blend_t", -1.0f);
+            int velMode = body.value("vel_mode", 0);
+            float actualVel = vel;
+            if (velMode == 1) {
+                actualVel = vel / 15.0f;
+                std::cout << "[RelativeMoveL] vel_mode=CPM, converting " << vel << " CPM to " << actualVel << "%" << std::endl;
+            }
+            actualVel = clampMotionPercent(actualVel);
+            std::ostringstream logDetails;
+            logDetails << "delta=[" << descPosDeltas[0] << "," << descPosDeltas[1] << "," << descPosDeltas[2] << ","
+                       << descPosDeltas[3] << "," << descPosDeltas[4] << "," << descPosDeltas[5] << "] "
+                       << "vel=" << actualVel << " blendR=" << blendR;
+            FLOG_INFO("SdkMotion", "RelativeMoveL: " + logDetails.str());
+            int result = robotService.relativeMoveL(descPosDeltas, tool, user, actualVel, acc, ovl, blendR);
+            if (result != 0) {
+                FLOG_SDK_ERROR("relativeMoveL", result, "vel=" + std::to_string(actualVel));
+            }
+            json response;
+            response["status_code"] = (result == 0) ? 200 : 500;
+            response["result"] = result;
+            if (result != 0) {
+                response["message"] = "RelativeMoveL failed with code " + std::to_string(result);
+            }
+            res.set_content(response.dump(), "application/json");
+        } catch (const std::exception& e) {
+            FLOG_ERROR("SdkMotion", std::string("RelativeMoveL exception: ") + e.what());
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
+        }
+    });
     server.Post("/robot_sdk/wire/forward", [&robotService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         if (!robotService.isConnected()) {
@@ -5654,120 +6125,24 @@ void registerSdkMotionTouchRoutes(
         }
         try {
             json body = json::parse(req.body);
-            int direction = body.value("direction", -1);
-            int toolNum = 0, userNum = 0;
-            float searchDis = 100.0f;
-            float searchVel = 3.0f;
-            float retractDistance = 10.0f;
-            double searchMoveDist = 0.5;
-            if (dbService && dbService->isConnected()) {
-                RobotSettings settings = dbService->getRobotSettings();
-                toolNum = settings.tool_num;
-                userNum = settings.user_num;
-                WeldingConfig config = dbService->getWeldingConfig();
-                searchDis = static_cast<float>(config.touch_distance);
-                searchVel = static_cast<float>(config.touch_sensing_search_speed);
-                retractDistance = static_cast<float>(config.touch_sensing_retract_distance);
-                searchMoveDist = config.touch_sensing_move_distance;
-            }
-            searchDis = body.value("search_dis", searchDis);
-            searchVel = body.value("search_vel", searchVel);
-            retractDistance = body.value("retract_distance", retractDistance);
-            ROBOT_STATE_PKG state = robotService.getState();
-            double startX = state.tl_cur_pos[0];
-            double curPos[6] = {
-                state.tl_cur_pos[0], state.tl_cur_pos[1], state.tl_cur_pos[2],
-                state.tl_cur_pos[3], state.tl_cur_pos[4], state.tl_cur_pos[5]
-            };
-            const double SEARCH_MOVE_DIST = searchMoveDist;
-            double searchTarget[6] = {
-                curPos[0] + direction * SEARCH_MOVE_DIST,
-                curPos[1], curPos[2],
-                curPos[3], curPos[4], curPos[5]
-            };
-            FLOG_INFO("TouchSensing", "find-dx START: dir=" + std::to_string(direction) + " searchDis=" + std::to_string(searchDis) + "mm vel=" + std::to_string(searchVel));
-            std::cout << "[find-dx] Starting X search: dir=" << direction << ", searchDis=" << searchDis << "mm, vel=" << searchVel << std::endl;
-            const float LUA_SEARCH_DIS = 30.0f;
-            std::cout << "[find-dx] Using params: vel=" << searchVel << "% (from DB), dis=" << LUA_SEARCH_DIS << "mm" << std::endl;
-            int wsStart = robotService.wireSearchStart(0, searchVel, LUA_SEARCH_DIS, 0, 10, 10, 0);
-            std::cout << "[find-dx] WireSearchStart result=" << wsStart << " (0=success)" << std::endl;
-            if (wsStart != 0) {
-                FLOG_SDK_ERROR("wireSearchStart", wsStart, "find-dx WireSearchStart failed");
-                std::cout << "[find-dx] ERROR: WireSearchStart failed with code " << wsStart << std::endl;
-            }
-            robotService.moveL(curPos, toolNum, userNum, searchVel, 3.0f, 100, -1.0f, 0, 0, nullptr, 0);
-            {
-                int motionDone = 0;
-                int waitCnt = 0;
-                while (waitCnt < 100) {
-                    robotService.getMotionDone(&motionDone);
-                    if (motionDone == 1) break;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    waitCnt++;
-                }
-            }
-            std::cout << "[find-dx] MoveL with search=1, move=" << SEARCH_MOVE_DIST << "mm, searchDis=" << LUA_SEARCH_DIS << "mm" << std::endl;
-            int result = robotService.moveL(searchTarget, toolNum, userNum, searchVel, 3.0f, 100, -1.0f, 1, 0, nullptr, 0);
-            std::cout << "[find-dx] MoveL(search=1) result=" << result << " (0=success)" << std::endl;
-            int motionDone = 0;
-            int waitCount = 0;
-            const int MAX_WAIT = 300;
-            while (waitCount < MAX_WAIT) {
-                robotService.getMotionDone(&motionDone);
-                if (motionDone == 1) {
-                    std::cout << "[find-dx] Motion done after " << waitCount * 100 << "ms" << std::endl;
-                    break;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                waitCount++;
-            }
-            if (waitCount >= MAX_WAIT) {
-                FLOG_WARN("TouchSensing", "find-dx motion wait timeout after 30s");
-                std::cout << "[find-dx] WARNING: Motion wait timeout!" << std::endl;
-            }
-            int wsEnd = robotService.wireSearchEnd(0, 10, 10, 0, 10, 10, 0);
-            std::cout << "[find-dx] WireSearchEnd result=" << wsEnd << std::endl;
-            if (result != 0) {
-                FLOG_WARN("TouchSensing", "find-dx MoveL returned error code " + std::to_string(result));
-                std::cout << "[find-dx] WARNING: MoveL returned error code " << result << std::endl;
-            }
-            bool searchFailed = (result != 0) || (waitCount >= MAX_WAIT);
-            state = robotService.getState();
-            double deltaX = state.tl_cur_pos[0] - startX;
-            double contactX = state.tl_cur_pos[0];
-            FLOG_INFO("TouchSensing", "find-dx COMPLETE: deltaX=" + std::to_string(deltaX) + " contactX=" + std::to_string(contactX));
-            std::cout << "[find-dx] Contact: X=" << contactX << ", deltaX=" << deltaX << std::endl;
-            double retractPos[6] = {
-                state.tl_cur_pos[0] - direction * retractDistance,
-                state.tl_cur_pos[1],
-                state.tl_cur_pos[2],
-                state.tl_cur_pos[3], state.tl_cur_pos[4], state.tl_cur_pos[5]
-            };
-            std::cout << "[find-dx] Retracting " << retractDistance << "mm" << std::endl;
-            robotService.moveL(retractPos, toolNum, userNum, 30.0f, 30.0f, 100, -1.0f, 0, 0, nullptr, 0);
-            if (dbService && dbService->isConnected()) {
-                std::ostringstream logDtl;
-                logDtl << "delta_x=" << std::fixed << std::setprecision(3) << deltaX
-                       << " start=" << startX << " end=" << contactX << " dir=" << direction;
-                dbService->logDebug("TouchSensing", "FindDx", logDtl.str());
-            }
+            AxisTouchSearchResult r = performAxisTouchSearch(robotService, dbService, body, /*axis=*/0, /*defaultDirection=*/-1, 'x');
             json response;
-            response["status_code"] = searchFailed ? 500 : 200;
-            response["result"] = result;
-            if (searchFailed) {
+            response["status_code"] = r.searchFailed ? 500 : 200;
+            response["result"] = r.result;
+            if (r.searchFailed) {
                 response["message"] = "터치 센싱 실패 또는 타임아웃 — 접촉 위치를 신뢰할 수 없습니다";
             }
             response["data"] = {
-                {"delta_x", deltaX},
-                {"start_x", startX},
-                {"end_x", contactX},
-                {"direction", direction},
-                {"search_vel", searchVel},
-                {"search_dis", searchDis},
-                {"retract_distance", retractDistance},
-                {"tool_num", toolNum},
-                {"user_num", userNum},
-                {"search_failed", searchFailed}
+                {"delta_x", r.delta},
+                {"start_x", r.start},
+                {"end_x", r.end},
+                {"direction", r.direction},
+                {"search_vel", r.searchVel},
+                {"search_dis", r.searchDis},
+                {"retract_distance", r.retractDistance},
+                {"tool_num", r.toolNum},
+                {"user_num", r.userNum},
+                {"search_failed", r.searchFailed}
             };
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
@@ -5783,117 +6158,24 @@ void registerSdkMotionTouchRoutes(
         }
         try {
             json body = json::parse(req.body);
-            int direction = body.value("direction", 1);
-            int toolNum = 0, userNum = 0;
-            float searchDis = 100.0f;
-            float searchVel = 3.0f;
-            float retractDistance = 10.0f;
-            double searchMoveDist = 0.5;
-            if (dbService && dbService->isConnected()) {
-                RobotSettings settings = dbService->getRobotSettings();
-                toolNum = settings.tool_num;
-                userNum = settings.user_num;
-                WeldingConfig config = dbService->getWeldingConfig();
-                searchDis = static_cast<float>(config.touch_distance);
-                searchVel = static_cast<float>(config.touch_sensing_search_speed);
-                retractDistance = static_cast<float>(config.touch_sensing_retract_distance);
-                searchMoveDist = config.touch_sensing_move_distance;
-            }
-            searchDis = body.value("search_dis", searchDis);
-            searchVel = body.value("search_vel", searchVel);
-            retractDistance = body.value("retract_distance", retractDistance);
-            ROBOT_STATE_PKG state = robotService.getState();
-            double startY = state.tl_cur_pos[1];
-            double curPos[6] = {
-                state.tl_cur_pos[0], state.tl_cur_pos[1], state.tl_cur_pos[2],
-                state.tl_cur_pos[3], state.tl_cur_pos[4], state.tl_cur_pos[5]
-            };
-            const double SEARCH_MOVE_DIST = searchMoveDist;
-            double searchTarget[6] = {
-                curPos[0], curPos[1] + direction * SEARCH_MOVE_DIST, curPos[2],
-                curPos[3], curPos[4], curPos[5]
-            };
-            const float LUA_SEARCH_DIS = 30.0f;
-            FLOG_INFO("TouchSensing", "find-dy START: dir=" + std::to_string(direction) + " vel=" + std::to_string(searchVel));
-            std::cout << "[find-dy] Using params: vel=" << searchVel << "% (from DB), dis=" << LUA_SEARCH_DIS << "mm" << std::endl;
-            int wsStart = robotService.wireSearchStart(0, searchVel, LUA_SEARCH_DIS, 0, 10, 10, 0);
-            if (wsStart != 0) {
-                FLOG_SDK_ERROR("wireSearchStart", wsStart, "find-dy WireSearchStart failed");
-            }
-            std::cout << "[find-dy] WireSearchStart result=" << wsStart << " (0=success)" << std::endl;
-            robotService.moveL(curPos, toolNum, userNum, searchVel, 3.0f, 100, -1.0f, 0, 0, nullptr, 0);
-            {
-                int motionDone = 0;
-                int waitCnt = 0;
-                while (waitCnt < 100) {
-                    robotService.getMotionDone(&motionDone);
-                    if (motionDone == 1) break;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    waitCnt++;
-                }
-            }
-            std::cout << "[find-dy] MoveL with search=1, move=" << SEARCH_MOVE_DIST << "mm, searchDis=" << LUA_SEARCH_DIS << "mm" << std::endl;
-            int result = robotService.moveL(searchTarget, toolNum, userNum, searchVel, 3.0f, 100, -1.0f, 1, 0, nullptr, 0);
-            std::cout << "[find-dy] MoveL(search=1) result=" << result << " (0=success)" << std::endl;
-            int motionDone = 0;
-            int waitCount = 0;
-            const int MAX_WAIT = 300;
-            while (waitCount < MAX_WAIT) {
-                robotService.getMotionDone(&motionDone);
-                if (motionDone == 1) {
-                    std::cout << "[find-dy] Motion done after " << waitCount * 100 << "ms" << std::endl;
-                    break;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                waitCount++;
-            }
-            if (waitCount >= MAX_WAIT) {
-                FLOG_WARN("TouchSensing", "find-dy motion wait timeout after 30s");
-                std::cout << "[find-dy] WARNING: Motion wait timeout!" << std::endl;
-            }
-            int wsEnd = robotService.wireSearchEnd(0, 10, 10, 0, 10, 10, 0);
-            std::cout << "[find-dy] WireSearchEnd result=" << wsEnd << std::endl;
-            if (result != 0) {
-                FLOG_WARN("TouchSensing", "find-dy MoveL returned error code " + std::to_string(result));
-                std::cout << "[find-dy] WARNING: MoveL returned error code " << result << std::endl;
-            }
-            bool searchFailed = (result != 0) || (waitCount >= MAX_WAIT);
-            state = robotService.getState();
-            double deltaY = state.tl_cur_pos[1] - startY;
-            double contactY = state.tl_cur_pos[1];
-            FLOG_INFO("TouchSensing", "find-dy COMPLETE: deltaY=" + std::to_string(deltaY) + " contactY=" + std::to_string(contactY));
-            std::cout << "[find-dy] Contact: Y=" << contactY << ", deltaY=" << deltaY << std::endl;
-            double retractPos[6] = {
-                state.tl_cur_pos[0],
-                state.tl_cur_pos[1] - direction * retractDistance,
-                state.tl_cur_pos[2],
-                state.tl_cur_pos[3], state.tl_cur_pos[4], state.tl_cur_pos[5]
-            };
-            std::cout << "[find-dy] Retracting " << retractDistance << "mm" << std::endl;
-            robotService.moveL(retractPos, toolNum, userNum, 30.0f, 30.0f, 100, -1.0f, 0, 0, nullptr, 0);
-            if (dbService && dbService->isConnected()) {
-                std::ostringstream logDtl;
-                logDtl << "delta_y=" << std::fixed << std::setprecision(3) << deltaY
-                       << " start=" << startY << " end=" << contactY << " dir=" << direction;
-                dbService->logDebug("TouchSensing", "FindDy", logDtl.str());
-            }
+            AxisTouchSearchResult r = performAxisTouchSearch(robotService, dbService, body, /*axis=*/1, /*defaultDirection=*/1, 'y');
             json response;
-            response["status_code"] = searchFailed ? 500 : 200;
-            response["result"] = result;
-            if (searchFailed) {
+            response["status_code"] = r.searchFailed ? 500 : 200;
+            response["result"] = r.result;
+            if (r.searchFailed) {
                 response["message"] = "터치 센싱 실패 또는 타임아웃 — 접촉 위치를 신뢰할 수 없습니다";
             }
             response["data"] = {
-                {"delta_y", deltaY},
-                {"start_y", startY},
-                {"end_y", contactY},
-                {"direction", direction},
-                {"search_vel", searchVel},
-                {"search_dis", searchDis},
-                {"retract_distance", retractDistance},
-                {"tool_num", toolNum},
-                {"user_num", userNum},
-                {"search_failed", searchFailed}
+                {"delta_y", r.delta},
+                {"start_y", r.start},
+                {"end_y", r.end},
+                {"direction", r.direction},
+                {"search_vel", r.searchVel},
+                {"search_dis", r.searchDis},
+                {"retract_distance", r.retractDistance},
+                {"tool_num", r.toolNum},
+                {"user_num", r.userNum},
+                {"search_failed", r.searchFailed}
             };
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
@@ -5909,117 +6191,24 @@ void registerSdkMotionTouchRoutes(
         }
         try {
             json body = json::parse(req.body);
-            int direction = body.value("direction", -1);
-            int toolNum = 0, userNum = 0;
-            float searchDis = 100.0f;
-            float searchVel = 3.0f;
-            float retractDistance = 10.0f;
-            double searchMoveDist = 0.5;
-            if (dbService && dbService->isConnected()) {
-                RobotSettings settings = dbService->getRobotSettings();
-                toolNum = settings.tool_num;
-                userNum = settings.user_num;
-                WeldingConfig config = dbService->getWeldingConfig();
-                searchDis = static_cast<float>(config.touch_distance);
-                searchVel = static_cast<float>(config.touch_sensing_search_speed);
-                retractDistance = static_cast<float>(config.touch_sensing_retract_distance);
-                searchMoveDist = config.touch_sensing_move_distance;
-            }
-            searchDis = body.value("search_dis", searchDis);
-            searchVel = body.value("search_vel", searchVel);
-            retractDistance = body.value("retract_distance", retractDistance);
-            ROBOT_STATE_PKG state = robotService.getState();
-            double startZ = state.tl_cur_pos[2];
-            double curPos[6] = {
-                state.tl_cur_pos[0], state.tl_cur_pos[1], state.tl_cur_pos[2],
-                state.tl_cur_pos[3], state.tl_cur_pos[4], state.tl_cur_pos[5]
-            };
-            const double SEARCH_MOVE_DIST = searchMoveDist;
-            double searchTarget[6] = {
-                curPos[0], curPos[1], curPos[2] + direction * SEARCH_MOVE_DIST,
-                curPos[3], curPos[4], curPos[5]
-            };
-            const float LUA_SEARCH_DIS = 30.0f;
-            FLOG_INFO("TouchSensing", "find-dz START: dir=" + std::to_string(direction) + " vel=" + std::to_string(searchVel));
-            std::cout << "[find-dz] Using params: vel=" << searchVel << "% (from DB), dis=" << LUA_SEARCH_DIS << "mm" << std::endl;
-            int wsStart = robotService.wireSearchStart(0, searchVel, LUA_SEARCH_DIS, 0, 10, 10, 0);
-            if (wsStart != 0) {
-                FLOG_SDK_ERROR("wireSearchStart", wsStart, "find-dz WireSearchStart failed");
-            }
-            std::cout << "[find-dz] WireSearchStart result=" << wsStart << " (0=success)" << std::endl;
-            robotService.moveL(curPos, toolNum, userNum, searchVel, 3.0f, 100, -1.0f, 0, 0, nullptr, 0);
-            {
-                int motionDone = 0;
-                int waitCnt = 0;
-                while (waitCnt < 100) {
-                    robotService.getMotionDone(&motionDone);
-                    if (motionDone == 1) break;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    waitCnt++;
-                }
-            }
-            std::cout << "[find-dz] MoveL with search=1, move=" << SEARCH_MOVE_DIST << "mm, searchDis=" << LUA_SEARCH_DIS << "mm" << std::endl;
-            int result = robotService.moveL(searchTarget, toolNum, userNum, searchVel, 3.0f, 100, -1.0f, 1, 0, nullptr, 0);
-            std::cout << "[find-dz] MoveL(search=1) result=" << result << " (0=success)" << std::endl;
-            int motionDone = 0;
-            int waitCount = 0;
-            const int MAX_WAIT = 300;
-            while (waitCount < MAX_WAIT) {
-                robotService.getMotionDone(&motionDone);
-                if (motionDone == 1) {
-                    std::cout << "[find-dz] Motion done after " << waitCount * 100 << "ms" << std::endl;
-                    break;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                waitCount++;
-            }
-            if (waitCount >= MAX_WAIT) {
-                FLOG_WARN("TouchSensing", "find-dz motion wait timeout after 30s");
-                std::cout << "[find-dz] WARNING: Motion wait timeout!" << std::endl;
-            }
-            int wsEnd = robotService.wireSearchEnd(0, 10, 10, 0, 10, 10, 0);
-            std::cout << "[find-dz] WireSearchEnd result=" << wsEnd << std::endl;
-            if (result != 0) {
-                FLOG_WARN("TouchSensing", "find-dz MoveL returned error code " + std::to_string(result));
-                std::cout << "[find-dz] WARNING: MoveL returned error code " << result << std::endl;
-            }
-            bool searchFailed = (result != 0) || (waitCount >= MAX_WAIT);
-            state = robotService.getState();
-            double deltaZ = state.tl_cur_pos[2] - startZ;
-            double contactZ = state.tl_cur_pos[2];
-            FLOG_INFO("TouchSensing", "find-dz COMPLETE: deltaZ=" + std::to_string(deltaZ) + " contactZ=" + std::to_string(contactZ));
-            std::cout << "[find-dz] Contact: Z=" << contactZ << ", deltaZ=" << deltaZ << std::endl;
-            double retractPos[6] = {
-                state.tl_cur_pos[0],
-                state.tl_cur_pos[1],
-                state.tl_cur_pos[2] - direction * retractDistance,
-                state.tl_cur_pos[3], state.tl_cur_pos[4], state.tl_cur_pos[5]
-            };
-            std::cout << "[find-dz] Retracting " << retractDistance << "mm" << std::endl;
-            robotService.moveL(retractPos, toolNum, userNum, 30.0f, 30.0f, 100, -1.0f, 0, 0, nullptr, 0);
-            if (dbService && dbService->isConnected()) {
-                std::ostringstream logDtl;
-                logDtl << "delta_z=" << std::fixed << std::setprecision(3) << deltaZ
-                       << " start=" << startZ << " end=" << contactZ << " dir=" << direction;
-                dbService->logDebug("TouchSensing", "FindDz", logDtl.str());
-            }
+            AxisTouchSearchResult r = performAxisTouchSearch(robotService, dbService, body, /*axis=*/2, /*defaultDirection=*/-1, 'z');
             json response;
-            response["status_code"] = searchFailed ? 500 : 200;
-            response["result"] = result;
-            if (searchFailed) {
+            response["status_code"] = r.searchFailed ? 500 : 200;
+            response["result"] = r.result;
+            if (r.searchFailed) {
                 response["message"] = "터치 센싱 실패 또는 타임아웃 — 접촉 위치를 신뢰할 수 없습니다";
             }
             response["data"] = {
-                {"delta_z", deltaZ},
-                {"start_z", startZ},
-                {"end_z", contactZ},
-                {"direction", direction},
-                {"search_vel", searchVel},
-                {"search_dis", searchDis},
-                {"retract_distance", retractDistance},
-                {"tool_num", toolNum},
-                {"user_num", userNum},
-                {"search_failed", searchFailed}
+                {"delta_z", r.delta},
+                {"start_z", r.start},
+                {"end_z", r.end},
+                {"direction", r.direction},
+                {"search_vel", r.searchVel},
+                {"search_dis", r.searchDis},
+                {"retract_distance", r.retractDistance},
+                {"tool_num", r.toolNum},
+                {"user_num", r.userNum},
+                {"search_failed", r.searchFailed}
             };
             res.set_content(response.dump(), "application/json");
         } catch (const std::exception& e) {
@@ -6048,7 +6237,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.18"
+#define APP_VERSION_STRING "1.1.30"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -6169,6 +6358,18 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
             char ts[32] = {0};
             std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm_local);
             std::string zipPath = tmpDir + "\\vot_logs_" + ts + ".zip";
+            // 이 스코프를 벗어날 때(정상 반환/조기 반환/예외 모두) 임시 zip 파일을 자동 삭제한다.
+            // 기존 코드는 성공 경로 끝에서만 명시적으로 삭제했기 때문에, 중간에 예외가 나면
+            // (예: 응답 전송 중 실패) 임시 파일이 %LOCALAPPDATA%\VoT에 계속 쌓이는 문제가 있었다.
+            struct ZipFileGuard {
+                std::string path;
+                ~ZipFileGuard() {
+                    if (!path.empty()) {
+                        std::error_code ec;
+                        fs::remove(path, ec);
+                    }
+                }
+            } zipGuard{zipPath};
             std::string script =
                 "$ErrorActionPreference='Stop'; "
                 "$cut=(Get-Date).AddDays(-" + std::to_string(days) + "); "
@@ -6228,8 +6429,6 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
             res.set_header("Content-Disposition",
                 "attachment; filename=\"vot_logs_" + std::string(ts) + ".zip\"");
             res.set_content(ss.str(), "application/zip");
-            std::error_code remEc;
-            fs::remove(zipPath, remEc);
         } catch (const std::exception& e) {
             res.status = 500;
             res.set_content(HttpRouteHelpers::makeErrorResponse(500, e.what()), "application/json");
@@ -6263,6 +6462,21 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
             std::string zipPath = tmpDir + "\\vot_logs_" + ts + ".zip";
             std::string ps1Path = tmpDir + "\\vot_send_" + ts + ".ps1";
             std::string outPath = tmpDir + "\\vot_send_" + ts + ".out.txt";
+            // 스코프 종료 시(정상 반환/조기 반환/예외 모두) 임시 파일 3개를 자동 정리한다.
+            // 기존 코드는 성공 경로 끝에서만 ps1Path/outPath를 지웠고 zipPath는 PowerShell
+            // 스크립트 내부의 Remove-Item에만 의존했기 때문에, 중간에 예외가 나면
+            // %LOCALAPPDATA%\VoT에 임시 파일이 계속 쌓이는 문제가 있었다.
+            struct TempFilesGuard {
+                std::vector<std::string> paths;
+                ~TempFilesGuard() {
+                    for (auto& p : paths) {
+                        if (!p.empty()) {
+                            std::error_code ec;
+                            fs::remove(p, ec);
+                        }
+                    }
+                }
+            } tempFilesGuard{{zipPath, ps1Path, outPath}};
             auto esc = [](const std::string& s) {
                 std::string out; out.reserve(s.size());
                 for (char c : s) {
@@ -6572,48 +6786,13 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
         HttpRouteHelpers::setCorsHeaders(res);
         res.status = 200;
     });
-    server.Post("/auth/login", [dbService](const httplib::Request& req, httplib::Response& res) {
+    // 로그인은 robot-back(FastAPI, POST /api/auth/login)에서만 처리한다.
+    // robot-core는 그 JWT를 검증만 하므로(pre_routing_handler) 자체 로그인 세션이 없다.
+    server.Post("/auth/logout", [](const httplib::Request&, httplib::Response& res) {
+        // JWT는 무상태(stateless)라 서버 측에서 개별 무효화할 수 없다.
+        // 프론트가 토큰을 버리는 것으로 충분하므로 호환을 위해 200만 반환한다.
         HttpRouteHelpers::setCorsHeaders(res);
         json response;
-        try {
-            if (!dbService) {
-                throw std::runtime_error("Database service not available");
-            }
-            json body = json::parse(req.body);
-            std::string username = body.value("username", "");
-            std::string password = body.value("password", "");
-            json user = dbService->authenticateUser(username, password);
-            if (!user.is_null()) {
-                std::string token = AuthService::instance().createSession(
-                    user["id"].get<int>(),
-                    user["username"].get<std::string>(),
-                    user["role"].get<std::string>()
-                );
-                response["status_code"] = 200;
-                response["message"] = "Login successful";
-                user["accessToken"] = token;
-                user["refreshToken"] = token;
-                response["data"] = user;
-            } else {
-                response["status_code"] = 401;
-                response["message"] = "Invalid username or password";
-            }
-        } catch (const std::exception& e) {
-            response["status_code"] = 500;
-            response["message"] = e.what();
-        }
-        res.set_content(response.dump(), "application/json");
-    });
-    server.Post("/auth/logout", [](const httplib::Request& req, httplib::Response& res) {
-        HttpRouteHelpers::setCorsHeaders(res);
-        json response;
-        if (req.has_header("Authorization")) {
-            std::string authHeader = req.get_header_value("Authorization");
-            if (authHeader.find("Bearer ") == 0) {
-                std::string token = authHeader.substr(7);
-                AuthService::instance().removeSession(token);
-            }
-        }
         response["status_code"] = 200;
         response["message"] = "Logout successful";
         res.set_content(response.dump(), "application/json");
@@ -7313,106 +7492,8 @@ std::string ConfigService::getDbName() const {
 unsigned int ConfigService::getDbPort() const {
     return static_cast<unsigned int>(getInt("database.port", 3306));
 }
-#include "robot_core_all.h"
-#include "robot_core_all.h"
-#include <random>
-#include <sstream>
-#include <iomanip>
-#include <iostream>
-#include <algorithm>
-using json = nlohmann::json;
-AuthService& AuthService::instance() {
-    static AuthService inst;
-    return inst;
-}
-std::string AuthService::generateToken() {
-    std::random_device rd;
-    std::mt19937_64 gen(rd());
-    std::uniform_int_distribution<uint64_t> dist;
-    std::ostringstream ss;
-    ss << std::hex << std::setfill('0');
-    ss << std::setw(16) << dist(gen);
-    ss << std::setw(16) << dist(gen);
-    ss << std::setw(16) << dist(gen);
-    ss << std::setw(16) << dist(gen);
-    return ss.str();
-}
-std::string AuthService::createSession(int userId, const std::string& username, const std::string& role) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    static int callCount = 0;
-    if (++callCount % 10 == 0) {
-        auto now = std::time(nullptr);
-        for (auto it = m_sessions.begin(); it != m_sessions.end(); ) {
-            if (now - it->second.lastAccessAt > m_sessionTimeout) {
-                it = m_sessions.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
-    std::string token = generateToken();
-    Session session;
-    session.userId = userId;
-    session.username = username;
-    session.role = role;
-    session.createdAt = std::time(nullptr);
-    session.lastAccessAt = session.createdAt;
-    m_sessions[token] = session;
-    FLOG_INFO("AuthService", "Login success: user=" + username + " role=" + role + " activeSessions=" + std::to_string(m_sessions.size()));
-    std::cout << "[AuthService] Session created for user: " << username
-              << " (active sessions: " << m_sessions.size() << ")" << std::endl;
-    return token;
-}
-json AuthService::validateSession(const std::string& token) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    auto it = m_sessions.find(token);
-    if (it == m_sessions.end()) {
-        FLOG_WARN("AuthService", "Token validation failed: invalid token");
-        return nullptr;
-    }
-    auto now = std::time(nullptr);
-    if (now - it->second.lastAccessAt > m_sessionTimeout) {
-        FLOG_WARN("AuthService", "Session expired: user=" + it->second.username);
-        std::cout << "[AuthService] Session expired for user: " << it->second.username << std::endl;
-        m_sessions.erase(it);
-        return nullptr;
-    }
-    it->second.lastAccessAt = now;
-    json user;
-    user["id"] = it->second.userId;
-    user["username"] = it->second.username;
-    user["role"] = it->second.role;
-    return user;
-}
-void AuthService::removeSession(const std::string& token) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    auto it = m_sessions.find(token);
-    if (it != m_sessions.end()) {
-        FLOG_INFO("AuthService", "Logout: user=" + it->second.username);
-        std::cout << "[AuthService] Session removed for user: " << it->second.username << std::endl;
-        m_sessions.erase(it);
-    }
-}
-void AuthService::cleanExpiredSessions() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    auto now = std::time(nullptr);
-    int removed = 0;
-    for (auto it = m_sessions.begin(); it != m_sessions.end(); ) {
-        if (now - it->second.lastAccessAt > m_sessionTimeout) {
-            it = m_sessions.erase(it);
-            removed++;
-        } else {
-            ++it;
-        }
-    }
-    if (removed > 0) {
-        std::cout << "[AuthService] Cleaned " << removed << " expired sessions"
-                  << " (remaining: " << m_sessions.size() << ")" << std::endl;
-    }
-}
-int AuthService::getActiveSessionCount() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    return static_cast<int>(m_sessions.size());
+std::string ConfigService::getJwtSecret() const {
+    return get("auth.jwt_secret", "");
 }
 #include "robot_core_all.h"
 #include "robot_core_all.h"
@@ -7565,6 +7646,16 @@ MYSQL_RES* DatabaseService::executeSelect(const std::string& query) {
     }
     return mysql_store_result(m_conn);
 }
+// executeSelect()가 반환한 MYSQL_RES*를 스코프 종료 시(정상 반환/예외 모두) 자동으로
+// mysql_free_result()하기 위한 RAII 가드. row 파싱 중 stoi/stod가 던지는 경우에도
+// 결과셋 누수를 막는다.
+struct MySqlResultGuard {
+    MYSQL_RES* r;
+    explicit MySqlResultGuard(MYSQL_RES* res) : r(res) {}
+    ~MySqlResultGuard() { if (r) mysql_free_result(r); }
+    MySqlResultGuard(const MySqlResultGuard&) = delete;
+    MySqlResultGuard& operator=(const MySqlResultGuard&) = delete;
+};
 #include "robot_core_all.h"
 #include <iostream>
 #include <sstream>
@@ -7578,6 +7669,7 @@ std::vector<TeachingJob> DatabaseService::getJobs(int limit, int offset) {
           << "FROM teaching_jobs ORDER BY created_at DESC LIMIT " << limit << " OFFSET " << offset;
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return jobs;
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row;
     while ((row = mysql_fetch_row(result))) {
         TeachingJob job;
@@ -7599,7 +7691,6 @@ std::vector<TeachingJob> DatabaseService::getJobs(int limit, int offset) {
         job.completed_at = row[col] ? row[col] : ""; col++;
         jobs.push_back(job);
     }
-    mysql_free_result(result);
     return jobs;
 }
 TeachingJob DatabaseService::getJob(int id) {
@@ -7612,6 +7703,7 @@ TeachingJob DatabaseService::getJob(int id) {
           << "FROM teaching_jobs WHERE id = " << id;
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return job;
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row = mysql_fetch_row(result);
     if (row) {
         int col = 0;
@@ -7631,7 +7723,6 @@ TeachingJob DatabaseService::getJob(int id) {
         job.started_at = row[col] ? row[col] : ""; col++;
         job.completed_at = row[col] ? row[col] : ""; col++;
     }
-    mysql_free_result(result);
     return job;
 }
 int DatabaseService::createJob(const TeachingJob& job) {
@@ -7666,10 +7757,10 @@ bool DatabaseService::updateJob(const TeachingJob& job) {
           << "width = " << job.width << ", "
           << "height = " << job.height;
     if (!job.started_at.empty()) {
-        query << ", started_at = '" << job.started_at << "'";
+        query << ", started_at = '" << escapeString(job.started_at) << "'";
     }
     if (!job.completed_at.empty()) {
-        query << ", completed_at = '" << job.completed_at << "'";
+        query << ", completed_at = '" << escapeString(job.completed_at) << "'";
     }
     query << " WHERE id = " << job.id;
     return executeQuery(query.str());
@@ -7729,6 +7820,7 @@ std::vector<TeachingPoint> DatabaseService::getPoints(int jobId) {
           << "FROM teaching_points WHERE job_id = " << jobId << " ORDER BY `order`";
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return points;
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row;
     while ((row = mysql_fetch_row(result))) {
         TeachingPoint point;
@@ -7775,7 +7867,6 @@ std::vector<TeachingPoint> DatabaseService::getPoints(int jobId) {
         point.completed_at = row[col] ? row[col] : ""; col++;
         points.push_back(point);
     }
-    mysql_free_result(result);
     return points;
 }
 TeachingPoint DatabaseService::getPoint(int id) {
@@ -7790,6 +7881,7 @@ TeachingPoint DatabaseService::getPoint(int id) {
           << "FROM teaching_points WHERE id = " << id;
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return point;
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row = mysql_fetch_row(result);
     if (row) {
         int col = 0;
@@ -7834,7 +7926,6 @@ TeachingPoint DatabaseService::getPoint(int id) {
         point.is_completed = row[col] ? (std::stoi(row[col]) != 0) : false; col++;
         point.completed_at = row[col] ? row[col] : ""; col++;
     }
-    mysql_free_result(result);
     return point;
 }
 int DatabaseService::createPoint(const TeachingPoint& point) {
@@ -7895,7 +7986,7 @@ bool DatabaseService::updatePoint(const TeachingPoint& point) {
           << "is_saved = " << (point.is_saved ? 1 : 0) << ", "
           << "is_completed = " << (point.is_completed ? 1 : 0);
     if (!point.completed_at.empty()) {
-        query << ", completed_at = '" << point.completed_at << "'";
+        query << ", completed_at = '" << escapeString(point.completed_at) << "'";
     }
     query << " WHERE id = " << point.id;
     return executeQuery(query.str());
@@ -8038,6 +8129,7 @@ RobotSettings DatabaseService::getRobotSettings() {
     if (!result) {
         return settings;
     }
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row = mysql_fetch_row(result);
     if (row) {
         settings.tool_num = row[0] ? std::stoi(row[0]) : 0;
@@ -8050,7 +8142,6 @@ RobotSettings DatabaseService::getRobotSettings() {
         settings.collision_detection_enabled = row[7] ? (std::stoi(row[7]) != 0) : true;
         settings.updated_at = row[8] ? row[8] : "";
     }
-    mysql_free_result(result);
     return settings;
 }
 bool DatabaseService::updateRobotSettings(const RobotSettings& settings) {
@@ -8121,6 +8212,7 @@ WeldingConfig DatabaseService::getWeldingConfig() {
     if (!result) {
         return config;
     }
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row = mysql_fetch_row(result);
     if (row) {
         int col = 0;
@@ -8189,7 +8281,6 @@ WeldingConfig DatabaseService::getWeldingConfig() {
         config.arc_tracking_sum_max_ud = row[col] ? std::stod(row[col]) : 30.0; col++;
         config.updated_at = row[col] ? row[col] : ""; col++;
     }
-    mysql_free_result(result);
     return config;
 }
 bool DatabaseService::updateWeldingConfig(const WeldingConfig& config) {
@@ -8402,16 +8493,20 @@ json DatabaseService::getWeldingPartOrder() {
     json result = json::array();
     MYSQL_RES* res = executeSelect("SELECT part_index, execution_order, part_name, points FROM welding_part_order ORDER BY execution_order");
     if (!res) return result;
+    MySqlResultGuard resultGuard(res);
     MYSQL_ROW row;
     while ((row = mysql_fetch_row(res))) {
         json item;
         item["part_index"] = row[0] ? std::stoi(row[0]) : 0;
         item["execution_order"] = row[1] ? std::stoi(row[1]) : 0;
         item["part_name"] = row[2] ? row[2] : "";
-        item["points"] = row[3] ? json::parse(row[3]) : json::array();
+        try {
+            item["points"] = row[3] ? json::parse(row[3]) : json::array();
+        } catch (...) {
+            item["points"] = json::array();
+        }
         result.push_back(item);
     }
-    mysql_free_result(res);
     return result;
 }
 bool DatabaseService::updateWeldingPartOrder(const json& orderArray) {
@@ -8444,6 +8539,7 @@ std::vector<WeldingLog> DatabaseService::getWeldingLogs(int limit, int offset, i
     query << " ORDER BY started_at DESC LIMIT " << limit << " OFFSET " << offset;
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return logs;
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row;
     while ((row = mysql_fetch_row(result))) {
         WeldingLog log;
@@ -8494,7 +8590,6 @@ std::vector<WeldingLog> DatabaseService::getWeldingLogs(int limit, int offset, i
         log.created_at = row[col] ? row[col] : ""; col++;
         logs.push_back(log);
     }
-    mysql_free_result(result);
     return logs;
 }
 int DatabaseService::getWeldingLogsCount(int jobId) {
@@ -8506,12 +8601,12 @@ int DatabaseService::getWeldingLogsCount(int jobId) {
     }
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return 0;
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row = mysql_fetch_row(result);
     int count = 0;
     if (row && row[0]) {
         count = std::stoi(row[0]);
     }
-    mysql_free_result(result);
     return count;
 }
 WeldingLog DatabaseService::getWeldingLog(int id) {
@@ -8526,6 +8621,7 @@ WeldingLog DatabaseService::getWeldingLog(int id) {
           << "FROM welding_logs WHERE id = " << id;
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return log;
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row = mysql_fetch_row(result);
     if (row) {
         int col = 0;
@@ -8574,7 +8670,6 @@ WeldingLog DatabaseService::getWeldingLog(int id) {
         log.error_message = row[col] ? row[col] : ""; col++;
         log.created_at = row[col] ? row[col] : ""; col++;
     }
-    mysql_free_result(result);
     return log;
 }
 int DatabaseService::createWeldingLog(const WeldingLog& log) {
@@ -8720,6 +8815,7 @@ json DatabaseService::getDebugLogs(int limit) {
           << "ORDER BY timestamp DESC LIMIT " << limit;
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return logsArray;
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row;
     while ((row = mysql_fetch_row(result))) {
         json logEntry;
@@ -8730,12 +8826,71 @@ json DatabaseService::getDebugLogs(int limit) {
         logEntry["details"] = row[4] ? row[4] : "";
         logsArray.push_back(logEntry);
     }
-    mysql_free_result(result);
     return logsArray;
 }
 bool DatabaseService::clearDebugLogs() {
     std::lock_guard<std::mutex> lock(m_mutex);
     return executeQuery("TRUNCATE TABLE debug_logs");
+}
+// 로봇 에러 발생 시점(main_code/sub_code가 0->비0으로 전이) 기록. 반환값은 새로 생성된
+// robot_error_events.id (실패 시 -1) — 에러가 해제될 때 closeRobotErrorEvent()에 그대로 넘겨서
+// 같은 행을 갱신한다.
+int DatabaseService::logRobotErrorStart(int mainCode, int subCode, const std::string& message) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_conn || !m_connected) {
+        return -1;
+    }
+    std::ostringstream query;
+    query << "INSERT INTO robot_error_events (main_code, sub_code, message) VALUES ("
+          << mainCode << ", " << subCode << ", "
+          << "'" << escapeString(message) << "')";
+    if (mysql_query(m_conn, query.str().c_str()) != 0) {
+        return -1;
+    }
+    return static_cast<int>(mysql_insert_id(m_conn));
+}
+// 로봇 에러 해제 시점(main_code가 비0->0으로 전이) 기록. logRobotErrorStart()가 반환한
+// eventId로 해당 행의 ended_at/duration_sec을 채운다. eventId가 -1(기록 실패했던 경우)이면
+// 아무것도 하지 않고 false를 반환한다.
+bool DatabaseService::closeRobotErrorEvent(int eventId) {
+    if (eventId <= 0) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_conn || !m_connected) {
+        return false;
+    }
+    std::ostringstream query;
+    query << "UPDATE robot_error_events SET ended_at = NOW(), "
+          << "duration_sec = TIMESTAMPDIFF(SECOND, started_at, NOW()) "
+          << "WHERE id = " << eventId << " AND ended_at IS NULL";
+    return mysql_query(m_conn, query.str().c_str()) == 0;
+}
+json DatabaseService::getRobotErrorEvents(int limit, int offset, int days) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    json eventsArray = json::array();
+    std::ostringstream query;
+    query << "SELECT id, main_code, sub_code, message, started_at, ended_at, duration_sec "
+          << "FROM robot_error_events "
+          << "WHERE started_at >= (NOW() - INTERVAL " << days << " DAY) "
+          << "ORDER BY started_at DESC LIMIT " << limit << " OFFSET " << offset;
+    MYSQL_RES* result = executeSelect(query.str());
+    if (!result) return eventsArray;
+    MySqlResultGuard resultGuard(result);
+    MYSQL_ROW row;
+    while ((row = mysql_fetch_row(result))) {
+        json ev;
+        ev["id"] = row[0] ? std::stoi(row[0]) : 0;
+        ev["main_code"] = row[1] ? std::stoi(row[1]) : 0;
+        ev["sub_code"] = row[2] ? std::stoi(row[2]) : 0;
+        ev["message"] = row[3] ? row[3] : "";
+        ev["started_at"] = row[4] ? row[4] : "";
+        ev["ended_at"] = row[5] ? json(row[5]) : json(nullptr);
+        ev["duration_sec"] = row[6] ? json(std::stod(row[6])) : json(nullptr);
+        ev["ongoing"] = (row[5] == nullptr);
+        eventsArray.push_back(ev);
+    }
+    return eventsArray;
 }
 bool DatabaseService::logApp(const std::string& level, const std::string& source, const std::string& page,
                              const std::string& action, const std::string& message, const json& data,
@@ -8807,6 +8962,7 @@ json DatabaseService::getAppLogs(int limit, const std::string& level, const std:
     query << " ORDER BY timestamp DESC LIMIT " << limit;
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return logsArray;
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row;
     while ((row = mysql_fetch_row(result))) {
         json logEntry;
@@ -8838,7 +8994,6 @@ json DatabaseService::getAppLogs(int limit, const std::string& level, const std:
         logEntry["error_stack"] = row[col] ? json(row[col]) : json(nullptr); col++;
         logsArray.push_back(logEntry);
     }
-    mysql_free_result(result);
     return logsArray;
 }
 json DatabaseService::getUsers() {
@@ -8849,6 +9004,7 @@ json DatabaseService::getUsers() {
     if (!result) {
         return usersArray;
     }
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row;
     while ((row = mysql_fetch_row(result))) {
         json user;
@@ -8862,7 +9018,6 @@ json DatabaseService::getUsers() {
         user["createdAt"] = row[7] ? std::string(row[7]) : "";
         usersArray.push_back(user);
     }
-    mysql_free_result(result);
     return usersArray;
 }
 int DatabaseService::createUser(const std::string& username, const std::string& password,
@@ -8918,9 +9073,9 @@ bool DatabaseService::deleteUser(int userId) {
     std::string checkQuery = "SELECT COUNT(*) FROM users WHERE role = 'admin' AND id != " + std::to_string(userId);
     MYSQL_RES* result = executeSelect(checkQuery);
     if (result) {
+        MySqlResultGuard resultGuard(result);
         MYSQL_ROW row = mysql_fetch_row(result);
         int adminCount = row && row[0] ? std::stoi(row[0]) : 0;
-        mysql_free_result(result);
         if (adminCount == 0) {
             m_lastError = "Cannot delete the last admin user";
             return false;
@@ -8942,9 +9097,9 @@ json DatabaseService::authenticateUser(const std::string& username, const std::s
     if (!result) {
         return nullptr;
     }
+    MySqlResultGuard resultGuard(result);
     MYSQL_ROW row = mysql_fetch_row(result);
     if (!row) {
-        mysql_free_result(result);
         return nullptr;
     }
     json user;
@@ -8954,7 +9109,6 @@ json DatabaseService::authenticateUser(const std::string& username, const std::s
     user["email"] = row[3] ? row[3] : "";
     user["role"] = row[4] ? row[4] : "operator";
     bool hasSalt = row[6] && row[6][0] != '\0';
-    mysql_free_result(result);
     std::ostringstream updateQuery;
     updateQuery << "UPDATE users SET last_login = NOW()";
     if (!hasSalt) {

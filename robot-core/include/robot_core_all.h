@@ -12,7 +12,8 @@
 class RobotService {
 public:
     using StateCallback = std::function<void(const ROBOT_STATE_PKG&)>;
-    using ErrorCallback = std::function<void(int code, const std::string& message)>;
+    // resolved=false: 에러 발생(신규/코드 변경), resolved=true: 에러 해제(main_code가 0으로 복귀)
+    using ErrorCallback = std::function<void(int mainCode, int subCode, const std::string& message, bool resolved)>;
     RobotService();
     ~RobotService();
     int connect(const std::string& ip = "192.168.58.2");
@@ -22,6 +23,7 @@ public:
     int disable();
     int setMode(int mode);
     ROBOT_STATE_PKG getState();
+    ROBOT_STATE_PKG getCachedState();
     int moveJ(const double joints[6], int tool, int user,
               float vel, float acc, float ovl, float blendT = -1.0f,
               uint8_t offsetFlag = 0, const double* offsetPos = nullptr);
@@ -37,6 +39,10 @@ public:
                         uint8_t offsetFlag = 0, const double* offsetPos = nullptr,
                         int velAccParamMode = 0, float oacc = 100.0f,
                         int overSpeedStrategy = 0, int speedPercent = 10);
+    int relativeMoveJ(const double jointDeltas[6], int tool, int user,
+                       float vel, float acc, float ovl, float blendT = -1.0f);
+    int relativeMoveL(const double descPosDeltas[6], int tool, int user,
+                       float vel, float acc, float ovl, float blendR = -1.0f);
     int stopMotion();
     int emergencyStop();
     int startJog(int ref, int nb, int dir, float vel, float acc, float maxDis);
@@ -86,6 +92,8 @@ private:
     FRRobot m_robot;
     std::atomic<bool> m_connected{false};
     std::mutex m_mutex;
+    std::mutex m_stateCacheMutex;
+    ROBOT_STATE_PKG m_cachedState{};
     std::string m_lastIp;
     std::atomic<bool> m_autoReconnect{true};
     std::atomic<int> m_reconnectAttempts{0};
@@ -220,40 +228,8 @@ private:
 };
 #endif
 #endif
-#ifndef AUTH_SERVICE_H
-#define AUTH_SERVICE_H
-#include <string>
-#include <map>
-#include <mutex>
-#include <ctime>
-#include <nlohmann/json.hpp>
-class AuthService {
-public:
-    static AuthService& instance();
-    std::string createSession(int userId, const std::string& username, const std::string& role);
-    nlohmann::json validateSession(const std::string& token);
-    void removeSession(const std::string& token);
-    void cleanExpiredSessions();
-    void setSessionTimeout(int seconds) { m_sessionTimeout = seconds; }
-    int getSessionTimeout() const { return m_sessionTimeout; }
-    int getActiveSessionCount();
-private:
-    AuthService() = default;
-    AuthService(const AuthService&) = delete;
-    AuthService& operator=(const AuthService&) = delete;
-    struct Session {
-        int userId;
-        std::string username;
-        std::string role;
-        std::time_t createdAt;
-        std::time_t lastAccessAt;
-    };
-    std::map<std::string, Session> m_sessions;
-    std::mutex m_mutex;
-    int m_sessionTimeout = 28800;
-    std::string generateToken();
-};
-#endif
+// 인증은 robot-back(FastAPI)이 발급한 JWT(HS256)를 검증하는 방식으로 통일됨.
+// robot-core는 더 이상 자체 로그인 세션을 갖지 않는다 (jwt_verify.h 참고).
 #ifndef COMMAND_HANDLER_H
 #define COMMAND_HANDLER_H
 #include <nlohmann/json.hpp>
@@ -309,6 +285,8 @@ public:
     std::string getDbPassword() const;
     std::string getDbName() const;
     unsigned int getDbPort() const;
+    // robot-back(.env의 JWT_SECRET_KEY)과 반드시 동일한 값이어야 함
+    std::string getJwtSecret() const;
 private:
     ConfigService() = default;
     ConfigService(const ConfigService&) = delete;
@@ -522,6 +500,9 @@ public:
                 double duration_ms = -1, const std::string& error_code = "", const std::string& error_stack = "");
     bool logAppBatch(const json& logs);
     json getAppLogs(int limit = 100, const std::string& level = "", const std::string& source = "");
+    int logRobotErrorStart(int mainCode, int subCode, const std::string& message);
+    bool closeRobotErrorEvent(int eventId);
+    json getRobotErrorEvents(int limit = 50, int offset = 0, int days = 30);
     json getUsers();
     int createUser(const std::string& username, const std::string& password,
                    const std::string& name, const std::string& email, const std::string& role);

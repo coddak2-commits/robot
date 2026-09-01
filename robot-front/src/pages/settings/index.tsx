@@ -5,7 +5,7 @@ import { useSystemSettingsData } from './hooks/useSystemSettingsData';
 import { useLang } from '../../contexts';
 import { StatusCard_StatusCard as StatusCard, UserManagementTab_UserManagementTab as UserManagementTab, UserModal_UserModal as UserModal, RobotSettingsTab_RobotSettingsTab as RobotSettingsTab, WeldingDefaultsTab_WeldingDefaultsTab as WeldingDefaultsTab, SystemEnvTab_SystemEnvTab as SystemEnvTab, UpdateTab_UpdateTab as UpdateTab } from './components';
 import { SystemConfig } from '../../lib';
-import { VersionInfo, UpdateCheckResponse, UpdateStatus, SystemInfo, RobotSettingsData, RobotErrorData, UserData } from '../../lib';
+import { VersionInfo, UpdateCheckResponse, UpdateStatus, SystemInfo, RobotSettingsData, RobotErrorData, RobotErrorEvent, UserData } from '../../lib';
 const SystemSettings: React.FC = () => {
   const {
     activeTab,
@@ -254,5 +254,6 @@ export type {
   SystemInfo,
   RobotSettingsData,
   RobotErrorData,
+  RobotErrorEvent,
   UserData,
 };

@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import styles from './Login.module.css';
-import { login } from '../../lib';
-import { loginGap } from '../../lib/gapApi';
+import { loginGap, userApi } from '../../lib/gapApi';
 import { useAlert } from '../../contexts';
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -31,16 +30,33 @@ const Login: React.FC = () => {
     const userId = target.user_id.value;
     const userPw = target.user_pw.value;
     try {
-      const user = await login(userId, userPw);
-      localStorage.setItem('token', JSON.stringify(user));
-      localStorage.setItem('user', JSON.stringify(user));
-      // 갭 백엔드(FastAPI) 토큰도 함께 획득
+      // 인증은 robot-back(FastAPI) 한 곳에서만 처리한다. robot-core(8080)는 이 JWT를
+      // 검증만 하므로, 같은 토큰을 그대로 재사용한다(로그인 요청은 한 번만 발생).
+      const gapUser = await loginGap(userId, userPw);
+      localStorage.setItem('gap_token', gapUser.access_token);
+      localStorage.setItem('gap_user', JSON.stringify(gapUser));
+      localStorage.setItem(
+        'token',
+        JSON.stringify({ accessToken: gapUser.access_token, refreshToken: gapUser.access_token }),
+      );
       try {
-        const gapUser = await loginGap(userId, userPw);
-        localStorage.setItem('gap_token', gapUser.access_token);
-        localStorage.setItem('gap_user', JSON.stringify(gapUser));
+        const me = await userApi.me();
+        localStorage.setItem(
+          'user',
+          JSON.stringify({
+            id: me.id,
+            username: me.username,
+            name: me.full_name,
+            email: me.email,
+            role: me.role,
+          }),
+        );
       } catch (e) {
-        console.warn('gap 백엔드 로그인 실패 (계속 진행):', e);
+        console.warn('사용자 프로필 조회 실패 (기본 정보로 대체):', e);
+        localStorage.setItem(
+          'user',
+          JSON.stringify({ username: gapUser.username, name: gapUser.full_name, role: gapUser.role }),
+        );
       }
       window.location.href = redirectTo;
     } catch (error: any) {
