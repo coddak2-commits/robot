@@ -65,6 +65,10 @@ export interface WeldingSequenceSettings {
 export interface SafetySettings {
   gasPreFlowTime: number;
   gasPostFlowTime: number;
+  // /settings(SafetyTab)에서 설정하는 상한 — 예전엔 여기 값이 로드만 되고 실제 용접 실행(아크 ON)에는
+  // 전혀 반영되지 않았다. weldingExecution.ts에서 아크 ON 직전에 이 값으로 클램프한다.
+  maxCurrent: number;
+  maxVoltage: number;
 }
 export interface TouchSensingResult {
   pointId: string;

@@ -43,8 +43,24 @@ public:
                        float vel, float acc, float ovl, float blendT = -1.0f);
     int relativeMoveL(const double descPosDeltas[6], int tool, int user,
                        float vel, float acc, float ovl, float blendR = -1.0f);
+    int pointsOffsetEnable(int flag, const double offsetPos[6]);
+    int pointsOffsetDisable();
+    int getCurToolCoord(double coord[6]);
+    int getCurWObjCoord(double coord[6]);
+    int getToolCoordWithID(int id, double coord[6], int& type, int& install, int& toolID, int& loadNo);
+    int getWObjCoordWithID(int id, double coord[6], int& refFrame);
+    int setToolCoord(int id, const double coord[6], int type, int install, int toolID, int loadNum);
+    int setWObjCoord(int id, const double coord[6], int refFrame);
+    int getTargetPayloadWithID(int id, double& weight, double cog[3]);
+    int setLoadWeight(int loadNum, float weight);
+    int setLoadCoord(int loadNum, const double coord[3]);
     int stopMotion();
     int emergencyStop();
+    int pauseMotion();
+    int resumeMotion();
+    int getSafetyStopState(uint8_t& si0State, uint8_t& si1State);
+    int getDOState(uint8_t& doStateH, uint8_t& doStateL);
+    int getToolDOState(uint8_t& doState);
     int startJog(int ref, int nb, int dir, float vel, float acc, float maxDis);
     int stopJog(int ref);
     int immStopJog();
@@ -90,6 +106,13 @@ public:
     void setReconnectCallback(ReconnectCallback callback) { m_reconnectCallback = callback; }
 private:
     FRRobot m_robot;
+    // 정지/비상정지 전용 독립 연결. m_robot이 MoveL 등으로 블로킹 중이어도
+    // 같은 RPC 채널에 정지 명령이 밀려 지연되지 않도록 별도 소켓을 유지한다.
+    FRRobot m_stopRobot;
+    std::atomic<bool> m_stopRobotConnected{false};
+    // m_stopRobot 전용 잠금. m_mutex(=m_robot 보호용)와 절대 같이 걸지 않는다 —
+    // m_mutex를 오래 쥐는 이동 중에도 상태조회/정지가 막히지 않는 게 목적이므로.
+    std::mutex m_stopMutex;
     std::atomic<bool> m_connected{false};
     std::mutex m_mutex;
     std::mutex m_stateCacheMutex;

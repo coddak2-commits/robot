@@ -822,6 +822,252 @@ export const findDz = async (direction: 1 | -1): Promise<FindDeltaResult> => {
     throw error;
   }
 };
+export interface RelativeMoveResult {
+  status_code: number;
+  result?: number;
+  message?: string;
+}
+export const relativeMoveJ = async (
+  jointDeltas: number[],
+  tool = 3,
+  user = 0,
+  vel = 20,
+  acc = 100,
+  ovl = 100,
+  blendT = -1,
+  velMode = 0,
+): Promise<RelativeMoveResult> => {
+  try {
+    const response = await api.post(
+      '/robot_sdk/move/relative-joint',
+      {
+        joint_pos: {
+          j1: jointDeltas[0] || 0,
+          j2: jointDeltas[1] || 0,
+          j3: jointDeltas[2] || 0,
+          j4: jointDeltas[3] || 0,
+          j5: jointDeltas[4] || 0,
+          j6: jointDeltas[5] || 0,
+        },
+        tool,
+        user,
+        vel,
+        acc,
+        ovl,
+        blend_t: blendT,
+        vel_mode: velMode,
+      },
+      { timeout: 60000 },
+    );
+    return response.data;
+  } catch (error) {
+    console.error('상대 관절 이동 오류:', error);
+    throw error;
+  }
+};
+export const relativeMoveL = async (
+  descPosDelta: { x?: number; y?: number; z?: number; rx?: number; ry?: number; rz?: number },
+  tool = 3,
+  user = 0,
+  vel = 20,
+  acc = 100,
+  ovl = 100,
+  blendT = -1,
+  velMode = 0,
+): Promise<RelativeMoveResult> => {
+  try {
+    const response = await api.post(
+      '/robot_sdk/move/relative-linear',
+      {
+        desc_pos: {
+          x: descPosDelta.x ?? 0,
+          y: descPosDelta.y ?? 0,
+          z: descPosDelta.z ?? 0,
+          rx: descPosDelta.rx ?? 0,
+          ry: descPosDelta.ry ?? 0,
+          rz: descPosDelta.rz ?? 0,
+        },
+        tool,
+        user,
+        vel,
+        acc,
+        ovl,
+        blend_t: blendT,
+        vel_mode: velMode,
+      },
+      { timeout: 60000 },
+    );
+    return response.data;
+  } catch (error) {
+    console.error('상대 직선 이동 오류:', error);
+    throw error;
+  }
+};
+export interface CoordValues {
+  x: number; y: number; z: number; rx: number; ry: number; rz: number;
+}
+export interface ToolCoordResult {
+  status_code: number;
+  data?: { result: number; coord: CoordValues; id?: number; type?: number; install?: number; tool_id?: number; load_num?: number };
+}
+export interface WorkCoordResult {
+  status_code: number;
+  data?: { result: number; coord: CoordValues; id?: number; ref_frame?: number };
+}
+export const getCurrentToolCoord = async (): Promise<ToolCoordResult> => {
+  try {
+    const response = await api.get('/robot_sdk/coord/tool/current');
+    return response.data;
+  } catch (error) {
+    console.error('현재 툴 좌표계 조회 오류:', error);
+    throw error;
+  }
+};
+export const getCurrentWorkCoord = async (): Promise<WorkCoordResult> => {
+  try {
+    const response = await api.get('/robot_sdk/coord/work/current');
+    return response.data;
+  } catch (error) {
+    console.error('현재 워크 좌표계 조회 오류:', error);
+    throw error;
+  }
+};
+export const getToolCoord = async (id: number): Promise<ToolCoordResult> => {
+  try {
+    const response = await api.get('/robot_sdk/coord/tool', { params: { id } });
+    return response.data;
+  } catch (error) {
+    console.error('툴 좌표계 조회 오류:', error);
+    throw error;
+  }
+};
+export const getWorkCoord = async (id: number): Promise<WorkCoordResult> => {
+  try {
+    const response = await api.get('/robot_sdk/coord/work', { params: { id } });
+    return response.data;
+  } catch (error) {
+    console.error('워크 좌표계 조회 오류:', error);
+    throw error;
+  }
+};
+export const setToolCoord = async (
+  id: number,
+  coord: CoordValues,
+  type = 0,
+  install = 0,
+  toolID = id,
+  loadNum = 0,
+) => {
+  try {
+    const response = await api.post('/robot_sdk/coord/tool', { id, coord, type, install, tool_id: toolID, load_num: loadNum });
+    return response.data;
+  } catch (error) {
+    console.error('툴 좌표계 설정 오류:', error);
+    throw error;
+  }
+};
+export const setWorkCoord = async (id: number, coord: CoordValues, refFrame = 0) => {
+  try {
+    const response = await api.post('/robot_sdk/coord/work', { id, coord, ref_frame: refFrame });
+    return response.data;
+  } catch (error) {
+    console.error('워크 좌표계 설정 오류:', error);
+    throw error;
+  }
+};
+export const getPayload = async (id = 0) => {
+  try {
+    const response = await api.get('/robot_sdk/payload', { params: { id } });
+    return response.data;
+  } catch (error) {
+    console.error('부하(payload) 조회 오류:', error);
+    throw error;
+  }
+};
+export const setPayload = async (loadNum: number, weight: number, cog?: { x: number; y: number; z: number }) => {
+  try {
+    const response = await api.post('/robot_sdk/payload', { load_num: loadNum, weight, cog });
+    return response.data;
+  } catch (error) {
+    console.error('부하(payload) 설정 오류:', error);
+    throw error;
+  }
+};
+// 이후 실행되는 모든 이동 명령의 목표 위치를 워크/베이스(flag=0) 또는 툴(flag=2) 좌표계
+// 기준으로 일괄 오프셋. 실제 자재 위치가 타칭 프로그램과 살짝 어긋났을 때 포인트를
+// 다시 티칭하지 않고 전체 경로를 한번에 보정하는 용도
+export const pointsOffsetEnable = async (offset: Partial<CoordValues>, flag: 0 | 2 = 0) => {
+  try {
+    const response = await api.post('/robot_sdk/move/points-offset/enable', {
+      flag,
+      offset: {
+        x: offset.x ?? 0, y: offset.y ?? 0, z: offset.z ?? 0,
+        rx: offset.rx ?? 0, ry: offset.ry ?? 0, rz: offset.rz ?? 0,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('전체 궤적 오프셋 시작 오류:', error);
+    throw error;
+  }
+};
+export const pointsOffsetDisable = async () => {
+  try {
+    const response = await api.post('/robot_sdk/move/points-offset/disable');
+    return response.data;
+  } catch (error) {
+    console.error('전체 궤적 오프셋 종료 오류:', error);
+    throw error;
+  }
+};
+// 비상정지(emergencyStop)보다 부드러운 정지 - 이어서 재개 가능
+export const pauseRobotMotion = async () => {
+  try {
+    const response = await api.post('/robot_sdk/robot/pause');
+    return response.data;
+  } catch (error) {
+    console.error('일시 정지 오류:', error);
+    throw error;
+  }
+};
+export const resumeRobotMotion = async () => {
+  try {
+    const response = await api.post('/robot_sdk/robot/resume');
+    return response.data;
+  } catch (error) {
+    console.error('재개 오류:', error);
+    throw error;
+  }
+};
+export const getSafetyStopState = async () => {
+  try {
+    const response = await api.get('/robot_sdk/safety/stop-state');
+    return response.data;
+  } catch (error) {
+    console.error('세이프티 정지 상태 조회 오류:', error);
+    throw error;
+  }
+};
+// 컨트롤박스/툴 DO(디지털 출력) 켜짐/꺼짐 상태 읽기.
+// SDK에 AO(아날로그 출력) 하드웨어 리드백 함수가 없어 DO만 지원됨
+export const getControlBoxDOState = async () => {
+  try {
+    const response = await api.get('/robot_sdk/io/do');
+    return response.data;
+  } catch (error) {
+    console.error('컨트롤박스 DO 상태 조회 오류:', error);
+    throw error;
+  }
+};
+export const getToolDOState = async () => {
+  try {
+    const response = await api.get('/robot_sdk/io/tool-do');
+    return response.data;
+  } catch (error) {
+    console.error('툴 DO 상태 조회 오류:', error);
+    throw error;
+  }
+};
 export const getWireSearchOffset = async (
   seamType = 0,
   method = 0,

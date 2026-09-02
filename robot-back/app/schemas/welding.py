@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.welding import Posture, DataSource, PromotionStatus, JobStatus, JobMode, ResumeType
 
@@ -17,6 +17,22 @@ ALLOWED_OVERRIDE_FIELDS = frozenset({
     "weave_right_dwell_ms",
 })
 
+# 오버라이드의 절대 물리적 허용 범위. OverrideLimit의 퍼센트 한도(설정된 필드에 대해서만, original_value
+# 기준 상대값)와 별개로 항상 적용되는 안전 상하한이다. original_value가 0이라 퍼센트 계산이 불가능한
+# 경우(예: 승격 전 처음 등록되는 값)에도 이 절대 범위는 그대로 적용되어 비정상적으로 크거나 음수인
+# override_value가 들어오는 것을 막는다. current_a/voltage_v는 용접기(Megmeet DEX2-MPR600) 정격
+# 출력(600A / U2=14+0.05*I 기준 약 44V)에서 가져왔다.
+OVERRIDE_ABSOLUTE_BOUNDS: dict[str, tuple[Decimal, Decimal]] = {
+    "current_a": (Decimal("0"), Decimal("600")),
+    "voltage_v": (Decimal("0"), Decimal("44")),
+    "speed_cpm": (Decimal("1"), Decimal("300")),
+    "stickout_mm": (Decimal("1"), Decimal("50")),
+    "weave_freq_hz": (Decimal("0.1"), Decimal("10")),
+    "weave_range_mm": (Decimal("0"), Decimal("20")),
+    "weave_left_dwell_ms": (Decimal("0"), Decimal("2000")),
+    "weave_right_dwell_ms": (Decimal("0"), Decimal("2000")),
+}
+
 
 # =====================================================================
 # welding_params
@@ -24,18 +40,18 @@ ALLOWED_OVERRIDE_FIELDS = frozenset({
 class WeldingParamBase(BaseModel):
     posture: Posture
     gap_mm: Decimal = Field(ge=0, le=6)
-    current_a: int = Field(gt=0)
-    voltage_v: Decimal = Field(gt=0)
-    speed_cpm: int = Field(gt=0)
-    stickout_mm: int
+    current_a: int = Field(gt=0, le=600)
+    voltage_v: Decimal = Field(gt=0, le=44)
+    speed_cpm: int = Field(gt=0, le=300)
+    stickout_mm: int = Field(ge=1, le=50)
     weave_enabled: bool = True
     weave_type: int = 0
-    weave_freq_hz: Decimal = Decimal("1.5")
-    weave_range_mm: Decimal = Decimal("3.0")
-    weave_left_dwell_ms: int = 0
-    weave_right_dwell_ms: int = 0
+    weave_freq_hz: Decimal = Field(default=Decimal("1.5"), gt=0, le=10)
+    weave_range_mm: Decimal = Field(default=Decimal("3.0"), gt=0, le=20)
+    weave_left_dwell_ms: int = Field(default=0, ge=0, le=2000)
+    weave_right_dwell_ms: int = Field(default=0, ge=0, le=2000)
     material: str = "SS400"
-    thickness_mm: Decimal
+    thickness_mm: Decimal = Field(gt=0)
     joint_type: str = "fillet"
     source: DataSource = DataSource.lab
     notes: str | None = None
@@ -46,16 +62,16 @@ class WeldingParamCreate(WeldingParamBase):
 
 
 class WeldingParamUpdate(BaseModel):
-    current_a: int | None = Field(default=None, gt=0)
-    voltage_v: Decimal | None = Field(default=None, gt=0)
-    speed_cpm: int | None = Field(default=None, gt=0)
-    stickout_mm: int | None = Field(default=None, ge=0)
+    current_a: int | None = Field(default=None, gt=0, le=600)
+    voltage_v: Decimal | None = Field(default=None, gt=0, le=44)
+    speed_cpm: int | None = Field(default=None, gt=0, le=300)
+    stickout_mm: int | None = Field(default=None, ge=1, le=50)
     weave_enabled: bool | None = None
     weave_type: int | None = None
-    weave_freq_hz: Decimal | None = Field(default=None, gt=0)
-    weave_range_mm: Decimal | None = Field(default=None, gt=0)
-    weave_left_dwell_ms: int | None = Field(default=None, ge=0)
-    weave_right_dwell_ms: int | None = Field(default=None, ge=0)
+    weave_freq_hz: Decimal | None = Field(default=None, gt=0, le=10)
+    weave_range_mm: Decimal | None = Field(default=None, gt=0, le=20)
+    weave_left_dwell_ms: int | None = Field(default=None, ge=0, le=2000)
+    weave_right_dwell_ms: int | None = Field(default=None, ge=0, le=2000)
     notes: str | None = None
 
 
@@ -187,6 +203,15 @@ class ParamOverrideCreate(BaseModel):
         if v not in ALLOWED_OVERRIDE_FIELDS:
             raise ValueError(f"field_name must be one of {sorted(ALLOWED_OVERRIDE_FIELDS)}")
         return v
+
+    @model_validator(mode="after")
+    def _validate_absolute_bounds(self) -> "ParamOverrideCreate":
+        bounds = OVERRIDE_ABSOLUTE_BOUNDS.get(self.field_name)
+        if bounds:
+            lo, hi = bounds
+            if not (lo <= self.override_value <= hi):
+                raise ValueError(f"{self.field_name}: override_value {self.override_value} out of absolute range [{lo}, {hi}]")
+        return self
 
 
 class ParamOverrideOut(ParamOverrideCreate):

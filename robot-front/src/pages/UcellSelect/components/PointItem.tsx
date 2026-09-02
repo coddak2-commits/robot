@@ -75,6 +75,7 @@ export function PointItem({
   onApplyParamsToAll,
   onSaveJob,
 }: PointItemProps) {
+  const { show: showAlert } = useAlert();
   return (
     <div
       onClick={onSelect}
@@ -292,7 +293,11 @@ export function PointItem({
                 <button
                   onClick={e => {
                     e.stopPropagation();
-                    onApplyParamsToAll();
+                    showAlert(`이 포인트(${point.name ?? point.id})의 전류/전압/위빙 설정을 모든 포인트에 덮어씁니다. 개별 포인트마다 다르게 맞춘 값이 있다면 모두 사라집니다. 계속하시겠습니까?`, {
+                      type: 'warning',
+                      title: '전체적용 확인',
+                      onConfirm: onApplyParamsToAll,
+                    });
                   }}
                   className="flex-1 py-2 bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium rounded"
                 >
@@ -313,7 +318,11 @@ export function PointItem({
               <button
                 onClick={e => {
                   e.stopPropagation();
-                  onClearPoint();
+                  showAlert(`${point.name ?? point.id} 포인트를 삭제하시겠습니까? 티칭한 위치가 사라지며 되돌릴 수 없습니다.`, {
+                    type: 'warning',
+                    title: '포인트 삭제 확인',
+                    onConfirm: onClearPoint,
+                  });
                 }}
                 className="py-2 px-3 bg-red-600/80 hover:bg-red-500 text-white text-xs font-medium rounded flex items-center justify-center gap-1"
                 title="포인트 삭제"

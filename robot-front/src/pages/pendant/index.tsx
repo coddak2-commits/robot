@@ -5,7 +5,7 @@ import { UnifiedWorkspaceCanvas, TorchOrientationIndicator, UCellConfig } from '
 import { paramApi, Posture, WeldingParam, ParamLookupResult, deviationApi, overrideApi } from '../../lib/gapApi';
 import { Axios as api } from '../../lib';
 import { isMockMode, mockCheckConnection } from '../../lib';
-import { getRobotError, resetRobotError, connectRobotSDK } from '../../lib/robotApi/index';
+import { getRobotError, resetRobotError, connectRobotSDK, pauseRobotMotion, resumeRobotMotion } from '../../lib/robotApi/index';
 import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 import { playSaveOkBeep, playErrorBeep } from '../../lib/audio';
@@ -513,6 +513,24 @@ const PendantInner: React.FC = () => {
     }
   };
 
+  const handlePauseRobot = async () => {
+    try {
+      await pauseRobotMotion();
+      setLastAction('일시 정지됨');
+    } catch (e: any) {
+      showAlert(`일시정지 실패: ${e.response?.data?.detail || e.message}`, { type: 'error' });
+    }
+  };
+
+  const handleResumeRobot = async () => {
+    try {
+      await resumeRobotMotion();
+      setLastAction('재개됨');
+    } catch (e: any) {
+      showAlert(`재개 실패: ${e.response?.data?.detail || e.message}`, { type: 'error' });
+    }
+  };
+
   const wireStopAll = async () => {
     try {
       await api.post(`/robot_sdk/wire/forward`, { ioType, wireFeed: 0 });
@@ -865,6 +883,24 @@ const PendantInner: React.FC = () => {
             borderRadius: 8, cursor: isWelding || isRobotMoving ? 'not-allowed' : 'pointer',
           }}
         >용접 계속</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => (isWelding && !dryRun) ? showAlert('용접(아크 On) 중에는 일시정지를 사용할 수 없습니다 - 모션만 멈추고 아크는 꺼지지 않습니다', { type: 'warning' }) : handlePauseRobot()}
+            title={isWelding && !dryRun ? '용접(아크 On) 중에는 사용할 수 없습니다 - 모션만 멈추고 아크는 꺼지지 않습니다' : undefined}
+            style={{
+              flex: 1, padding: '10px 6px', fontSize: 13, fontWeight: 'bold',
+              background: isWelding && !dryRun ? '#334155' : '#78350f', color: isWelding && !dryRun ? '#94a3b8' : '#fbbf24', border: 'none',
+              borderRadius: 8, cursor: isWelding && !dryRun ? 'not-allowed' : 'pointer',
+            }}
+          >일시정지</button>
+          <button onClick={() => (isWelding && !dryRun) ? showAlert('용접(아크 On) 중에는 재개를 사용할 수 없습니다', { type: 'warning' }) : handleResumeRobot()}
+            title={isWelding && !dryRun ? '용접(아크 On) 중에는 사용할 수 없습니다' : undefined}
+            style={{
+              flex: 1, padding: '10px 6px', fontSize: 13, fontWeight: 'bold',
+              background: isWelding && !dryRun ? '#334155' : '#14532d', color: isWelding && !dryRun ? '#94a3b8' : '#4ade80', border: 'none',
+              borderRadius: 8, cursor: isWelding && !dryRun ? 'not-allowed' : 'pointer',
+            }}
+          >재개</button>
+        </div>
         <button onClick={handleGlobalEmergencyStop}
           style={{
             padding: '18px', fontSize: 16, fontWeight: 'bold',

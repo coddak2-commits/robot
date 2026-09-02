@@ -1,5 +1,6 @@
 export * from './ArcTrackingSection';
 export * from './DiagnosticLogsSection';
+export * from './RobotSdkToolsSection';
 export * from './RobotSettingsTab';
 export * from './StatusCard';
 export * from './SystemEnvTab';

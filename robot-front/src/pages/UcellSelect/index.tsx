@@ -230,6 +230,8 @@ export function CellSelectionCore({
     handleContinueWelding,
     handleStartTouchSensing,
     handleGlobalEmergencyStop,
+    handlePauseRobot,
+    handleResumeRobot,
     applyParamsToAllPoints,
     applyParamsToBlock,
   } = useWeldingHandlers({
@@ -607,6 +609,8 @@ export function CellSelectionCore({
                     onApplyParamsToAll={applyParamsToAllPoints}
                     onReorderPoints={reorderPoints}
                     onGlobalEmergencyStop={handleGlobalEmergencyStop}
+                    onPauseRobot={handlePauseRobot}
+                    onResumeRobot={handleResumeRobot}
                   />
                 </div>
               </div>

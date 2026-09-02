@@ -138,7 +138,6 @@ export async function executeWelding(
       : !!(firstWeldPoint.weldVoltage && firstWeldPoint.weldCurrent);
     const hasWeaving = !!(firstWeldPoint.weavingType && firstWeldPoint.weavingType !== 'none');
     const weaveTypeCode = getWeaveTypeCode(firstWeldPoint.weavingType);
-    const CPM_CORRECTION_FACTOR = 0.68;
     let minSegmentDistance = Infinity;
     segments = [];
     for (let i = 0; i < weldingPoints.length - 1; i++) {
@@ -149,12 +148,23 @@ export async function executeWelding(
       if (isSamePart && dist < minSegmentDistance) minSegmentDistance = dist;
       const segmentCpm = weldingPoints[i + 1].moveSpeed || 50;
       const toPoint = weldingPoints[i + 1];
+      // 예전엔 CPM_CORRECTION_FACTOR(0.68)를 고정 곱해서 실제 소요시간의 절반도 안 되게 나왔다
+      // (위빙 체류시간이 계산에 전혀 반영 안 됨). 위빙 주파수/좌우 체류시간으로 대략적인 추가시간을
+      // 더해서 근사한다 — 실측 로그 1건 기준 검증한 근사치라 여전히 참고용이다.
+      const baseTravelSec = (dist * 6) / segmentCpm;
+      const wp = toPoint.weaveParams;
+      const hasSegWeave = !!(toPoint.weavingType && toPoint.weavingType !== 'none' && wp && wp.weaveFrequency > 0);
+      const dwellSecPerCycle = hasSegWeave
+        ? ((wp.weaveLeftStayTime || 0) + (wp.weaveRightStayTime || 0)) / 1000
+        : 0;
+      const estimatedCycles = hasSegWeave ? baseTravelSec * wp.weaveFrequency : 0;
+      const expectedSec = baseTravelSec + estimatedCycles * dwellSecPerCycle;
       segments.push({
         from: weldingPoints[i].id,
         to: toPoint.id,
         distance_mm: dist,
         cpm: segmentCpm,
-        expected_sec: ((dist * 6) / segmentCpm) * CPM_CORRECTION_FACTOR,
+        expected_sec: expectedSec,
         gap: toPoint.gap,
         weld_voltage: toPoint.weldVoltage,
         weld_current: toPoint.weldCurrent,
@@ -286,9 +296,21 @@ export async function executeWelding(
     if (stopRef.current) return await handleStopped(0);
     const isStartAtPartEnd = partBoundaryInfo.partEndIndices.includes(startPointIndex);
     if (hasWelding && !simMode && !isStartAtPartEnd && !isWeldingTest) {
+      // /settings(SafetyTab)의 최대전류/전압 — 예전엔 저장만 되고 여기서 전혀 안 읽혀서
+      // 포인트 티칭값이 상한을 넘어도 그대로 아크 ON에 실렸다.
+      let arcCurrent = firstWeldPoint.weldCurrent!;
+      let arcVoltage = firstWeldPoint.weldVoltage!;
+      if (safetySettings.maxCurrent > 0 && arcCurrent > safetySettings.maxCurrent) {
+        log_weldingExecution.warn('welding.safety.currentClamped', `전류 ${arcCurrent}A가 설정 상한(${safetySettings.maxCurrent}A)을 초과해 클램프됨`);
+        arcCurrent = safetySettings.maxCurrent;
+      }
+      if (safetySettings.maxVoltage > 0 && arcVoltage > safetySettings.maxVoltage) {
+        log_weldingExecution.warn('welding.safety.voltageClamped', `전압 ${arcVoltage}V가 설정 상한(${safetySettings.maxVoltage}V)을 초과해 클램프됨`);
+        arcVoltage = safetySettings.maxVoltage;
+      }
       const arcOnOk = await safeArcOn(
-        firstWeldPoint.weldCurrent!,
-        firstWeldPoint.weldVoltage!,
+        arcCurrent,
+        arcVoltage,
         safetySettings.gasPreFlowTime,
       );
       if (!arcOnOk) throw new Error('아크 ON 실패로 용접을 중단합니다');
@@ -538,20 +560,35 @@ export async function executeWelding(
       }
       log_weldingExecution.info(
         'welding.batch',
-        `Batch MoveL: ${batchPoints.length}포인트 → 단일 MoveL (경유 스킵)`,
+        `Batch MoveL: ${batchPoints.length}포인트 개별 경유 (경유 스킵 없음)`,
         {
           indices: batchIndices.map(idx => weldingPoints[idx].id),
         },
       );
       try {
-        const batchResult = await batchMoveL(batchPoints, { perPoint: isDryRun });
-        for (const idx of batchIndices) {
-          const segIdx = idx - 1;
-          if (segIdx >= 0 && segIdx < segments.length) {
-            segments[segIdx].actual_sec = (Date.now() - segmentStartTime) / 1000;
-            segmentStartTime = Date.now();
-          }
-          setCurrentPointIndex(idx);
+        // per_point:true — 예전에는 dry run에서만 각 포인트를 실제로 경유했고, 실 용접(perPoint:false)은
+        // 첫 포인트→마지막 포인트로 단일 MoveL만 보내 중간 포인트의 좌표/터치 오프셋이 통째로 무시됐다
+        // (오프셋도 배치 전체 평균값 하나만 적용됨). 항상 개별 경유하도록 통일.
+        const batchResult = await batchMoveL(batchPoints, { perPoint: true });
+        const completedCount = batchResult.data?.completed ?? (batchResult.status_code === 200 ? batchIndices.length : 0);
+        const completedIndices = batchIndices.slice(0, completedCount);
+        // 배치 전체 소요시간을 세그먼트 개별 actual_sec로 기록할 때, 예전에는 첫 세그먼트에 전부 몰아주고
+        // 나머지는 0으로 남았다(실제로는 경유점에서 멈추지 않았으므로). 이제는 각 포인트를 실제로 경유하니
+        // 세그먼트별 예상시간 비율로 나눠 기록한다(완벽하진 않지만 0으로 남는 것보단 낫다).
+        const batchElapsedSec = (Date.now() - segmentStartTime) / 1000;
+        const segIndices = completedIndices
+          .map(idx => idx - 1)
+          .filter(segIdx => segIdx >= 0 && segIdx < segments.length);
+        const totalExpected = segIndices.reduce((sum, segIdx) => sum + (segments[segIdx].expected_sec || 0), 0);
+        segIndices.forEach(segIdx => {
+          const share = totalExpected > 0
+            ? (segments[segIdx].expected_sec || 0) / totalExpected
+            : 1 / segIndices.length;
+          segments[segIdx].actual_sec = batchElapsedSec * share;
+        });
+        segmentStartTime = Date.now();
+        if (completedIndices.length > 0) {
+          setCurrentPointIndex(completedIndices[completedIndices.length - 1]);
         }
         if (batchResult.data?.stopped || batchResult.status_code !== 200) {
           log_weldingExecution.warn('welding.batch.stopped', 'Batch 중단', batchResult.data);

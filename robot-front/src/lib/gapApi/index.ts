@@ -51,6 +51,17 @@ export interface AuthUser {
   full_name: string | null;
 }
 
+export interface GapUserOut {
+  id: number;
+  username: string;
+  full_name: string | null;
+  role: UserRole;
+  email: string | null;
+  is_active: boolean;
+  last_login_at: string | null;
+  created_at: string;
+}
+
 export interface WeldingParam {
   id: number;
   posture: Posture;
@@ -232,10 +243,14 @@ export const settingsApi = {
 
 // 사용자 (관리자용)
 export const userApi = {
-  me: () => gapApi.get('/api/users/me').then(r => r.data),
-  list: () => gapApi.get('/api/users/').then(r => r.data),
+  me: () => gapApi.get<GapUserOut>('/api/users/me').then(r => r.data),
+  list: () => gapApi.get<GapUserOut[]>('/api/users/').then(r => r.data),
   create: (body: { username: string; password: string; full_name?: string; email?: string; role?: UserRole }) =>
-    gapApi.post('/api/users/', body).then(r => r.data),
+    gapApi.post<GapUserOut>('/api/users/', body).then(r => r.data),
+  update: (id: number, body: { full_name?: string; email?: string; role?: UserRole; is_active?: boolean }) =>
+    gapApi.patch<GapUserOut>(`/api/users/${id}`, body).then(r => r.data),
+  resetPassword: (id: number, newPassword: string) =>
+    gapApi.post<GapUserOut>(`/api/users/${id}/reset-password`, { new_password: newPassword }).then(r => r.data),
 };
 
 // 관리자 배치

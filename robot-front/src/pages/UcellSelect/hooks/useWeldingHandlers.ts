@@ -1,5 +1,5 @@
 import { TeachingPoint, WeaveParams, createInitialTeachingPoints, UCELL_POINT_DEFINITIONS, UCellData, NORMAL_CELLS, COLLAR_PLATE_CELLS, PartWeldEnabled, DEFAULT_PART_WELD_ENABLED, DEFAULT_WEAVE_PARAMS, WELDING_PARTS } from '..';
-import { moveToJointPositionNonBlocking, moveToCartesianPositionNonBlocking, checkMotionDone, getWeldingConfig, updateTeachingJob, TeachingPointData, RealtimeRobotStatus, enableRobot, createTeachingJob, getTeachingJobs, getTeachingJob, deleteTeachingJob, updateTeachingJobName, TeachingJob, getRealtimeRobotStatus, stopRobotSDK, emergencyStop, endArc, endWeave, arcOff, arcTraceControl, wireSearchEnd, forwardWireFeed, reverseWireFeed, stopForwardWireFeed, stopReverseWireFeed } from '../../../lib';
+import { moveToJointPositionNonBlocking, moveToCartesianPositionNonBlocking, checkMotionDone, getWeldingConfig, updateTeachingJob, TeachingPointData, RealtimeRobotStatus, enableRobot, createTeachingJob, getTeachingJobs, getTeachingJob, deleteTeachingJob, updateTeachingJobName, TeachingJob, getRealtimeRobotStatus, stopRobotSDK, emergencyStop, pauseRobotMotion, resumeRobotMotion, endArc, endWeave, arcOff, arcTraceControl, wireSearchEnd, forwardWireFeed, reverseWireFeed, stopForwardWireFeed, stopReverseWireFeed } from '../../../lib';
 import { getErrorMessage, extractResultCode } from '../../../lib/api';
 import { createLogger } from '../../../lib';
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
@@ -241,6 +241,24 @@ export function useWeldingHandlers({
       log_useWeldingHandlers.error('emergency.globalStop.error', '비상 정지 중 오류', { error });
     }
   }, [showAlert, stopTouchSensing, stopWelding, stopTracking]);
+  const handlePauseRobot = useCallback(async () => {
+    try {
+      await pauseRobotMotion();
+      showAlert('일시 정지되었습니다.', { type: 'success' });
+    } catch (error) {
+      log_useWeldingHandlers.error('pause.error', '일시 정지 중 오류', { error });
+      showAlert('일시 정지 실패', { type: 'error' });
+    }
+  }, [showAlert]);
+  const handleResumeRobot = useCallback(async () => {
+    try {
+      await resumeRobotMotion();
+      showAlert('재개되었습니다.', { type: 'success' });
+    } catch (error) {
+      log_useWeldingHandlers.error('resume.error', '재개 중 오류', { error });
+      showAlert('재개 실패', { type: 'error' });
+    }
+  }, [showAlert]);
   const applyParamsToAllPoints = useCallback(
     (sourcePointId: string) => {
       const sourcePoint = teachingPoints.find(pt => pt.id === sourcePointId);
@@ -330,6 +348,8 @@ export function useWeldingHandlers({
     handleContinueWelding,
     handleStartTouchSensing,
     handleGlobalEmergencyStop,
+    handlePauseRobot,
+    handleResumeRobot,
     applyParamsToAllPoints,
     applyParamsToBlock,
   };

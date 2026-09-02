@@ -499,6 +499,15 @@ int RobotService::connect(const std::string& ip) {
         std::cout << "[RobotService] SDK Version: " << version << std::endl;
         int gasInit = m_robot.SetAspirated(0, 0);
         std::cout << "[RobotService] Initial gas OFF on connect: result=" << gasInit << std::endl;
+        {
+            std::lock_guard<std::mutex> stopLock(m_stopMutex);
+            int stopRet = m_stopRobot.RPC(ip.c_str());
+            m_stopRobotConnected = (stopRet == 0);
+            if (!m_stopRobotConnected) {
+                std::cerr << "[RobotService] 비상정지 전용 연결 실패(ret=" << stopRet
+                          << ") - 정지/상태조회 명령이 이동 명령과 같은 채널을 공유합니다" << std::endl;
+            }
+        }
         if (m_reconnectCallback) {
             m_reconnectCallback(true, ip);
         }
@@ -515,6 +524,11 @@ int RobotService::disconnect() {
     }
     std::cout << "[RobotService] Disconnecting..." << std::endl;
     int ret = m_robot.CloseRPC();
+    if (m_stopRobotConnected) {
+        std::lock_guard<std::mutex> stopLock(m_stopMutex);
+        try { m_stopRobot.CloseRPC(); } catch (...) {}
+        m_stopRobotConnected = false;
+    }
     m_connected = false;
     if (m_reconnectCallback) {
         m_reconnectCallback(false, m_lastIp);
@@ -549,10 +563,19 @@ int RobotService::setMode(int mode) {
 }
 ROBOT_STATE_PKG RobotService::getState() {
     ROBOT_STATE_PKG state = {0};
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if (m_connected) {
-            m_robot.GetRobotRealTimeState(&state);
+    if (m_connected) {
+        // moveL() 등 블로킹 이동 명령이 m_mutex를 오래 쥐고 있어도 상태조회가
+        // 막히지 않도록, 전용 채널(m_stopRobot)이 살아있으면 그쪽으로 조회한다.
+        // 예전엔 여기서 m_mutex를 잡았는데, 그러면 긴 용접 이동 중 50ms 주기
+        // 폴링이 몇 초씩 실패해서 프론트에 "연결 실패" 오탐 배너가 떴다.
+        if (m_stopRobotConnected) {
+            std::lock_guard<std::mutex> stopLock(m_stopMutex);
+            m_stopRobot.GetRobotRealTimeState(&state);
+        } else {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_connected) {
+                m_robot.GetRobotRealTimeState(&state);
+            }
         }
     }
     {
@@ -750,18 +773,148 @@ int RobotService::relativeMoveL(const double descPosDeltas[6], int tool, int use
               << "] vel=" << vel << std::endl;
     return moveL(targetPos, tool, user, vel, acc, ovl, blendR);
 }
+int RobotService::pointsOffsetEnable(int flag, const double offsetPos[6]) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose offset(offsetPos[0], offsetPos[1], offsetPos[2],
+                    offsetPos[3], offsetPos[4], offsetPos[5]);
+    std::cout << "[RobotService] PointsOffsetEnable: flag=" << flag << " offset=["
+              << offsetPos[0] << ", " << offsetPos[1] << ", " << offsetPos[2] << ", "
+              << offsetPos[3] << ", " << offsetPos[4] << ", " << offsetPos[5] << "]" << std::endl;
+    return m_robot.PointsOffsetEnable(flag, &offset);
+}
+int RobotService::pointsOffsetDisable() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    std::cout << "[RobotService] PointsOffsetDisable" << std::endl;
+    return m_robot.PointsOffsetDisable();
+}
+int RobotService::getCurToolCoord(double coord[6]) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(0, 0, 0, 0, 0, 0);
+    int ret = m_robot.GetCurToolCoord(pose);
+    coord[0] = pose.tran.x; coord[1] = pose.tran.y; coord[2] = pose.tran.z;
+    coord[3] = pose.rpy.rx; coord[4] = pose.rpy.ry; coord[5] = pose.rpy.rz;
+    return ret;
+}
+int RobotService::getCurWObjCoord(double coord[6]) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(0, 0, 0, 0, 0, 0);
+    int ret = m_robot.GetCurWObjCoord(pose);
+    coord[0] = pose.tran.x; coord[1] = pose.tran.y; coord[2] = pose.tran.z;
+    coord[3] = pose.rpy.rx; coord[4] = pose.rpy.ry; coord[5] = pose.rpy.rz;
+    return ret;
+}
+int RobotService::getToolCoordWithID(int id, double coord[6], int& type, int& install, int& toolID, int& loadNo) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(0, 0, 0, 0, 0, 0);
+    int ret = m_robot.GetToolCoordWithID(id, pose, type, install, toolID, loadNo);
+    coord[0] = pose.tran.x; coord[1] = pose.tran.y; coord[2] = pose.tran.z;
+    coord[3] = pose.rpy.rx; coord[4] = pose.rpy.ry; coord[5] = pose.rpy.rz;
+    return ret;
+}
+int RobotService::getWObjCoordWithID(int id, double coord[6], int& refFrame) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(0, 0, 0, 0, 0, 0);
+    int ret = m_robot.GetWObjCoordWithID(id, pose, refFrame);
+    coord[0] = pose.tran.x; coord[1] = pose.tran.y; coord[2] = pose.tran.z;
+    coord[3] = pose.rpy.rx; coord[4] = pose.rpy.ry; coord[5] = pose.rpy.rz;
+    return ret;
+}
+int RobotService::setToolCoord(int id, const double coord[6], int type, int install, int toolID, int loadNum) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(coord[0], coord[1], coord[2], coord[3], coord[4], coord[5]);
+    std::cout << "[RobotService] SetToolCoord: id=" << id << " loadNum=" << loadNum << std::endl;
+    return m_robot.SetToolCoord(id, &pose, type, install, toolID, loadNum);
+}
+int RobotService::setWObjCoord(int id, const double coord[6], int refFrame) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(coord[0], coord[1], coord[2], coord[3], coord[4], coord[5]);
+    std::cout << "[RobotService] SetWObjCoord: id=" << id << " refFrame=" << refFrame << std::endl;
+    return m_robot.SetWObjCoord(id, &pose, refFrame);
+}
+int RobotService::getTargetPayloadWithID(int id, double& weight, double cog[3]) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescTran tran(0, 0, 0);
+    int ret = m_robot.GetTargetPayloadWithID(id, weight, tran);
+    cog[0] = tran.x; cog[1] = tran.y; cog[2] = tran.z;
+    return ret;
+}
+int RobotService::setLoadWeight(int loadNum, float weight) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    std::cout << "[RobotService] SetLoadWeight: loadNum=" << loadNum << " weight=" << weight << "kg" << std::endl;
+    return m_robot.SetLoadWeight(loadNum, weight);
+}
+int RobotService::setLoadCoord(int loadNum, const double coord[3]) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescTran tran(coord[0], coord[1], coord[2]);
+    std::cout << "[RobotService] SetLoadCoord: loadNum=" << loadNum << std::endl;
+    return m_robot.SetLoadCoord(loadNum, &tran);
+}
 int RobotService::stopMotion() {
     if (!m_connected) return -1;
-    std::cout << "[RobotService] Stopping motion... (no mutex)" << std::endl;
+    // 별도 연결(m_stopRobot)이 살아있으면 그쪽으로 보낸다: m_robot이 MoveL 같은
+    // 블로킹 RPC 응답을 기다리는 중이면 같은 채널에 정지 명령을 보내도 그 응답이
+    // 끝날 때까지 큐에 밀려 지연될 수 있어서, 실제 용접 중 정지 버튼이 안 먹히는
+    // 문제(2026-09-02 로그로 확인)의 원인이었다.
+    if (m_stopRobotConnected) {
+        std::cout << "[RobotService] Stopping motion via dedicated stop channel" << std::endl;
+        std::lock_guard<std::mutex> stopLock(m_stopMutex);
+        return m_stopRobot.StopMotion();
+    }
+    std::cout << "[RobotService] Stopping motion... (no mutex, shared channel - fallback)" << std::endl;
     return m_robot.StopMotion();
 }
 int RobotService::emergencyStop() {
     if (!m_connected) return -1;
-    std::cout << "[RobotService] 🚨 EMERGENCY STOP! (no mutex)" << std::endl;
-    int result1 = m_robot.StopMotion();
-    int result2 = m_robot.ImmStopJOG();
+    bool dedicated = m_stopRobotConnected;
+    std::cout << "[RobotService] 🚨 EMERGENCY STOP! ("
+              << (dedicated ? "dedicated channel" : "shared channel, no mutex - fallback") << ")" << std::endl;
+    int result1, result2;
+    if (dedicated) {
+        std::lock_guard<std::mutex> stopLock(m_stopMutex);
+        result1 = m_stopRobot.StopMotion();
+        result2 = m_stopRobot.ImmStopJOG();
+    } else {
+        result1 = m_robot.StopMotion();
+        result2 = m_robot.ImmStopJOG();
+    }
     std::cout << "[RobotService] StopMotion=" << result1 << ", ImmStopJOG=" << result2 << std::endl;
     return (result1 == 0 || result2 == 0) ? 0 : -1;
+}
+int RobotService::pauseMotion() {
+    if (!m_connected) return -1;
+    std::cout << "[RobotService] PauseMotion (soft stop, resumable)" << std::endl;
+    return m_robot.PauseMotion();
+}
+int RobotService::resumeMotion() {
+    if (!m_connected) return -1;
+    std::cout << "[RobotService] ResumeMotion" << std::endl;
+    return m_robot.ResumeMotion();
+}
+int RobotService::getSafetyStopState(uint8_t& si0State, uint8_t& si1State) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    return m_robot.GetSafetyStopState(&si0State, &si1State);
+}
+int RobotService::getDOState(uint8_t& doStateH, uint8_t& doStateL) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    return m_robot.GetDO(&doStateH, &doStateL);
+}
+int RobotService::getToolDOState(uint8_t& doState) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    return m_robot.GetToolDO(&doState);
 }
 int RobotService::setSpeed(float speed) {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -1043,11 +1196,20 @@ void RobotService::monitorLoop(int intervalMs) {
     }
 }
 bool RobotService::checkConnection() {
-    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_connected) return false;
     try {
         ROBOT_STATE_PKG state = {0};
-        int ret = m_robot.GetRobotRealTimeState(&state);
+        int ret;
+        if (m_stopRobotConnected) {
+            // getState()와 동일한 이유로 전용 채널 사용 - 블로킹 이동 중에도
+            // 연결확인이 m_mutex에 걸려 오탐(false) 나지 않도록 한다.
+            std::lock_guard<std::mutex> stopLock(m_stopMutex);
+            ret = m_stopRobot.GetRobotRealTimeState(&state);
+        } else {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (!m_connected) return false;
+            ret = m_robot.GetRobotRealTimeState(&state);
+        }
         if (ret != 0) {
             return false;
         }
@@ -1074,6 +1236,11 @@ bool RobotService::tryReconnect() {
     try {
         m_robot.CloseRPC();
     } catch (...) {}
+    if (m_stopRobotConnected) {
+        std::lock_guard<std::mutex> stopLock(m_stopMutex);
+        try { m_stopRobot.CloseRPC(); } catch (...) {}
+        m_stopRobotConnected = false;
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     try {
         int ret = m_robot.RPC(m_lastIp.c_str());
@@ -1083,6 +1250,16 @@ bool RobotService::tryReconnect() {
             int gasOff = m_robot.SetAspirated(0, 0);
             FLOG_INFO("RobotMonitor", "Force gas OFF on reconnect: result=" + std::to_string(gasOff));
             std::cout << "[RobotService] Force gas OFF on reconnect: result=" << gasOff << std::endl;
+            int stopRet;
+            {
+                std::lock_guard<std::mutex> stopLock(m_stopMutex);
+                stopRet = m_stopRobot.RPC(m_lastIp.c_str());
+                m_stopRobotConnected = (stopRet == 0);
+            }
+            if (!m_stopRobotConnected) {
+                std::cerr << "[RobotService] 비상정지 전용 연결 실패(ret=" << stopRet
+                          << ") - 정지 명령이 이동 명령과 같은 채널을 공유합니다" << std::endl;
+            }
             if (m_reconnectCallback) {
                 m_reconnectCallback(true, m_lastIp);
             }
@@ -3357,6 +3534,7 @@ void HttpServer::startEmergencyServer() {
         if (m_dbService && m_dbService->isConnected()) {
             m_dbService->logDebug("EmergencyServer", "EMERGENCY_STOP_REQUEST", "Emergency stop button pressed");
         }
+        requestBatchStop();
         int result = m_robotService.emergencyStop();
         if (m_dbService && m_dbService->isConnected()) {
             m_dbService->logDebug("EmergencyServer", "EMERGENCY_STOP_RESULT",
@@ -3751,7 +3929,9 @@ void registerWeldingRoutes(
         try {
             json body = json::parse(req.body);
             int ioType = body.value("io_type", 0);
-            float current = body.value("current", 200.0f);
+            // 용접기(Megmeet DEX2-MPR600) 정격 범위로 서버에서 클램프한다. 예전엔 검증이 전혀 없어서
+            // 클라이언트가 비정상적으로 큰 값을 보내면 그대로 AO에 실려나갔다.
+            float current = std::clamp(body.value("current", 200.0f), 0.0f, 600.0f);
             int aoIndex = body.value("ao_index", 0);
             int blend = body.value("blend", 0);
             FLOG_INFO("WeldingRoute", "Set current: " + std::to_string(current) + "A ioType=" + std::to_string(ioType) + " aoIndex=" + std::to_string(aoIndex));
@@ -3778,7 +3958,8 @@ void registerWeldingRoutes(
         try {
             json body = json::parse(req.body);
             int ioType = body.value("io_type", 0);
-            float voltage = body.value("voltage", 24.0f);
+            // DEX2-MPR600 정격 출력 전압 상한(약 44V, U2=14+0.05*I 기준)으로 클램프.
+            float voltage = std::clamp(body.value("voltage", 24.0f), 0.0f, 44.0f);
             int aoIndex = body.value("ao_index", 1);
             int blend = body.value("blend", 0);
             FLOG_INFO("WeldingRoute", "Set voltage: " + std::to_string(voltage) + "V ioType=" + std::to_string(ioType) + " aoIndex=" + std::to_string(aoIndex));
@@ -3805,12 +3986,14 @@ void registerWeldingRoutes(
             json body = json::parse(req.body);
             int weaveNum = body.value("weave_num", 0);
             int weaveType = body.value("weave_type", 0);
-            float freq = body.value("frequency", 1.0f);
-            float range = body.value("range_val", 5.0f);
-            float leftRange = body.value("left_range", 5.0f);
-            float rightRange = body.value("right_range", 5.0f);
-            float leftStayTime = body.value("left_stay_time", 0.0f);
-            float rightStayTime = body.value("right_stay_time", 0.0f);
+            // 검증 없이 그대로 SDK에 실리던 값들 — 비정상적으로 큰 진폭/체류시간이 들어가면
+            // 위빙 중 부재나 지그와 충돌할 수 있어 서버에서 클램프한다.
+            float freq = std::clamp(body.value("frequency", 1.0f), 0.1f, 10.0f);
+            float range = std::clamp(body.value("range_val", 5.0f), 0.0f, 20.0f);
+            float leftRange = std::clamp(body.value("left_range", 5.0f), 0.0f, 20.0f);
+            float rightRange = std::clamp(body.value("right_range", 5.0f), 0.0f, 20.0f);
+            float leftStayTime = std::clamp(body.value("left_stay_time", 0.0f), 0.0f, 2000.0f);
+            float rightStayTime = std::clamp(body.value("right_stay_time", 0.0f), 0.0f, 2000.0f);
             if (dbService && dbService->isConnected()) {
                 std::ostringstream details;
                 details << std::fixed << std::setprecision(3)
@@ -3930,6 +4113,14 @@ void registerWeldingRoutes(
             int r = robotService.arcEnd(0, 0, 1000);
             FLOG_INFO("WeldingRoute", "Emergency step 2/4 Arc OFF: result=" + std::to_string(r));
             results["steps"].push_back({{"step", "arc_off"}, {"result", r}});
+            // /welding/arc/off 정상 경로와 동일하게 전류/전압 AO도 같이 초기화한다.
+            // 여기서 리셋을 빼먹으면 비정상(예외) 종료 후 와이어 조그가 방금 용접의
+            // 높은 속도값을 그대로 물고 있는 문제가 재발한다.
+            int resultResetCurrent = robotService.setWeldingCurrent(0, 0.0f, 1, 0);
+            int resultResetVoltage = robotService.setWeldingVoltage(0, 0.0f, 0, 0);
+            FLOG_INFO("WeldingRoute", "Emergency step 2/4 AO reset: current=" +
+                std::to_string(resultResetCurrent) + " voltage=" + std::to_string(resultResetVoltage));
+            results["steps"].push_back({{"step", "ao_reset"}, {"current_result", resultResetCurrent}, {"voltage_result", resultResetVoltage}});
         } catch (...) {
             FLOG_ERROR("WeldingRoute", "Emergency step 2/4 Arc OFF: EXCEPTION");
             results["steps"].push_back({{"step", "arc_off"}, {"result", -1}, {"error", "exception"}});
@@ -4107,8 +4298,9 @@ void registerWeldingConfigRoutes(
             int ioType = body.value("io_type", 0);
             int arcNum = body.value("arc_num", 0);
             int timeout = body.value("timeout", 10000);
-            float current = body.value("current", 0.0f);
-            float voltage = body.value("voltage", 0.0f);
+            // /api/welding/current, /api/welding/voltage와 동일한 정격 범위로 클램프.
+            float current = std::clamp(body.value("current", 0.0f), 0.0f, 600.0f);
+            float voltage = std::clamp(body.value("voltage", 0.0f), 0.0f, 44.0f);
             int gasPreFlowMs = body.value("gas_pre_flow_ms", 500);
             FLOG_INFO("WeldingConfig", "Arc ON sequence: current=" + std::to_string(current) + "A voltage=" + std::to_string(voltage) + "V gasPreFlow=" + std::to_string(gasPreFlowMs) + "ms");
             if (dbService && dbService->isConnected()) {
@@ -4199,6 +4391,13 @@ void registerWeldingConfigRoutes(
             if (dbService && dbService->isConnected()) {
                 dbService->logDebug("ArcOff", "ARC_END", "result=" + std::to_string(resultArc));
             }
+            // 용접 전류/전압 아날로그 출력을 초기화 (용접기 와이어 송급 속도 기준값도 같이 내려감)
+            // 초기화하지 않으면 아크 종료 후 수동 와이어 조절 시 방금 용접에 쓰인 높은 속도값이 그대로 남아
+            // 조그 버튼을 눌러도 필요 이상으로 빠르게 나옴
+            int resultResetCurrent = robotService.setWeldingCurrent(ioType, 0.0f, 1, 0);
+            int resultResetVoltage = robotService.setWeldingVoltage(ioType, 0.0f, 0, 0);
+            FLOG_INFO("WeldingConfig", "Arc OFF: reset current/voltage AO to idle (current=" +
+                std::to_string(resultResetCurrent) + " voltage=" + std::to_string(resultResetVoltage) + ")");
             if (gasPostFlowMs > 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(gasPostFlowMs));
             }
@@ -4412,7 +4611,12 @@ void registerWeldingBatchRoutes(
             }
             float speedRaw = firstPt.value("speed", 15.0f);
             int velModeIn = firstPt.value("vel_mode", 1);
-            float speed = (velModeIn == 1) ? speedRaw * 1.13f / 72.0f : speedRaw;
+            // MoveJ/MoveL 등 다른 라우트는 전부 CPM->% 변환을 vel/15.0f로 한다.
+            // 여기만 speedRaw*1.13f/72.0f(약 1/4.25배 더 작음)를 써서, vel_mode=1인
+            // 포인트에서 실제 속도가 정상 대비 4배 이상 느려져 사실상 멈춘 것처럼
+            // 보이는 문제(2026-09-02 9번 포인트: vel=0.470833으로 찍힘, 30*1.13/72
+            // 와 정확히 일치)가 있었다. 다른 라우트와 동일한 공식으로 통일.
+            float speed = (velModeIn == 1) ? speedRaw / 15.0f : speedRaw;
             if (dbService && dbService->isConnected()) {
                 RobotSettings ovlSettings = dbService->getRobotSettings();
                 int ovlPct = ovlSettings.default_ovl;
@@ -5134,6 +5338,7 @@ struct AxisTouchSearchResult {
     double start = 0;
     double end = 0;
     float searchVel = 0;
+    float searchAccel = 3.0f;
     float searchDis = 0;
     float retractDistance = 0;
     int toolNum = 0;
@@ -5158,11 +5363,13 @@ AxisTouchSearchResult performAxisTouchSearch(
         WeldingConfig config = dbService->getWeldingConfig();
         r.searchDis = static_cast<float>(config.touch_distance);
         r.searchVel = static_cast<float>(config.touch_sensing_search_speed);
+        r.searchAccel = static_cast<float>(config.touch_sensing_acceleration);
         r.retractDistance = static_cast<float>(config.touch_sensing_retract_distance);
         searchMoveDist = config.touch_sensing_move_distance;
     }
     r.searchDis = body.value("search_dis", r.searchDis);
     r.searchVel = body.value("search_vel", r.searchVel);
+    r.searchAccel = body.value("search_accel", r.searchAccel);
     r.retractDistance = body.value("retract_distance", r.retractDistance);
 
     ROBOT_STATE_PKG state = robotService.getState();
@@ -5185,7 +5392,7 @@ AxisTouchSearchResult performAxisTouchSearch(
         FLOG_SDK_ERROR("wireSearchStart", wsStart, tag + " WireSearchStart failed");
     }
 
-    robotService.moveL(curPos, r.toolNum, r.userNum, r.searchVel, 3.0f, 100, -1.0f, 0, 0, nullptr, 0);
+    robotService.moveL(curPos, r.toolNum, r.userNum, r.searchVel, r.searchAccel, 100, -1.0f, 0, 0, nullptr, 0);
     {
         int motionDone = 0;
         int waitCnt = 0;
@@ -5197,7 +5404,7 @@ AxisTouchSearchResult performAxisTouchSearch(
         }
     }
 
-    r.result = robotService.moveL(searchTarget, r.toolNum, r.userNum, r.searchVel, 3.0f, 100, -1.0f, 1, 0, nullptr, 0);
+    r.result = robotService.moveL(searchTarget, r.toolNum, r.userNum, r.searchVel, r.searchAccel, 100, -1.0f, 1, 0, nullptr, 0);
 
     int motionDone = 0;
     int waitCount = 0;
@@ -5343,6 +5550,10 @@ void registerSdkRoutes(
             robotService.setToolPoint(toolNum);
             robotService.setUserPoint(userNum);
             robotService.setCollisionDetection(settings.collision_detection_enabled);
+            // 전체 경로 오프셋(PointsOffsetEnable)은 SDK에 조회 기능이 없어 앱이 상태를
+            // 추적할 수 없다. 이전 세션에서 켜둔 채 앱을 종료/새로고침했을 가능성에
+            // 대비해, 매 연결 시작 시 항상 꺼진 상태로 되돌린다.
+            robotService.pointsOffsetDisable();
         }
         json response;
         response["status_code"] = (result == 0) ? 200 : 500;
@@ -5534,19 +5745,23 @@ void registerSdkRoutes(
         try {
             json body = json::parse(req.body);
             WeldingConfig config = dbService->getWeldingConfig();
+            // 프론트 UI 슬라이더 범위와 동일하게 서버에서도 클램프한다.
+            // 예전엔 검증이 전혀 없어서 SQL로 직접 넣은 값이 UI 최소/최대를 벗어나도 그대로 저장됐다
+            // (예: touch_sensing_approach_offset가 UI 최소 50인데 25로 저장된 적 있음).
+            auto clampD = [](double v, double lo, double hi) { return v < lo ? lo : (v > hi ? hi : v); };
             if (body.contains("touch_sensing_enabled")) config.touch_sensing_enabled = body["touch_sensing_enabled"].get<bool>();
-            if (body.contains("touch_speed")) config.touch_speed = body["touch_speed"].get<double>();
-            if (body.contains("touch_distance")) config.touch_distance = body["touch_distance"].get<double>();
-            if (body.contains("touch_offset_depth")) config.touch_offset_depth = body["touch_offset_depth"].get<double>();
-            if (body.contains("touch_approach_angle")) config.touch_approach_angle = body["touch_approach_angle"].get<double>();
-            if (body.contains("touch_sensing_velocity")) config.touch_sensing_velocity = body["touch_sensing_velocity"].get<double>();
-            if (body.contains("touch_sensing_acceleration")) config.touch_sensing_acceleration = body["touch_sensing_acceleration"].get<double>();
-            if (body.contains("touch_sensing_step_size")) config.touch_sensing_step_size = body["touch_sensing_step_size"].get<double>();
-            if (body.contains("touch_sensing_retract_distance")) config.touch_sensing_retract_distance = body["touch_sensing_retract_distance"].get<double>();
-            if (body.contains("touch_sensing_approach_offset")) config.touch_sensing_approach_offset = body["touch_sensing_approach_offset"].get<double>();
-            if (body.contains("touch_sensing_move_distance")) config.touch_sensing_move_distance = body["touch_sensing_move_distance"].get<double>();
-            if (body.contains("touch_sensing_point_speed")) config.touch_sensing_point_speed = body["touch_sensing_point_speed"].get<double>();
-            if (body.contains("touch_sensing_search_speed")) config.touch_sensing_search_speed = body["touch_sensing_search_speed"].get<double>();
+            if (body.contains("touch_speed")) config.touch_speed = clampD(body["touch_speed"].get<double>(), 1, 30);
+            if (body.contains("touch_distance")) config.touch_distance = clampD(body["touch_distance"].get<double>(), 10, 200);
+            if (body.contains("touch_offset_depth")) config.touch_offset_depth = clampD(body["touch_offset_depth"].get<double>(), 1, 20);
+            if (body.contains("touch_approach_angle")) config.touch_approach_angle = clampD(body["touch_approach_angle"].get<double>(), 0, 45);
+            if (body.contains("touch_sensing_velocity")) config.touch_sensing_velocity = clampD(body["touch_sensing_velocity"].get<double>(), 1, 10);
+            if (body.contains("touch_sensing_acceleration")) config.touch_sensing_acceleration = clampD(body["touch_sensing_acceleration"].get<double>(), 1, 10);
+            if (body.contains("touch_sensing_step_size")) config.touch_sensing_step_size = clampD(body["touch_sensing_step_size"].get<double>(), 1, 20);
+            if (body.contains("touch_sensing_retract_distance")) config.touch_sensing_retract_distance = clampD(body["touch_sensing_retract_distance"].get<double>(), 5, 50);
+            if (body.contains("touch_sensing_approach_offset")) config.touch_sensing_approach_offset = clampD(body["touch_sensing_approach_offset"].get<double>(), 50, 200);
+            if (body.contains("touch_sensing_move_distance")) config.touch_sensing_move_distance = clampD(body["touch_sensing_move_distance"].get<double>(), 0.1, 1.0);
+            if (body.contains("touch_sensing_point_speed")) config.touch_sensing_point_speed = clampD(body["touch_sensing_point_speed"].get<double>(), 10, 100);
+            if (body.contains("touch_sensing_search_speed")) config.touch_sensing_search_speed = clampD(body["touch_sensing_search_speed"].get<double>(), 1, 10);
             if (body.contains("p1_touch_center")) config.p1_touch_center = body["p1_touch_center"].get<bool>();
             if (body.contains("p1_touch_left")) config.p1_touch_left = body["p1_touch_left"].get<bool>();
             if (body.contains("p1_touch_right")) config.p1_touch_right = body["p1_touch_right"].get<bool>();
@@ -5591,12 +5806,15 @@ void registerSdkRoutes(
             if (body.contains("arc_tracking_enabled")) config.arc_tracking_enabled = body["arc_tracking_enabled"].get<bool>();
             if (body.contains("arc_tracking_left_right")) config.arc_tracking_left_right = body["arc_tracking_left_right"].get<bool>();
             if (body.contains("arc_tracking_up_down")) config.arc_tracking_up_down = body["arc_tracking_up_down"].get<bool>();
-            if (body.contains("arc_tracking_klr")) config.arc_tracking_klr = body["arc_tracking_klr"].get<double>();
-            if (body.contains("arc_tracking_kud")) config.arc_tracking_kud = body["arc_tracking_kud"].get<double>();
-            if (body.contains("arc_tracking_step_max_lr")) config.arc_tracking_step_max_lr = body["arc_tracking_step_max_lr"].get<double>();
-            if (body.contains("arc_tracking_step_max_ud")) config.arc_tracking_step_max_ud = body["arc_tracking_step_max_ud"].get<double>();
-            if (body.contains("arc_tracking_sum_max_lr")) config.arc_tracking_sum_max_lr = body["arc_tracking_sum_max_lr"].get<double>();
-            if (body.contains("arc_tracking_sum_max_ud")) config.arc_tracking_sum_max_ud = body["arc_tracking_sum_max_ud"].get<double>();
+            // 아크추적 게인/스텝/누적한도 — 프론트 ArcTrackingSection.tsx 슬라이더 범위와 동일하게 클램프.
+            // 예전엔 검증이 없어서 step_max를 비정상적으로 크게 넣으면 용접 중 보정 이동이 한 번에
+            // 수백 mm씩 튈 수 있었다.
+            if (body.contains("arc_tracking_klr")) config.arc_tracking_klr = clampD(body["arc_tracking_klr"].get<double>(), 0.01, 1);
+            if (body.contains("arc_tracking_kud")) config.arc_tracking_kud = clampD(body["arc_tracking_kud"].get<double>(), 0.01, 1);
+            if (body.contains("arc_tracking_step_max_lr")) config.arc_tracking_step_max_lr = clampD(body["arc_tracking_step_max_lr"].get<double>(), 0.5, 20);
+            if (body.contains("arc_tracking_step_max_ud")) config.arc_tracking_step_max_ud = clampD(body["arc_tracking_step_max_ud"].get<double>(), 0.5, 20);
+            if (body.contains("arc_tracking_sum_max_lr")) config.arc_tracking_sum_max_lr = clampD(body["arc_tracking_sum_max_lr"].get<double>(), 5, 100);
+            if (body.contains("arc_tracking_sum_max_ud")) config.arc_tracking_sum_max_ud = clampD(body["arc_tracking_sum_max_ud"].get<double>(), 5, 100);
             if (dbService->updateWeldingConfig(config)) {
                 WeldingConfig updated = dbService->getWeldingConfig();
                 response["status_code"] = 200;
@@ -5636,6 +5854,9 @@ void registerSdkMotionRoutes(
     server.Post("/robot_sdk/robot/stop", [&robotService](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         FLOG_INFO("SdkMotion", "Stop motion request");
+        // 진행 중인 배치 용접(batch-move)이 있으면 현재 포인트 이동이 성공으로 반환되더라도
+        // 다음 포인트로 넘어가지 않도록 즉시 중단 플래그를 세운다.
+        requestBatchStop();
         int result = robotService.stopMotion();
         if (result != 0) {
             FLOG_SDK_ERROR("stopMotion", result, "Stop motion failed");
@@ -5648,6 +5869,7 @@ void registerSdkMotionRoutes(
     server.Post("/robot_sdk/robot/emergency_stop", [&robotService](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         FLOG_FATAL("SdkMotion", "EMERGENCY STOP request");
+        requestBatchStop();
         int result = robotService.emergencyStop();
         if (result != 0) {
             FLOG_SDK_ERROR("emergencyStop", result, "Emergency stop failed");
@@ -5658,6 +5880,74 @@ void registerSdkMotionRoutes(
         response["status_code"] = 200;
         response["result"] = result;
         res.set_content(response.dump(), "application/json");
+    });
+    // 완전 정지(emergency_stop)보다 부드러운 정지 - 이어서 재개 가능
+    server.Post("/robot_sdk/robot/pause", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        FLOG_INFO("SdkMotion", "Pause motion request");
+        int result = robotService.pauseMotion();
+        if (result != 0) {
+            FLOG_SDK_ERROR("pauseMotion", result, "Pause motion failed");
+        }
+        json response;
+        response["status_code"] = (result == 0) ? 200 : 500;
+        response["result"] = result;
+        res.set_content(response.dump(), "application/json");
+    });
+    server.Post("/robot_sdk/robot/resume", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        FLOG_INFO("SdkMotion", "Resume motion request");
+        int result = robotService.resumeMotion();
+        if (result != 0) {
+            FLOG_SDK_ERROR("resumeMotion", result, "Resume motion failed");
+        }
+        json response;
+        response["status_code"] = (result == 0) ? 200 : 500;
+        response["result"] = result;
+        res.set_content(response.dump(), "application/json");
+    });
+    server.Get("/robot_sdk/safety/stop-state", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        uint8_t si0 = 0, si1 = 0;
+        int result = robotService.getSafetyStopState(si0, si1);
+        json data;
+        data["result"] = result;
+        data["si0"] = si0;
+        data["si1"] = si1;
+        res.set_content(HttpRouteHelpers::makeStatusResponse((result == 0) ? 200 : 500, data).dump(), "application/json");
+    });
+    // 컨트롤박스/툴 DO(디지털 출력) 현재 켜짐/꺼짐 상태 읽기.
+    // 참고: SDK에 AO(아날로그 출력) 하드웨어 리드백 함수는 없어 DO만 지원됨
+    server.Get("/robot_sdk/io/do", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        uint8_t doH = 0, doL = 0;
+        int result = robotService.getDOState(doH, doL);
+        json data;
+        data["result"] = result;
+        data["do_state_h"] = doH;
+        data["do_state_l"] = doL;
+        res.set_content(HttpRouteHelpers::makeStatusResponse((result == 0) ? 200 : 500, data).dump(), "application/json");
+    });
+    server.Get("/robot_sdk/io/tool-do", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        uint8_t doState = 0;
+        int result = robotService.getToolDOState(doState);
+        json data;
+        data["result"] = result;
+        data["do_state"] = doState;
+        res.set_content(HttpRouteHelpers::makeStatusResponse((result == 0) ? 200 : 500, data).dump(), "application/json");
     });
     server.Post("/robot_sdk/robot/mode", [&robotService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -5697,6 +5987,7 @@ void registerSdkMotionRoutes(
     });
     server.Post("/robot_sdk/robot/stop_motion", [&robotService](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
+        requestBatchStop();
         int result = robotService.stopMotion();
         json response;
         response["status_code"] = (result == 0) ? 200 : 500;
@@ -5705,6 +5996,7 @@ void registerSdkMotionRoutes(
     });
     server.Post("/robot_sdk/robot/stop_move", [&robotService](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
+        requestBatchStop();
         int result = robotService.stopMotion();
         json response;
         response["status_code"] = (result == 0) ? 200 : 500;
@@ -6012,6 +6304,230 @@ void registerSdkMotionRoutes(
             res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
         }
     });
+    // 전체 궤적(포인트) 오프셋: 이후 실행되는 모든 이동 명령의 목표 위치를 워크/베이스 또는 툴
+    // 좌표계 기준으로 일괄 이동시킴. 실제 자재 위치가 티칭한 프로그램과 살짝 어긋났을 때
+    // 포인트를 다시 티칭하지 않고 전체 경로를 한번에 보정하는 용도
+    server.Post("/robot_sdk/move/points-offset/enable", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            double offsetPos[6] = {0};
+            if (body.contains("offset")) {
+                auto off = body["offset"];
+                offsetPos[0] = off.value("x", 0.0);
+                offsetPos[1] = off.value("y", 0.0);
+                offsetPos[2] = off.value("z", 0.0);
+                offsetPos[3] = off.value("rx", 0.0);
+                offsetPos[4] = off.value("ry", 0.0);
+                offsetPos[5] = off.value("rz", 0.0);
+            }
+            // flag: 0 - 워크(job)/베이스 좌표계 기준 오프셋, 2 - 툴 좌표계 기준 오프셋
+            int flag = body.value("flag", 0);
+            FLOG_INFO("SdkMotion", "PointsOffsetEnable: flag=" + std::to_string(flag));
+            int result = robotService.pointsOffsetEnable(flag, offsetPos);
+            if (result != 0) {
+                FLOG_SDK_ERROR("pointsOffsetEnable", result, "flag=" + std::to_string(flag));
+            }
+            json response;
+            response["status_code"] = (result == 0) ? 200 : 500;
+            response["result"] = result;
+            res.set_content(response.dump(), "application/json");
+        } catch (const std::exception& e) {
+            FLOG_ERROR("SdkMotion", std::string("PointsOffsetEnable exception: ") + e.what());
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
+        }
+    });
+    server.Post("/robot_sdk/move/points-offset/disable", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        FLOG_INFO("SdkMotion", "PointsOffsetDisable");
+        int result = robotService.pointsOffsetDisable();
+        if (result != 0) {
+            FLOG_SDK_ERROR("pointsOffsetDisable", result, "disable failed");
+        }
+        json response;
+        response["status_code"] = (result == 0) ? 200 : 500;
+        response["result"] = result;
+        res.set_content(response.dump(), "application/json");
+    });
+    // 툴/워크 좌표계 & 부하(payload) 파라미터 조회·설정 - 기존엔 로봇 펜던트에서만 확인/설정 가능했음
+    server.Get("/robot_sdk/coord/tool/current", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        double coord[6] = {0};
+        int result = robotService.getCurToolCoord(coord);
+        json data;
+        data["result"] = result;
+        data["coord"] = {{"x", coord[0]}, {"y", coord[1]}, {"z", coord[2]}, {"rx", coord[3]}, {"ry", coord[4]}, {"rz", coord[5]}};
+        res.set_content(HttpRouteHelpers::makeStatusResponse((result == 0) ? 200 : 500, data).dump(), "application/json");
+    });
+    server.Get("/robot_sdk/coord/work/current", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        double coord[6] = {0};
+        int result = robotService.getCurWObjCoord(coord);
+        json data;
+        data["result"] = result;
+        data["coord"] = {{"x", coord[0]}, {"y", coord[1]}, {"z", coord[2]}, {"rx", coord[3]}, {"ry", coord[4]}, {"rz", coord[5]}};
+        res.set_content(HttpRouteHelpers::makeStatusResponse((result == 0) ? 200 : 500, data).dump(), "application/json");
+    });
+    server.Get("/robot_sdk/coord/tool", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        int id = req.has_param("id") ? std::stoi(req.get_param_value("id")) : 0;
+        double coord[6] = {0};
+        int type = 0, install = 0, toolID = 0, loadNo = 0;
+        int result = robotService.getToolCoordWithID(id, coord, type, install, toolID, loadNo);
+        json data;
+        data["result"] = result;
+        data["id"] = id;
+        data["coord"] = {{"x", coord[0]}, {"y", coord[1]}, {"z", coord[2]}, {"rx", coord[3]}, {"ry", coord[4]}, {"rz", coord[5]}};
+        data["type"] = type;
+        data["install"] = install;
+        data["tool_id"] = toolID;
+        data["load_num"] = loadNo;
+        res.set_content(HttpRouteHelpers::makeStatusResponse((result == 0) ? 200 : 500, data).dump(), "application/json");
+    });
+    server.Get("/robot_sdk/coord/work", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        int id = req.has_param("id") ? std::stoi(req.get_param_value("id")) : 0;
+        double coord[6] = {0};
+        int refFrame = 0;
+        int result = robotService.getWObjCoordWithID(id, coord, refFrame);
+        json data;
+        data["result"] = result;
+        data["id"] = id;
+        data["coord"] = {{"x", coord[0]}, {"y", coord[1]}, {"z", coord[2]}, {"rx", coord[3]}, {"ry", coord[4]}, {"rz", coord[5]}};
+        data["ref_frame"] = refFrame;
+        res.set_content(HttpRouteHelpers::makeStatusResponse((result == 0) ? 200 : 500, data).dump(), "application/json");
+    });
+    server.Post("/robot_sdk/coord/tool", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            int id = body.value("id", 0);
+            double coord[6] = {0};
+            if (body.contains("coord")) {
+                auto c = body["coord"];
+                coord[0] = c.value("x", 0.0); coord[1] = c.value("y", 0.0); coord[2] = c.value("z", 0.0);
+                coord[3] = c.value("rx", 0.0); coord[4] = c.value("ry", 0.0); coord[5] = c.value("rz", 0.0);
+            }
+            int type = body.value("type", 0);
+            int install = body.value("install", 0);
+            int toolID = body.value("tool_id", id);
+            int loadNum = body.value("load_num", 0);
+            FLOG_INFO("SdkMotion", "SetToolCoord: id=" + std::to_string(id));
+            int result = robotService.setToolCoord(id, coord, type, install, toolID, loadNum);
+            if (result != 0) {
+                FLOG_SDK_ERROR("setToolCoord", result, "id=" + std::to_string(id));
+            }
+            json response;
+            response["status_code"] = (result == 0) ? 200 : 500;
+            response["result"] = result;
+            res.set_content(response.dump(), "application/json");
+        } catch (const std::exception& e) {
+            FLOG_ERROR("SdkMotion", std::string("SetToolCoord exception: ") + e.what());
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
+        }
+    });
+    server.Post("/robot_sdk/coord/work", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            int id = body.value("id", 0);
+            double coord[6] = {0};
+            if (body.contains("coord")) {
+                auto c = body["coord"];
+                coord[0] = c.value("x", 0.0); coord[1] = c.value("y", 0.0); coord[2] = c.value("z", 0.0);
+                coord[3] = c.value("rx", 0.0); coord[4] = c.value("ry", 0.0); coord[5] = c.value("rz", 0.0);
+            }
+            int refFrame = body.value("ref_frame", 0);
+            FLOG_INFO("SdkMotion", "SetWObjCoord: id=" + std::to_string(id));
+            int result = robotService.setWObjCoord(id, coord, refFrame);
+            if (result != 0) {
+                FLOG_SDK_ERROR("setWObjCoord", result, "id=" + std::to_string(id));
+            }
+            json response;
+            response["status_code"] = (result == 0) ? 200 : 500;
+            response["result"] = result;
+            res.set_content(response.dump(), "application/json");
+        } catch (const std::exception& e) {
+            FLOG_ERROR("SdkMotion", std::string("SetWObjCoord exception: ") + e.what());
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
+        }
+    });
+    server.Get("/robot_sdk/payload", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        int id = req.has_param("id") ? std::stoi(req.get_param_value("id")) : 0;
+        double weight = 0;
+        double cog[3] = {0};
+        int result = robotService.getTargetPayloadWithID(id, weight, cog);
+        json data;
+        data["result"] = result;
+        data["id"] = id;
+        data["weight"] = weight;
+        data["cog"] = {{"x", cog[0]}, {"y", cog[1]}, {"z", cog[2]}};
+        res.set_content(HttpRouteHelpers::makeStatusResponse((result == 0) ? 200 : 500, data).dump(), "application/json");
+    });
+    server.Post("/robot_sdk/payload", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            int loadNum = body.value("load_num", 0);
+            float weight = body.value("weight", 0.0f);
+            int resultWeight = robotService.setLoadWeight(loadNum, weight);
+            int resultCoord = 0;
+            if (body.contains("cog")) {
+                auto c = body["cog"];
+                double coord[3] = { c.value("x", 0.0), c.value("y", 0.0), c.value("z", 0.0) };
+                resultCoord = robotService.setLoadCoord(loadNum, coord);
+            }
+            FLOG_INFO("SdkMotion", "SetLoadWeight: loadNum=" + std::to_string(loadNum) + " weight=" + std::to_string(weight) + "kg");
+            if (resultWeight != 0) {
+                FLOG_SDK_ERROR("setLoadWeight", resultWeight, "loadNum=" + std::to_string(loadNum));
+            }
+            json response;
+            response["status_code"] = (resultWeight == 0) ? 200 : 500;
+            response["result"] = resultWeight;
+            response["cog_result"] = resultCoord;
+            res.set_content(response.dump(), "application/json");
+        } catch (const std::exception& e) {
+            FLOG_ERROR("SdkMotion", std::string("SetLoadWeight exception: ") + e.what());
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
+        }
+    });
     server.Post("/robot_sdk/wire/forward", [&robotService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         if (!robotService.isConnected()) {
@@ -6237,7 +6753,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.30"
+#define APP_VERSION_STRING "1.1.42"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -7156,6 +7672,10 @@ void registerUpdaterRoutes(
             std::thread([]() {
                 std::this_thread::sleep_for(std::chrono::seconds(10));
                 FLOG_INFO("Updater", "본체 종료 (인스톨러 실행 후)");
+                // std::exit(0)은 main()의 정상 종료 경로(386~414행)를 안 거쳐서 closeKioskBrowsers()가
+                // 호출되지 않았다. 그래서 업데이트 후 새 창이 뜨는 동안 예전 페이지 창이 안 닫히고
+                // 그대로 남아있었다 — 여기서 직접 닫아준다.
+                closeKioskBrowsers();
                 std::exit(0);
             }).detach();
         } catch (const std::exception& e) {

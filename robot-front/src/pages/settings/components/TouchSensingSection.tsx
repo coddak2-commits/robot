@@ -41,7 +41,7 @@ const TouchSensingParams: React.FC<TouchSensingSectionProps> = ({ settings, upda
   <div
     className="grid grid-cols-2 md:grid-cols-3 gap-4"
     data-audit="dup"
-    data-audit-note="중복+일부미사용: 터치센싱 — /settings 와 /settings/welding(SequenceTab) 분산. 실행은 SequenceTab의 touch_speed를 읽고 여기 velocity/accel/step/angle/retract/move/search 필드는 사장됨(미참조)"
+    data-audit-note="중복 주의: 터치센싱 설정이 /settings(여기)와 /settings/welding(SequenceTab) 두 곳에 나뉨. 실제 탐색 이동(performAxisTouchSearch, robot_core_all.cpp)이 읽는 건 여기 있는 touch_sensing_search_speed/acceleration/retract_distance/move_distance 4개다. SequenceTab의 touch_speed는 이 탐색 이동에 쓰이지 않는다(터치센싱 실행 로그 출력용). 반대로 여기 velocity(탐색 속도(%))/step_size/approach_angle 3개는 백엔드 어디에서도 참조되지 않는 죽은 필드다(2026-09-02 확인)."
     data-audit-loc="src/pages/settings/components/TouchSensingSection.tsx:40"
   >
     <NumberInput

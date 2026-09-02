@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme, useLang, useUpdaterContext } from '../../../contexts';
 import { setSoundEnabled, setAutoLogoutMinutes, setNotificationsEnabled } from '../../../lib/appSettings';
 import { percent, displayProgress } from '../../../lib/updater';
+import { RobotSdkToolsSection } from './RobotSdkToolsSection';
 
 interface RobotSettingsTabProps {
   robotCoordSettings: RobotSettingsData;
@@ -285,6 +286,7 @@ const RobotSettingsTab: React.FC<RobotSettingsTabProps> = ({
         </div>
       </div>
       <RobotErrorHistorySection />
+      <RobotSdkToolsSection />
     </div>
   );
 };

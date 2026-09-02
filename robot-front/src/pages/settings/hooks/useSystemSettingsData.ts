@@ -26,15 +26,27 @@ import {
   RobotErrorData,
   getWeldingConfig,
   updateWeldingConfig,
-  getUsers,
-  createUser,
-  updateUser,
-  deleteUser,
   UserData,
   logout,
   checkRobotConnection,
 } from '../../../lib';
+import { userApi, GapUserOut } from '../../../lib/gapApi';
 import type { TabType, TouchSensingSettings, UserFormData } from '..';
+const toUserData = (u: GapUserOut): UserData => ({
+  id: u.id,
+  username: u.username,
+  name: u.full_name || u.username,
+  email: u.email || '',
+  role: u.role,
+  active: u.is_active,
+  lastLogin: u.last_login_at,
+  createdAt: u.created_at,
+});
+const extractErrorMessage = (error: unknown, fallback: string): string => {
+  const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+  if (detail) return detail;
+  return error instanceof Error ? error.message : fallback;
+};
 const TOUCH_SENSING_DEFAULTS: TouchSensingSettings = {
   touch_sensing_enabled: true,
   touch_distance: 100.0,
@@ -105,8 +117,8 @@ export function useSystemSettingsData() {
   };
   const fetchData = async () => {
     try {
-      const [usersData, configData] = await Promise.all([getUsers(), mockGetSystemConfig()]);
-      setUsers(usersData);
+      const [usersData, configData] = await Promise.all([userApi.list(), mockGetSystemConfig()]);
+      setUsers(usersData.map(toUserData));
       setConfig({
         ...configData,
         systemPreferences: {
@@ -258,38 +270,39 @@ export function useSystemSettingsData() {
   const handleSaveUser = async () => {
     try {
       if (editingUser) {
-        await updateUser(editingUser.id, {
-          name: userForm.name, email: userForm.email, role: userForm.role,
-          active: userForm.active, password: userForm.password || undefined,
+        await userApi.update(editingUser.id, {
+          full_name: userForm.name, email: userForm.email || undefined,
+          role: userForm.role, is_active: userForm.active,
         });
+        if (userForm.password) {
+          await userApi.resetPassword(editingUser.id, userForm.password);
+        }
         showAlert('사용자가 수정되었습니다.', { type: 'success' });
       } else {
         if (!userForm.username || !userForm.password || !userForm.name) {
           showAlert('아이디, 비밀번호, 이름은 필수입니다.', { type: 'error' });
           return;
         }
-        await createUser({
+        await userApi.create({
           username: userForm.username, password: userForm.password,
-          name: userForm.name, email: userForm.email, role: userForm.role,
+          full_name: userForm.name, email: userForm.email || undefined, role: userForm.role,
         });
         showAlert('사용자가 생성되었습니다.', { type: 'success' });
       }
       setUserModalOpen(false);
       fetchData();
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : '사용자 저장 실패';
-      showAlert(message, { type: 'error' });
+      showAlert(extractErrorMessage(error, '사용자 저장 실패'), { type: 'error' });
     }
   };
   const handleDeleteUser = async (userId: number, userName: string) => {
-    if (!confirm(`'${userName}' 사용자를 삭제하시겠습니까?`)) return;
+    if (!confirm(`'${userName}' 사용자를 비활성화하시겠습니까?`)) return;
     try {
-      await deleteUser(userId);
-      showAlert('사용자가 삭제되었습니다.', { type: 'success' });
+      await userApi.update(userId, { is_active: false });
+      showAlert('사용자가 비활성화되었습니다.', { type: 'success' });
       fetchData();
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : '사용자 삭제 실패';
-      showAlert(message, { type: 'error' });
+      showAlert(extractErrorMessage(error, '사용자 비활성화 실패'), { type: 'error' });
     }
   };
   const handleLogout = async () => {

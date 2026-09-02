@@ -66,6 +66,8 @@ export const defaultSequenceSettings: WeldingSequenceSettings = {
 export const defaultSafetySettings: SafetySettings = {
   gasPreFlowTime: 500,
   gasPostFlowTime: 2000,
+  maxCurrent: 400,
+  maxVoltage: 40,
 };
 export const mapConfigToSequenceSettings = (config: WeldingConfigData): WeldingSequenceSettings => ({
   touchSensingEnabled: config.touch_sensing_enabled,
@@ -128,6 +130,8 @@ export const mapConfigToSequenceSettings = (config: WeldingConfigData): WeldingS
 export const mapConfigToSafetySettings = (config: WeldingConfigData): SafetySettings => ({
   gasPreFlowTime: config.gas_pre_flow_time,
   gasPostFlowTime: config.gas_post_flow_time,
+  maxCurrent: config.max_current ?? defaultSafetySettings.maxCurrent,
+  maxVoltage: config.max_voltage ?? defaultSafetySettings.maxVoltage,
 });
 export const loadWeldingSettings = async (): Promise<{ sequence: WeldingSequenceSettings; safety: SafetySettings }> => {
   try {

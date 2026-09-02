@@ -66,6 +66,8 @@ export interface TeachingTabContentProps {
   onApplyParamsToAll: (sourcePointId: string) => void;
   onReorderPoints: (activeId: string, overId: string) => void;
   onGlobalEmergencyStop: () => void;
+  onPauseRobot: () => void;
+  onResumeRobot: () => void;
 }
 export function TeachingTabContent({
   teachingPoints,
@@ -108,6 +110,8 @@ export function TeachingTabContent({
   onApplyParamsToAll,
   onReorderPoints,
   onGlobalEmergencyStop,
+  onPauseRobot,
+  onResumeRobot,
 }: TeachingTabContentProps) {
   const { show: showAlert } = useAlert();
   const isRunning = isRobotMoving || isWelding || isTouchSensing;
@@ -163,7 +167,7 @@ export function TeachingTabContent({
             title="시뮬레이션 모드"
           >
             <Zap className="w-3 h-3" />
-            {simulationMode ? 'SIM' : 'SIM'}
+            {simulationMode ? 'SIM ON' : 'SIM OFF'}
           </button>
         </div>
       </div>
@@ -275,6 +279,34 @@ export function TeachingTabContent({
               } 진행 중: {currentPointIndex + 1} / {savedPoints.length}
             </p>
           </div>
+          {(() => {
+            const arcActive = !isTouchSensing && !dryRunMode;
+            const pauseDisabledClass = 'px-3 py-2.5 bg-gray-800/60 text-gray-600 text-xs font-medium rounded-lg flex flex-col items-center justify-center border border-gray-700/50 cursor-not-allowed';
+            const pauseMsg = '용접(아크 On) 중에는 일시정지를 사용할 수 없습니다 - 모션만 멈추고 아크는 꺼지지 않습니다';
+            const resumeMsg = '용접(아크 On) 중에는 재개를 사용할 수 없습니다';
+            // disabled 버튼은 터치에서 title 툴팁이 안 보여서 이유를 알 방법이 없었다.
+            // 클릭은 항상 받되, 막힌 상태면 실제 동작 대신 이유를 알림으로 띄운다.
+            return (
+              <>
+                <button
+                  onClick={() => (arcActive ? showAlert(pauseMsg, { type: 'warning' }) : onPauseRobot())}
+                  title={arcActive ? pauseMsg : undefined}
+                  className={arcActive ? pauseDisabledClass : 'px-3 py-2.5 bg-yellow-900/60 hover:bg-yellow-800/60 text-yellow-400 text-xs font-medium rounded-lg flex flex-col items-center justify-center border border-yellow-600/50'}
+                >
+                  <Pause className="w-4 h-4 mb-0.5" />
+                  일시정지
+                </button>
+                <button
+                  onClick={() => (arcActive ? showAlert(resumeMsg, { type: 'warning' }) : onResumeRobot())}
+                  title={arcActive ? resumeMsg : undefined}
+                  className={arcActive ? pauseDisabledClass : 'px-3 py-2.5 bg-green-900/60 hover:bg-green-800/60 text-green-400 text-xs font-medium rounded-lg flex flex-col items-center justify-center border border-green-600/50'}
+                >
+                  <RotateCcw className="w-4 h-4 mb-0.5" />
+                  재개
+                </button>
+              </>
+            );
+          })()}
           <button
             onClick={onGlobalEmergencyStop}
             className="px-4 py-2.5 text-white text-xs font-bold rounded-lg flex flex-col items-center justify-center border-2 bg-red-600 hover:bg-red-500 border-red-400 animate-pulse"
