@@ -207,7 +207,7 @@ export function useCellSelectionHandlers({
         showAlert('용접/터치센싱/아크테스트 진행 중에는 포인트로 이동할 수 없습니다.', { type: 'warning' });
         return;
       }
-      const skipRetract = !isAtSavedNonHomePoint();
+      const skipRetract = point.id !== 'home' && !isAtSavedNonHomePoint();
       moveToPoint(point, { overrideSpeed: manualMoveSpeed, skipRetract });
     },
     [isAtSavedNonHomePoint, moveToPoint, manualMoveSpeed, isRobotBusy, showAlert],

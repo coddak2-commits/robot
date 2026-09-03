@@ -4709,12 +4709,15 @@ void registerWeldingBatchRoutes(
             }
             float speedRaw = firstPt.value("speed", 15.0f);
             int velModeIn = firstPt.value("vel_mode", 1);
-            // MoveJ/MoveL 등 다른 라우트는 전부 CPM->% 변환을 vel/15.0f로 한다.
-            // 여기만 speedRaw*1.13f/72.0f(약 1/4.25배 더 작음)를 써서, vel_mode=1인
-            // 포인트에서 실제 속도가 정상 대비 4배 이상 느려져 사실상 멈춘 것처럼
-            // 보이는 문제(2026-09-02 9번 포인트: vel=0.470833으로 찍힘, 30*1.13/72
-            // 와 정확히 일치)가 있었다. 다른 라우트와 동일한 공식으로 통일.
-            float speed = (velModeIn == 1) ? speedRaw / 15.0f : speedRaw;
+            // MoveJ/MoveL 등 다른 라우트는 전부 CPM->% 변환을 vel/15.0f로 한다. WeldBatch도
+            // 2026-09-02에 이 공식으로 통일했으나, 여기는 아크 온 상태로 실제 비드를 형성하는
+            // 구간이라 조그/포인트 이동과 같은 속도로 움직이면 너무 빨라 비드가 끊어짐
+            // (2026-09-03 확인). 포인트에 저장된 이동속도 값과 다른 라우트(조그, 포인트 간
+            // 이동)는 그대로 두고 이 배치 용접 이동에만 배율을 곱해 실제 속도를 낮춘다.
+            // 배율은 2026-09-02 수정 전(=1.1.39 등 이전 버전)에 쓰이던 speedRaw*1.13/72와
+            // 동일한 실제 속도가 나오도록 계산: (1.13/72) / (1/15) = 0.2354
+            static constexpr float WELD_BATCH_SPEED_SCALE = 0.2354f;
+            float speed = (velModeIn == 1) ? (speedRaw / 15.0f) * WELD_BATCH_SPEED_SCALE : speedRaw;
             if (dbService && dbService->isConnected()) {
                 RobotSettings ovlSettings = dbService->getRobotSettings();
                 int ovlPct = ovlSettings.default_ovl;
@@ -6851,7 +6854,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.44"
+#define APP_VERSION_STRING "1.1.45"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
