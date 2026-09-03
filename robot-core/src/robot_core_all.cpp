@@ -776,9 +776,24 @@ int RobotService::moveLWithJoints(const double joints[6], const double descPos[6
                             oacc, velAccParamMode, overSpeedStrategy, speedPercent);
     m_moveInProgress = false;
     if (ret != 0) {
+        // 2026-09-03: 특정 포인트에서 vel을 1.0까지 올려도 매번 code=14로 실패하는
+        // 사례가 있어서, 원인 파악을 위해 실제 목표 좌표/관절값/오프셋까지 파일 로그에
+        // 남긴다(예전엔 콘솔에만 찍혀서 패키징된 앱에선 안 보였음).
         FLOG_SDK_ERROR("MoveLWithJoints", ret,
             "vel=" + std::to_string(vel) + " velMode=" + std::to_string(velAccParamMode) +
-            " acc=" + std::to_string(acc) + " ovl=" + std::to_string(ovl));
+            " acc=" + std::to_string(acc) + " ovl=" + std::to_string(ovl) +
+            " tool=" + std::to_string(tool) + " user=" + std::to_string(user) +
+            " blendR=" + std::to_string(blendR) + " search=" + std::to_string((int)search) +
+            " offsetFlag=" + std::to_string((int)offsetFlag) +
+            " tcp=[" + std::to_string(descPos[0]) + "," + std::to_string(descPos[1]) + "," +
+            std::to_string(descPos[2]) + "," + std::to_string(descPos[3]) + "," +
+            std::to_string(descPos[4]) + "," + std::to_string(descPos[5]) + "]" +
+            " joints=[" + std::to_string(joints[0]) + "," + std::to_string(joints[1]) + "," +
+            std::to_string(joints[2]) + "," + std::to_string(joints[3]) + "," +
+            std::to_string(joints[4]) + "," + std::to_string(joints[5]) + "]" +
+            (offsetPos ? (" offset=[" + std::to_string(offsetPos[0]) + "," + std::to_string(offsetPos[1]) + "," +
+                std::to_string(offsetPos[2]) + "," + std::to_string(offsetPos[3]) + "," +
+                std::to_string(offsetPos[4]) + "," + std::to_string(offsetPos[5]) + "]") : " offset=none"));
     }
     return ret;
 }
@@ -6910,7 +6925,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.50"
+#define APP_VERSION_STRING "1.1.51"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
