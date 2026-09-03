@@ -436,6 +436,19 @@ int runService() {
     }
     std::cout << "[Main] Shutting down..." << std::endl;
     FLOG_INFO("Main", "Robot Core 서비스 종료 시작");
+    // [v1.1.60] 정상 종료 시퀀스(connectThread.join / httpServer.stop의 ThreadPool drain 등)가
+    // 그 시점에 아직 안 끝난 요청/스레드 때문에 얼마나 걸릴지 보장할 수 없다("종료" 눌러도
+    // 안 꺼지고 응답없음 뜨는 문제, 2026-09-03 - 용접 자체는 끝난 뒤였는데도 재현돼 정확한
+    // 원인은 특정 못 함). 정상 종료가 못 끝나도 "종료" 버튼은 항상 몇 초 안에 실제로 꺼지는
+    // 것을 보장하기 위해, 별도 스레드로 데드라인을 걸어 시간 안에 안 끝나면 강제 종료한다.
+#ifdef _WIN32
+    std::thread([]() {
+        std::this_thread::sleep_for(std::chrono::seconds(8));
+        std::cerr << "[Main] 정상 종료가 8초 안에 끝나지 않아 강제 종료합니다" << std::endl;
+        FLOG_FATAL("Main", "정상 종료 타임아웃(8s) - 프로세스 강제 종료");
+        TerminateProcess(GetCurrentProcess(), 0);
+    }).detach();
+#endif
     // [v1.1.58] connectThread가 아직 RPC() 안에서 블로킹 중일 수 있으니, robotService가 파괴되기
     // 전에(이 함수 리턴 전) 반드시 끝날 때까지 기다린다. 로봇이 응답 없으면 RPC() 자체의 타임아웃만큼
     // 종료가 늦어질 수 있지만, use-after-free로 멈추거나 죽는 것보단 낫다.
@@ -6979,7 +6992,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.59"
+#define APP_VERSION_STRING "1.1.60"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

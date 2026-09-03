@@ -20,7 +20,7 @@ export function useNetworkStatus(
 ): NetworkStatus {
   const {
     heartbeatInterval = 10000,
-    heartbeatTimeout = 3000,
+    heartbeatTimeout = 5000,
     enabled = true,
   } = options;
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -28,6 +28,11 @@ export function useNetworkStatus(
   const [lastServerResponse, setLastServerResponse] = useState<Date | null>(null);
   const [disconnectedDurationSec, setDisconnectedDurationSec] = useState(0);
   const disconnectedSinceRef = useRef<Date | null>(null);
+  // 용접 중 긴 요청 하나가 브라우저 동시 연결 수를 물고 있으면 이 헬스체크 하나가 타이밍상
+  // 못 나가서 실제로는 멀쩡한데 "서버 연결 불가"로 오탐되는 경우가 있었다(2026-09-03).
+  // 연속 2회(20초) 이상 실패해야만 진짜 끊김으로 판단해 배너가 뜨도록 디바운스한다.
+  const consecutiveFailuresRef = useRef(0);
+  const FAILURE_THRESHOLD = 2;
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
@@ -52,6 +57,7 @@ export function useNetworkStatus(
         meta: { skipErrorLog: true },
       } as any);
       const now = new Date();
+      consecutiveFailuresRef.current = 0;
       setIsServerReachable(true);
       setLastServerResponse(now);
       if (disconnectedSinceRef.current) {
@@ -61,6 +67,10 @@ export function useNetworkStatus(
         setDisconnectedDurationSec(0);
       }
     } catch {
+      consecutiveFailuresRef.current += 1;
+      if (consecutiveFailuresRef.current < FAILURE_THRESHOLD) {
+        return;
+      }
       if (!disconnectedSinceRef.current) {
         disconnectedSinceRef.current = new Date();
         log.warn('server.unreachable', '서버 연결 불가');
