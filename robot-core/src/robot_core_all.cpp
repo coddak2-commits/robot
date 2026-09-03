@@ -4852,19 +4852,16 @@ void registerWeldingBatchRoutes(
                         for (int k = 0; k < 6 && k < (int)pt["offset"].size(); k++)
                             ptOffset[k] = pt["offset"][k].get<double>();
                     }
-                    float blendR = -1.0f;  // [v1.1.55 진단] SDK 에러코드 74=ERR_LINE_POINT("직선 목표점이 올바르지 않음") 확인됨.
-                    // overSpeedStrategy=0으로 바꾸자 14->74로 바뀐 것으로 보아 blendR(코너 스무딩, 비블로킹)이 원인일 가능성 있어
-                    // 전체 포인트를 블로킹(-1, 스무딩 없음)으로 강제해 단일변수 테스트. 원래: (idx == total - 1) ? -1.0f : blendRMid;
-                    int ret;
-                    if (ptHasJoints) {
-                        ret = robotService.moveLWithJoints(ptJoints, ptTcp, tool, user, speed,
-                            accPP, ovlPP, blendR, 0, static_cast<uint8_t>(ptOffsetFlag), ptOffset, velMode, oaccPP,
-                            OVERSPEED_ADAPTIVE, overSpeedPct);
-                    } else {
-                        ret = robotService.moveL(ptTcp, tool, user, speed,
-                            accPP, ovlPP, blendR, 0, static_cast<uint8_t>(ptOffsetFlag), ptOffset, velMode,
-                            OVERSPEED_ADAPTIVE, overSpeedPct);
-                    }
+                    float blendR = (idx == total - 1) ? -1.0f : blendRMid;  // v1.1.55에서 -1 강제 테스트했지만 code=74 동일 → blendR 원인 아님, 원복
+                    // [v1.1.56 진단] SDK 문서: MoveL(joint_pos, desc_pos, ...)의 joint_pos/desc_pos는 "같은 목표점"을
+                    // 관절좌표/직교좌표 두 표현으로 동시에 요구함 - 즉 SDK가 내부적으로 둘의 일치 여부를 검증하는 것으로 보임.
+                    // 이 포인트(P1)는 터치센싱 보정 등으로 저장된 tcp와 joints가 서로 안 맞게 됐을 가능성이 있고,
+                    // 이게 code=74(ERR_LINE_POINT, "직선 목표점이 올바르지 않음")의 진짜 원인으로 추정됨.
+                    // → joints를 아예 안 보내고 tcp만으로 MoveL 호출(SDK가 현재 관절 기준으로 IK 직접 계산, config=-1과 동일 효과)해서 검증.
+                    int ret = robotService.moveL(ptTcp, tool, user, speed,
+                        accPP, ovlPP, blendR, 0, static_cast<uint8_t>(ptOffsetFlag), ptOffset, velMode,
+                        OVERSPEED_ADAPTIVE, overSpeedPct);
+                    (void)ptHasJoints; (void)ptJoints;
                     results.push_back(ret);
                     FLOG_INFO("WeldBatch", "[per_point] move " + std::to_string(idx + 1) + "/" +
                         std::to_string(total) + " blendR=" + std::to_string(blendR) + " ret=" + std::to_string(ret));
@@ -6951,7 +6948,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.55"
+#define APP_VERSION_STRING "1.1.56"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
