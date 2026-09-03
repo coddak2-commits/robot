@@ -353,7 +353,12 @@ int runService() {
     // 원인으로 추정된다(2026-09-03) - v1.1.49/50에서 고친 refreshInstallStatus/captureCommand는
     // ManagementDialog 자체 안의 다른 블로킹 지점이라 이 문제와는 무관했다. 연결 시도를
     // 백그라운드 스레드로 옮겨서 메인 스레드가 곧바로 메시지펌프 루프에 도달하도록 한다.
-    std::thread([&robotService]() {
+    // [v1.1.58] 위 스레드를 detach()하면, 로봇이 응답 없어 RPC()가 계속 블로킹 중인 상태에서
+    // 사용자가 "종료"를 눌러 runService()가 리턴하고 robotService(스택 지역 객체)가 파괴돼도
+    // 이 스레드는 계속 살아서 파괴된 robotService를 참조하게 된다(use-after-free) - 종료가 안
+    // 눌리거나 "응답없음" 후 강제종료해야 하고, 재실행해도 연결이 안 되던 증상(2026-09-03)의
+    // 원인으로 추정됨. detach 대신 join 가능하게 두고 종료 시퀀스에서 반드시 join한다.
+    std::thread connectThread([&robotService]() {
         int connectResult = robotService.connect(g_robotIp);
         if (connectResult == 0) {
             std::cout << "[Main] Connected to robot successfully" << std::endl;
@@ -373,7 +378,7 @@ int runService() {
             }
 #endif
         }
-    }).detach();
+    });
     robotService.startStateMonitor(50);
     robotService.setHangCallback([]() {
         // 여기 도달했다는 건 Fairino SDK 콜이 m_mutex를 쥔 채 영원히 안 풀리고 있다는
@@ -420,6 +425,13 @@ int runService() {
     }
     std::cout << "[Main] Shutting down..." << std::endl;
     FLOG_INFO("Main", "Robot Core 서비스 종료 시작");
+    // [v1.1.58] connectThread가 아직 RPC() 안에서 블로킹 중일 수 있으니, robotService가 파괴되기
+    // 전에(이 함수 리턴 전) 반드시 끝날 때까지 기다린다. 로봇이 응답 없으면 RPC() 자체의 타임아웃만큼
+    // 종료가 늦어질 수 있지만, use-after-free로 멈추거나 죽는 것보단 낫다.
+    if (connectThread.joinable()) {
+        FLOG_INFO("Main", "로봇 연결 시도 스레드 종료 대기 중...");
+        connectThread.join();
+    }
     ProcessStability::uninstallCrashHandlers();
 #ifdef _WIN32
     if (g_trayIcon) {
@@ -6956,7 +6968,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.57"
+#define APP_VERSION_STRING "1.1.58"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
