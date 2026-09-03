@@ -4731,6 +4731,14 @@ void registerWeldingBatchRoutes(
             // 동일한 실제 속도가 나오도록 계산: (1.13/72) / (1/15) = 0.2354
             static constexpr float WELD_BATCH_SPEED_SCALE = 0.2354f;
             float speed = (velModeIn == 1) ? (speedRaw / 15.0f) * WELD_BATCH_SPEED_SCALE : speedRaw;
+            // 포인트에 저장된 speed가 원래 낮은 경우(예: 26) 배율을 곱하면 0.4%대로 떨어져
+            // SDK가 MoveL(Joints)을 code=14로 즉시 거부함(2026-09-03 필드 로그로 확인,
+            // vel=0.408027에서 재현). 문서상 허용 범위는 [0~100]이지만 실제로는 이보다
+            // 훨씬 높은 하한이 있는 것으로 보여, 기존에 정상 동작 확인된 값(~1.13%) 아래로는
+            // 못 내려가게 최소치를 둔다.
+            if (velModeIn == 1 && speed < 1.0f) {
+                speed = 1.0f;
+            }
             if (dbService && dbService->isConnected()) {
                 RobotSettings ovlSettings = dbService->getRobotSettings();
                 int ovlPct = ovlSettings.default_ovl;
@@ -6867,7 +6875,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.47"
+#define APP_VERSION_STRING "1.1.48"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
