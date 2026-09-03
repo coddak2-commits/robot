@@ -705,8 +705,7 @@ export async function executeWelding(
         ``,
         `총 이동거리: ${totalPathDistance.toFixed(1)} mm`,
         `속도(CPM): ${representativeCpm} cm/min`,
-        `예상: ${totalExpectedDurationSec.toFixed(1)}초 / 실제: ${actualDurationSec.toFixed(1)}초`,
-        `차이: ${timeDifferenceSec >= 0 ? '+' : ''}${timeDifferenceSec.toFixed(1)}초 (${timeDifferencePercent >= 0 ? '+' : ''}${timeDifferencePercent.toFixed(1)}%)`,
+        `소요 시간: ${actualDurationSec.toFixed(1)}초`,
       ].join('\n'),
       { type: 'success', title: `${operationName} 완료` },
     );

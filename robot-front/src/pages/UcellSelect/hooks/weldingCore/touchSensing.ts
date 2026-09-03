@@ -347,7 +347,7 @@ export async function executeTouchSensing(
     if (!suppressAlerts) {
       if (isDryRun) {
         showAlert(
-          `${touchResults.length}개 포인트 터치 테스트 완료\n걸린 시간: ${totalDurationSec.toFixed(1)}초`,
+          `${touchResults.length}개 포인트 터치 테스트 완료\n소요 시간: ${totalDurationSec.toFixed(1)}초`,
           {
             type: 'success',
             title: '터치 테스트 완료',
@@ -361,7 +361,7 @@ export async function executeTouchSensing(
             return `${r.pointId.toUpperCase()}: dx=${r.dx.toFixed(1)}, dy=${r.dy.toFixed(1)}${showZ ? `, dz=${r.dz.toFixed(1)}` : ''}`;
           })
           .join('\n');
-        showAlert(`${summary}\n\n걸린 시간: ${totalDurationSec.toFixed(1)}초`, {
+        showAlert(`${summary}\n\n소요 시간: ${totalDurationSec.toFixed(1)}초`, {
           type: 'success',
           title: '터치 센싱 완료',
         });
