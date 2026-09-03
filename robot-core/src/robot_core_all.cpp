@@ -651,6 +651,7 @@ int RobotService::setMode(int mode) {
 }
 ROBOT_STATE_PKG RobotService::getState() {
     ROBOT_STATE_PKG state = {0};
+    bool gotFreshState = false;
     if (m_connected) {
         // moveL() 등 블로킹 이동 명령이 m_mutex를 오래 쥐고 있어도 상태조회가
         // 막히지 않도록, 전용 채널(m_stopRobot)이 살아있으면 그쪽으로 조회한다.
@@ -659,12 +660,24 @@ ROBOT_STATE_PKG RobotService::getState() {
         if (m_stopRobotConnected) {
             std::lock_guard<std::mutex> stopLock(m_stopMutex);
             m_stopRobot.GetRobotRealTimeState(&state);
+            gotFreshState = true;
         } else {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            if (m_connected) {
+            // [v1.1.61] m_stopRobot 전용 채널이 어떤 이유로든 연결 안 된 상태(m_stopRobotConnected
+            // false)라면 아래는 그대로 m_mutex를 blocking lock_guard로 잡고 있었는데, 이게 진행
+            // 중인 긴 이동(용접 등)에 물려 있으면 상태조회 자체가 몇 십 초씩 멈춰버린다(2026-09-03,
+            // /robot_sdk/robot/error가 axios 60000ms 타임아웃으로 실패하는 것으로 확인). 상태조회는
+            // 어차피 "최신 값이 아니어도 되니 절대 안 막혀야" 하는 용도이므로 try_lock으로 바꿔서
+            // 못 잡으면 즉시 포기하고(아래에서 마지막 캐시값 반환) 진짜 이동을 방해하지 않는다.
+            std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
+            if (lock.owns_lock() && m_connected) {
                 m_robot.GetRobotRealTimeState(&state);
+                gotFreshState = true;
             }
         }
+    }
+    if (!gotFreshState) {
+        std::lock_guard<std::mutex> cacheLock(m_stateCacheMutex);
+        return m_cachedState;
     }
     {
         std::lock_guard<std::mutex> cacheLock(m_stateCacheMutex);
@@ -1380,7 +1393,15 @@ bool RobotService::checkConnection() {
             std::lock_guard<std::mutex> stopLock(m_stopMutex);
             ret = m_stopRobot.GetRobotRealTimeState(&state);
         } else {
-            std::lock_guard<std::mutex> lock(m_mutex);
+            // [v1.1.61] m_stopRobot 채널이 없을 때의 대체 경로도 getState()와 같은 이유로
+            // try_lock으로 바꾼다 - m_mutex를 다른 스레드(긴 이동)가 쥐고 있으면 blocking
+            // lock_guard는 여기서 몇 십 초씩 멈추는데, 이건 monitorLoop 스레드 자체이므로
+            // 그러면 상태모니터/자동재연결 전체가 같이 멈춘다. 못 잡으면 "이동 중이라 못
+            // 잡았을 뿐" 이라고 보고(m_moveInProgress 체크와 같은 취지) 연결됨으로 간주한다.
+            std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
+            if (!lock.owns_lock()) {
+                return true;
+            }
             if (!m_connected) return false;
             ret = m_robot.GetRobotRealTimeState(&state);
         }
@@ -6992,7 +7013,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.60"
+#define APP_VERSION_STRING "1.1.61"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
