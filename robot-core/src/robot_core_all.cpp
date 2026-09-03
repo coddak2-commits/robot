@@ -2487,11 +2487,16 @@ void ManagementDialog::show(HINSTANCE hInstance) {
     m_hInstance = hInstance;
     createWindow();
     createControls();
-    refreshInstallStatus();
     updateServiceStatus();
     ShowWindow(m_hwnd, SW_SHOW);
     UpdateWindow(m_hwnd);
     SetForegroundWindow(m_hwnd);
+    // refreshInstallStatus()는 git/node/mysql --version, git describe 등 외부 프로세스를
+    // 최대 5초 타임아웃씩 여러 번 순차 실행한다(2026-09-03 확인: 이 창이 뜨자마자 "응답
+    // 없음"으로 굳는 현상의 원인 - 창을 만들고 메시지 루프가 돌기도 전에 이걸 메인
+    // 스레드에서 동기 실행하고 있었음). 창은 먼저 정상적으로 띄우고, 설치 상태 조회는
+    // 백그라운드 스레드에서 돌려서 끝나는 대로 라벨만 채우도록 분리한다.
+    std::thread([this]() { refreshInstallStatus(); }).detach();
     SetTimer(m_hwnd, TIMER_REFRESH, 2000, nullptr);
 }
 void ManagementDialog::close() {
@@ -3343,7 +3348,11 @@ LRESULT CALLBACK ManagementDialog::WndProc(HWND hwnd, UINT msg, WPARAM wParam, L
         int id = LOWORD(wParam);
         switch (id) {
         case IDC_BTN_REFRESH:
-            s_instance->refreshInstallStatus();
+            // 시작 시와 같은 이유로 새로고침 버튼도 동기 호출이면 창이 몇 초씩 멈춘다 -
+            // 백그라운드로 돌린다.
+            std::thread([]() {
+                if (s_instance) s_instance->refreshInstallStatus();
+            }).detach();
             s_instance->updateServiceStatus();
             break;
         case IDC_BTN_GIT:
@@ -6875,7 +6884,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.48"
+#define APP_VERSION_STRING "1.1.49"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
