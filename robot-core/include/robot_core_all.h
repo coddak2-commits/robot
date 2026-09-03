@@ -104,6 +104,14 @@ public:
     bool isAutoReconnectEnabled() const { return m_autoReconnect; }
     using ReconnectCallback = std::function<void(bool connected, const std::string& ip)>;
     void setReconnectCallback(ReconnectCallback callback) { m_reconnectCallback = callback; }
+    // Fairino SDK 콜(예: forwardWireFeed)이 응답 없이 영원히 블로킹되면 m_mutex를 쥔 채
+    // 절대 안 풀리는 진짜 데드락이 될 수 있다(SDK에 타임아웃 옵션이 없음, 2026-09-03 확인).
+    // 이걸 코드로 안전하게 풀 방법은 없어서, 별도 워치독 스레드가 상태갱신이 끊긴 걸
+    // 감지하면 이 콜백으로 "프로세스 자체를 강제 재기동"하도록 한다.
+    using HangCallback = std::function<void()>;
+    void setHangCallback(HangCallback callback) { m_hangCallback = callback; }
+    void startWatchdog(int checkIntervalMs = 3000, int hangThresholdMs = 15000);
+    void stopWatchdog();
 private:
     FRRobot m_robot;
     // 정지/비상정지 전용 독립 연결. m_robot이 MoveL 등으로 블로킹 중이어도
@@ -134,6 +142,14 @@ private:
     void monitorLoop(int intervalMs);
     bool checkConnection();
     bool tryReconnect();
+    // monitorLoop가 getState()를 성공적으로 마칠 때마다 갱신. 워치독 스레드가 락 없이
+    // (atomic만 읽어서) 이 값이 오래 정체됐는지만 확인하므로, m_mutex가 이미 물려있어도
+    // 워치독 자신은 절대 같이 멈추지 않는다.
+    std::atomic<int64_t> m_lastStateUpdateMs{0};
+    std::thread m_watchdogThread;
+    std::atomic<bool> m_watchdogRunning{false};
+    HangCallback m_hangCallback;
+    void watchdogLoop(int checkIntervalMs, int hangThresholdMs);
 };
 #endif
 #ifndef HTTP_SERVER_H

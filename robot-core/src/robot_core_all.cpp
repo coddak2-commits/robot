@@ -366,6 +366,32 @@ int runService() {
 #endif
     }
     robotService.startStateMonitor(50);
+    robotService.setHangCallback([]() {
+        // 여기 도달했다는 건 Fairino SDK 콜이 m_mutex를 쥔 채 영원히 안 풀리고 있다는
+        // 뜻이라, 정상 종료 경로(httpServer.stop()/robotService.disconnect() 등)도
+        // 전부 같은 락을 기다리다 같이 멈춘다. 그래서 정리 없이 새 프로세스를 먼저 띄우고
+        // 지금 프로세스는 TerminateProcess로 즉시 죽인다 - g_restart 루프(정상 재시작)는
+        // 여기서 쓸 수 없다.
+        FLOG_FATAL("Watchdog", "프로세스 강제 재기동 시도: " + g_exePath + " " + g_robotIp);
+#ifdef _WIN32
+        STARTUPINFOA si{};
+        si.cb = sizeof(si);
+        PROCESS_INFORMATION pi{};
+        std::string cmdLine = "\"" + g_exePath + "\" " + g_robotIp;
+        std::vector<char> mutableCmd(cmdLine.begin(), cmdLine.end());
+        mutableCmd.push_back('\0');
+        if (CreateProcessA(NULL, mutableCmd.data(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+        } else {
+            FLOG_ERROR("Watchdog", "새 프로세스 실행 실패 (error=" + std::to_string(GetLastError()) + ")");
+        }
+        TerminateProcess(GetCurrentProcess(), 1);
+#else
+        std::abort();
+#endif
+    });
+    robotService.startWatchdog();
     std::cout << std::endl;
     std::cout << "[Main] Robot Core is running." << std::endl;
 #ifdef _WIN32
@@ -400,6 +426,7 @@ int runService() {
         closeKioskBrowsers();
     }
 #endif
+    robotService.stopWatchdog();
     robotService.stopStateMonitor();
     httpServer.stop();
     zmqServer.stop();
@@ -482,23 +509,38 @@ RobotService::~RobotService() {
     }
 }
 int RobotService::connect(const std::string& ip) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_lastIp = ip;
-    if (m_connected) {
-        std::cout << "[RobotService] Already connected" << std::endl;
-        return 0;
+    // m_stopRobot 연결 시도/재연결 콜백은 일부러 m_mutex 밖에서 한다. m_stopRobot.RPC()가
+    // 응답 없이 블로킹되면(2026-09-03 사고처럼 네트워크가 불안정할 때 특히 가능성이 큼)
+    // 이 함수가 계속 m_mutex를 쥔 채 리턴을 못 하게 되고, 그럼 이동/정지/상태조회 등
+    // m_mutex가 필요한 모든 명령이 같이 멈춘다.
+    bool alreadyConnected = false;
+    int ret = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_lastIp = ip;
+        if (m_connected) {
+            std::cout << "[RobotService] Already connected" << std::endl;
+            alreadyConnected = true;
+        } else {
+            std::cout << "[RobotService] Connecting to " << ip << "..." << std::endl;
+            ret = m_robot.RPC(ip.c_str());
+            if (ret == 0) {
+                m_connected = true;
+                m_reconnectAttempts = 0;
+                std::cout << "[RobotService] Connected successfully" << std::endl;
+                char version[64] = {0};
+                m_robot.GetSDKVersion(version);
+                std::cout << "[RobotService] SDK Version: " << version << std::endl;
+                int gasInit = m_robot.SetAspirated(0, 0);
+                std::cout << "[RobotService] Initial gas OFF on connect: result=" << gasInit << std::endl;
+            } else {
+                std::cerr << "[RobotService] Connection failed: " << ret << std::endl;
+                FLOG_SDK_ERROR("RPC", ret, "로봇 연결 실패 IP=" + ip);
+            }
+        }
     }
-    std::cout << "[RobotService] Connecting to " << ip << "..." << std::endl;
-    int ret = m_robot.RPC(ip.c_str());
+    if (alreadyConnected) return 0;
     if (ret == 0) {
-        m_connected = true;
-        m_reconnectAttempts = 0;
-        std::cout << "[RobotService] Connected successfully" << std::endl;
-        char version[64] = {0};
-        m_robot.GetSDKVersion(version);
-        std::cout << "[RobotService] SDK Version: " << version << std::endl;
-        int gasInit = m_robot.SetAspirated(0, 0);
-        std::cout << "[RobotService] Initial gas OFF on connect: result=" << gasInit << std::endl;
         {
             std::lock_guard<std::mutex> stopLock(m_stopMutex);
             int stopRet = m_stopRobot.RPC(ip.c_str());
@@ -511,25 +553,26 @@ int RobotService::connect(const std::string& ip) {
         if (m_reconnectCallback) {
             m_reconnectCallback(true, ip);
         }
-    } else {
-        std::cerr << "[RobotService] Connection failed: " << ret << std::endl;
-        FLOG_SDK_ERROR("RPC", ret, "로봇 연결 실패 IP=" + ip);
     }
     return ret;
 }
 int RobotService::disconnect() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_connected) {
-        return 0;
+    int ret = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_connected) {
+            return 0;
+        }
+        std::cout << "[RobotService] Disconnecting..." << std::endl;
+        ret = m_robot.CloseRPC();
+        m_connected = false;
     }
-    std::cout << "[RobotService] Disconnecting..." << std::endl;
-    int ret = m_robot.CloseRPC();
+    // m_stopRobot 정리/콜백도 m_mutex 밖에서 - connect()와 같은 이유.
     if (m_stopRobotConnected) {
         std::lock_guard<std::mutex> stopLock(m_stopMutex);
         try { m_stopRobot.CloseRPC(); } catch (...) {}
         m_stopRobotConnected = false;
     }
-    m_connected = false;
     if (m_reconnectCallback) {
         m_reconnectCallback(false, m_lastIp);
     }
@@ -1100,6 +1143,44 @@ void RobotService::stopStateMonitor() {
     }
     FLOG_INFO("RobotMonitor", "State monitor stopped");
 }
+static int64_t robotServiceNowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+void RobotService::startWatchdog(int checkIntervalMs, int hangThresholdMs) {
+    if (m_watchdogRunning) return;
+    m_watchdogRunning = true;
+    m_watchdogThread = std::thread(&RobotService::watchdogLoop, this, checkIntervalMs, hangThresholdMs);
+}
+void RobotService::stopWatchdog() {
+    m_watchdogRunning = false;
+    if (m_watchdogThread.joinable()) {
+        m_watchdogThread.join();
+    }
+}
+void RobotService::watchdogLoop(int checkIntervalMs, int hangThresholdMs) {
+    // 이 스레드는 m_mutex/m_stopMutex를 절대 건드리지 않는다(atomic만 읽음) - 그래야
+    // 정작 감지해야 할 그 락이 물려있는 상황에서도 워치독 자신은 멈추지 않는다.
+    while (m_watchdogRunning) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(checkIntervalMs));
+        if (!m_connected) continue;
+        int64_t lastUpdate = m_lastStateUpdateMs;
+        if (lastUpdate == 0) continue; // 연결 직후 첫 성공 갱신 전이라 아직 판단 불가
+        int64_t elapsed = robotServiceNowMs() - lastUpdate;
+        if (elapsed >= hangThresholdMs) {
+            FLOG_FATAL("Watchdog", "상태갱신이 " + std::to_string(elapsed) +
+                "ms 동안 멈춤 - SDK 콜이 응답 없이 블로킹된 것으로 판단, 프로세스 강제 재기동");
+            std::cerr << "[Watchdog] 🚨 State update stalled for " << elapsed
+                      << "ms - forcing process restart" << std::endl;
+            if (m_hangCallback) {
+                m_hangCallback();
+            }
+            // 콜백이 프로세스를 강제 종료하는 게 정상 경로이므로 여기 도달하면 안 되지만,
+            // 혹시 콜백이 없거나 못 죽였을 경우 워치독이 계속 같은 경고를 반복하지 않도록 멈춘다.
+            return;
+        }
+    }
+}
 void RobotService::resetReconnectBackoff() {
     m_reconnectAttempts = 0;
     m_currentReconnectDelayMs = BASE_RECONNECT_DELAY_MS;
@@ -1120,6 +1201,9 @@ void RobotService::monitorLoop(int intervalMs) {
         if (m_connected && m_stateCallback) {
             try {
                 ROBOT_STATE_PKG state = getState();
+                // getState()가 여기까지 리턴했다는 건 이번 회차는 블로킹 안 됐다는 뜻 -
+                // 워치독이 이 타임스탬프만 보고 "멈췄는지" 판단한다.
+                m_lastStateUpdateMs = robotServiceNowMs();
                 m_stateCallback(state);
                 if (m_errorCallback) {
                     if (state.main_code != 0) {
@@ -1229,31 +1313,45 @@ bool RobotService::checkConnection() {
     }
 }
 bool RobotService::tryReconnect() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_lastIp.empty()) return false;
-    FLOG_DEBUG("RobotMonitor", "Trying to reconnect to " + m_lastIp);
-    std::cout << "[RobotService] Trying to reconnect to " << m_lastIp << "..." << std::endl;
-    try {
-        m_robot.CloseRPC();
-    } catch (...) {}
+    std::string ip;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_lastIp.empty()) return false;
+        ip = m_lastIp;
+        FLOG_DEBUG("RobotMonitor", "Trying to reconnect to " + ip);
+        std::cout << "[RobotService] Trying to reconnect to " << ip << "..." << std::endl;
+        try {
+            m_robot.CloseRPC();
+        } catch (...) {}
+    }
+    // m_stopRobot 정리도 m_mutex 밖에서 - connect()와 같은 이유로, CloseRPC()가
+    // 블로킹되더라도 다른 명령들이 쓰는 m_mutex까지 같이 물고 가지 않게 한다.
     if (m_stopRobotConnected) {
         std::lock_guard<std::mutex> stopLock(m_stopMutex);
         try { m_stopRobot.CloseRPC(); } catch (...) {}
         m_stopRobotConnected = false;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    bool reconnected = false;
     try {
-        int ret = m_robot.RPC(m_lastIp.c_str());
+        int ret;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            ret = m_robot.RPC(ip.c_str());
+            if (ret == 0) {
+                m_connected = true;
+                std::cout << "[RobotService] Reconnected successfully" << std::endl;
+                int gasOff = m_robot.SetAspirated(0, 0);
+                FLOG_INFO("RobotMonitor", "Force gas OFF on reconnect: result=" + std::to_string(gasOff));
+                std::cout << "[RobotService] Force gas OFF on reconnect: result=" << gasOff << std::endl;
+            }
+        }
         if (ret == 0) {
-            m_connected = true;
-            std::cout << "[RobotService] Reconnected successfully" << std::endl;
-            int gasOff = m_robot.SetAspirated(0, 0);
-            FLOG_INFO("RobotMonitor", "Force gas OFF on reconnect: result=" + std::to_string(gasOff));
-            std::cout << "[RobotService] Force gas OFF on reconnect: result=" << gasOff << std::endl;
+            reconnected = true;
             int stopRet;
             {
                 std::lock_guard<std::mutex> stopLock(m_stopMutex);
-                stopRet = m_stopRobot.RPC(m_lastIp.c_str());
+                stopRet = m_stopRobot.RPC(ip.c_str());
                 m_stopRobotConnected = (stopRet == 0);
             }
             if (!m_stopRobotConnected) {
@@ -1261,12 +1359,12 @@ bool RobotService::tryReconnect() {
                           << ") - 정지 명령이 이동 명령과 같은 채널을 공유합니다" << std::endl;
             }
             if (m_reconnectCallback) {
-                m_reconnectCallback(true, m_lastIp);
+                m_reconnectCallback(true, ip);
             }
-            return true;
+        } else {
+            FLOG_WARN("RobotMonitor", "Reconnect failed: ret=" + std::to_string(ret) + " ip=" + ip);
+            std::cerr << "[RobotService] Reconnect failed: " << ret << std::endl;
         }
-        FLOG_WARN("RobotMonitor", "Reconnect failed: ret=" + std::to_string(ret) + " ip=" + m_lastIp);
-        std::cerr << "[RobotService] Reconnect failed: " << ret << std::endl;
     } catch (const std::exception& e) {
         FLOG_ERROR("RobotMonitor", std::string("Reconnect exception: ") + e.what());
         std::cerr << "[RobotService] Reconnect exception: " << e.what() << std::endl;
@@ -1274,7 +1372,7 @@ bool RobotService::tryReconnect() {
         FLOG_ERROR("RobotMonitor", "Reconnect unknown exception");
         std::cerr << "[RobotService] Reconnect unknown exception" << std::endl;
     }
-    return false;
+    return reconnected;
 }
 #include "robot_core_all.h"
 #include "robot_core_all.h"
@@ -6753,7 +6851,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.43"
+#define APP_VERSION_STRING "1.1.44"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
