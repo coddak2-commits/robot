@@ -141,6 +141,9 @@ private:
     ErrorCallback m_errorCallback;
     void monitorLoop(int intervalMs);
     bool checkConnection();
+    // checkConnection()의 "관절값 전부 0" 오탐 디바운스용. monitorLoop 스레드에서만
+    // 읽고 쓰므로 atomic 불필요.
+    int m_zeroStateStreak{0};
     bool tryReconnect();
     // monitorLoop가 getState()를 성공적으로 마칠 때마다 갱신. 워치독 스레드가 락 없이
     // (atomic만 읽어서) 이 값이 오래 정체됐는지만 확인하므로, m_mutex가 이미 물려있어도

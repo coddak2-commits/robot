@@ -1295,6 +1295,7 @@ bool RobotService::checkConnection() {
             ret = m_robot.GetRobotRealTimeState(&state);
         }
         if (ret != 0) {
+            m_zeroStateStreak = 0;
             return false;
         }
         bool allZero = true;
@@ -1304,11 +1305,23 @@ bool RobotService::checkConnection() {
                 break;
             }
         }
+        // 용접 중(장시간 블로킹 이동 중)에는 상태조회 패킷이 어쩌다 한 번씩 튀어서
+        // 관절값이 전부 0으로 읽힐 수 있다(2026-09-03 확인: 실제 용접은 정상 진행 중인데
+        // 이 단발성 오탐으로 "연결 끊김" 처리됨 -> tryReconnect()가 이동이 끝날 때까지
+        // m_mutex를 기다리며 monitorLoop 전체가 멈추고, 이동이 끝나자마자 정상 연결을
+        // CloseRPC/재연결시켜 관리자 창에 "Disconnected"로 표시됨). 그래서 연속으로
+        // 여러 번(약 7.5초) 반복될 때만 진짜 연결 끊김으로 판단한다.
         if (allZero && state.robot_mode == 0 && state.main_code == 0) {
+            m_zeroStateStreak++;
+            if (m_zeroStateStreak < 3) {
+                return true;
+            }
             return false;
         }
+        m_zeroStateStreak = 0;
         return true;
     } catch (...) {
+        m_zeroStateStreak = 0;
         return false;
     }
 }
@@ -6854,7 +6867,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.46"
+#define APP_VERSION_STRING "1.1.47"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
