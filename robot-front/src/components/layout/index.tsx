@@ -266,6 +266,18 @@ const Header: React.FC = () => {
       }
     };
   }, [checkConnectionStatus]);
+  // checkConnectionStatus는 마운트 시 한 번만 실행된다. 그 한 번이 하필 로봇/서버가
+  // 아직 재기동 중이던 타이밍이라 실패하면(예: 업데이트 후 재시작 직후), 로봇이 이후
+  // 정상 동작해도 이 배너는 재시도 없이 '연결 실패'로 영원히 고정됨(2026-09-03 확인:
+  // 실제로는 용접까지 정상 진행됐는데 배너만 계속 떠있었음). isPolling이 아닌 동안
+  // 주기적으로 재시도해서 자연 복구되게 한다.
+  useEffect(() => {
+    if (isPolling) return;
+    const retryTimer = setInterval(() => {
+      checkConnectionStatus();
+    }, 5000);
+    return () => clearInterval(retryTimer);
+  }, [isPolling, checkConnectionStatus]);
   const handleManualReconnect = useCallback(async () => {
     setIsReconnecting(true);
     try {
