@@ -4852,7 +4852,9 @@ void registerWeldingBatchRoutes(
                         for (int k = 0; k < 6 && k < (int)pt["offset"].size(); k++)
                             ptOffset[k] = pt["offset"][k].get<double>();
                     }
-                    float blendR = (idx == total - 1) ? -1.0f : blendRMid;
+                    float blendR = -1.0f;  // [v1.1.55 진단] SDK 에러코드 74=ERR_LINE_POINT("직선 목표점이 올바르지 않음") 확인됨.
+                    // overSpeedStrategy=0으로 바꾸자 14->74로 바뀐 것으로 보아 blendR(코너 스무딩, 비블로킹)이 원인일 가능성 있어
+                    // 전체 포인트를 블로킹(-1, 스무딩 없음)으로 강제해 단일변수 테스트. 원래: (idx == total - 1) ? -1.0f : blendRMid;
                     int ret;
                     if (ptHasJoints) {
                         ret = robotService.moveLWithJoints(ptJoints, ptTcp, tool, user, speed,
@@ -6949,7 +6951,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.54"
+#define APP_VERSION_STRING "1.1.55"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
