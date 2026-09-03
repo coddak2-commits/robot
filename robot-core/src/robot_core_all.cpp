@@ -346,25 +346,34 @@ int runService() {
     });
     robotService.setAutoReconnect(true);
     std::cout << "[Main] Attempting to connect to robot at " << g_robotIp << "..." << std::endl;
-    int connectResult = robotService.connect(g_robotIp);
-    if (connectResult == 0) {
-        std::cout << "[Main] Connected to robot successfully" << std::endl;
-        FLOG_INFO("Main", "로봇 연결 성공: " + g_robotIp);
+    // [v1.1.57] robotService.connect()는 SDK의 RPC() 소켓 연결 호출을 그대로 부르는데, 컨트롤러가
+    // 아직 부팅 중이거나 네트워크가 불안정하면 수 초~수십 초씩 블로킹될 수 있다. 이 호출이
+    // mgmtDialog.show()(창 생성) "다음, 메시지펌프 while 루프(processMessages) 시작 전"에
+    // 메인 스레드에서 동기 실행되고 있었던 것이 R창이 시작하자마자 "응답 없음"으로 굳던 진짜
+    // 원인으로 추정된다(2026-09-03) - v1.1.49/50에서 고친 refreshInstallStatus/captureCommand는
+    // ManagementDialog 자체 안의 다른 블로킹 지점이라 이 문제와는 무관했다. 연결 시도를
+    // 백그라운드 스레드로 옮겨서 메인 스레드가 곧바로 메시지펌프 루프에 도달하도록 한다.
+    std::thread([&robotService]() {
+        int connectResult = robotService.connect(g_robotIp);
+        if (connectResult == 0) {
+            std::cout << "[Main] Connected to robot successfully" << std::endl;
+            FLOG_INFO("Main", "로봇 연결 성공: " + g_robotIp);
 #ifdef _WIN32
-        if (g_trayIcon) {
-            g_trayIcon->setConnectionStatus(true, g_robotIp);
-        }
+            if (g_trayIcon) {
+                g_trayIcon->setConnectionStatus(true, g_robotIp);
+            }
 #endif
-    } else {
-        std::cout << "[Main] Failed to connect to robot (code: " << connectResult << ")" << std::endl;
-        std::cout << "[Main] Auto-reconnect enabled, will retry automatically..." << std::endl;
-        FLOG_WARN("Main", "로봇 연결 실패 (code=" + std::to_string(connectResult) + "), 자동 재연결 대기");
+        } else {
+            std::cout << "[Main] Failed to connect to robot (code: " << connectResult << ")" << std::endl;
+            std::cout << "[Main] Auto-reconnect enabled, will retry automatically..." << std::endl;
+            FLOG_WARN("Main", "로봇 연결 실패 (code=" + std::to_string(connectResult) + "), 자동 재연결 대기");
 #ifdef _WIN32
-        if (g_trayIcon) {
-            g_trayIcon->setConnectionStatus(false);
-        }
+            if (g_trayIcon) {
+                g_trayIcon->setConnectionStatus(false);
+            }
 #endif
-    }
+        }
+    }).detach();
     robotService.startStateMonitor(50);
     robotService.setHangCallback([]() {
         // 여기 도달했다는 건 Fairino SDK 콜이 m_mutex를 쥔 채 영원히 안 풀리고 있다는
@@ -4804,14 +4813,13 @@ void registerWeldingBatchRoutes(
             static constexpr float WELD_BATCH_SPEED_SCALE = 0.2354f;
             float speed = (velModeIn == 1) ? (speedRaw / 15.0f) * WELD_BATCH_SPEED_SCALE : speedRaw;
             // 포인트에 저장된 speed가 원래 낮은 경우(예: 26) 배율을 곱하면 0.4%대로 떨어져
-            // SDK가 MoveL(Joints)을 code=14로 즉시 거부함(2026-09-03 필드 로그로 확인,
-            // vel=0.408027에서 재현). vel=1.0으로 올려도, 심지어 정규화된 관절값이 실기
-            // 수동 지그 성공값과 정확히 일치해도 여전히 code=14가 재현됨(2026-09-03) -
-            // 관절값 문제가 아니라는 게 확인됨. 아직 최소 vel 문턱값을 모르므로, 이번엔
-            // 진단 목적으로 15.0까지 올려서 vel 자체가 원인인지부터 가른다(성공하면 문턱을
-            // 좁혀가고, 그래도 실패하면 blendR/overSpeedStrategy 등 다른 파라미터를 봐야 함).
-            if (velModeIn == 1 && speed < 15.0f) {
-                speed = 15.0f;
+            // SDK가 극저속을 거부하는 경우가 있어(2026-09-03 필드 로그, vel=0.408027) 최소
+            // 1.0%는 보장한다. v1.1.53~55에서 15.0까지 올려 vel/blendR/overSpeedStrategy를
+            // 하나씩 배제했고, v1.1.56에서 진짜 원인(저장된 joints가 tcp와 안 맞아 SDK가
+            // MoveL의 joint_pos/desc_pos 일치검증에서 거부, code=74 ERR_LINE_POINT)을 찾아
+            // 수정했으므로 15.0 진단값은 더 이상 필요 없음 - 원래 의도(비드 품질 위한 저속)로 복귀.
+            if (velModeIn == 1 && speed < 1.0f) {
+                speed = 1.0f;
             }
             if (dbService && dbService->isConnected()) {
                 RobotSettings ovlSettings = dbService->getRobotSettings();
@@ -6948,7 +6956,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.56"
+#define APP_VERSION_STRING "1.1.57"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
