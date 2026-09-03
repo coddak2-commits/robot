@@ -756,8 +756,23 @@ int RobotService::moveLWithJoints(const double joints[6], const double descPos[6
                                    int overSpeedStrategy, int speedPercent) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_connected) return -1;
-    JointPos jointPos(joints[0], joints[1], joints[2],
-                      joints[3], joints[4], joints[5]);
+    // 저장된 관절값이 현재 관절값과 360도(회전수) 차이만 나는 "같은 자세의 다른 표현"일 수
+    // 있다(2026-09-03 확인: 터치센싱 보정이 반영된 포인트의 J6가 -196.45로 저장돼있었는데
+    // 이는 로봇 소프트 리밋 밖이었고, 같은 자세의 163.55(+360도)는 정상 범위였음 - moveJ()엔
+    // 이미 있던 회전수 정규화가 moveLWithJoints()엔 빠져있어서 저장값을 그대로 SDK에 넘기다
+    // 소프트 리밋 초과로 code=14 즉시 거부당한 게 원인). moveJ()와 동일하게 현재 관절값
+    // 기준 최단 경로(±180도)로 정규화해서 넘긴다.
+    double normJoints[6];
+    ROBOT_STATE_PKG curState = {0};
+    m_robot.GetRobotRealTimeState(&curState);
+    for (int i = 0; i < 6; i++) {
+        double diff = joints[i] - curState.jt_cur_pos[i];
+        while (diff > 180.0) diff -= 360.0;
+        while (diff < -180.0) diff += 360.0;
+        normJoints[i] = curState.jt_cur_pos[i] + diff;
+    }
+    JointPos jointPos(normJoints[0], normJoints[1], normJoints[2],
+                      normJoints[3], normJoints[4], normJoints[5]);
     DescPose targetPos(descPos[0], descPos[1], descPos[2],
                        descPos[3], descPos[4], descPos[5]);
     ExaxisPos epos(0, 0, 0, 0);
@@ -768,6 +783,10 @@ int RobotService::moveLWithJoints(const double joints[6], const double descPos[6
     }
     std::cout << "[RobotService] MoveLWithJoints: tcp=["
               << descPos[0] << "," << descPos[1] << "," << descPos[2]
+              << "] joints_raw=[" << joints[0] << "," << joints[1] << "," << joints[2] << ","
+              << joints[3] << "," << joints[4] << "," << joints[5]
+              << "] joints_norm=[" << normJoints[0] << "," << normJoints[1] << "," << normJoints[2] << ","
+              << normJoints[3] << "," << normJoints[4] << "," << normJoints[5]
               << "] vel=" << vel << " velAccParamMode=" << velAccParamMode
               << " acc=" << acc << " ovl=" << ovl << " blendR=" << blendR << std::endl;
     m_moveInProgress = true;
@@ -788,9 +807,12 @@ int RobotService::moveLWithJoints(const double joints[6], const double descPos[6
             " tcp=[" + std::to_string(descPos[0]) + "," + std::to_string(descPos[1]) + "," +
             std::to_string(descPos[2]) + "," + std::to_string(descPos[3]) + "," +
             std::to_string(descPos[4]) + "," + std::to_string(descPos[5]) + "]" +
-            " joints=[" + std::to_string(joints[0]) + "," + std::to_string(joints[1]) + "," +
+            " joints_raw=[" + std::to_string(joints[0]) + "," + std::to_string(joints[1]) + "," +
             std::to_string(joints[2]) + "," + std::to_string(joints[3]) + "," +
             std::to_string(joints[4]) + "," + std::to_string(joints[5]) + "]" +
+            " joints_norm=[" + std::to_string(normJoints[0]) + "," + std::to_string(normJoints[1]) + "," +
+            std::to_string(normJoints[2]) + "," + std::to_string(normJoints[3]) + "," +
+            std::to_string(normJoints[4]) + "," + std::to_string(normJoints[5]) + "]" +
             (offsetPos ? (" offset=[" + std::to_string(offsetPos[0]) + "," + std::to_string(offsetPos[1]) + "," +
                 std::to_string(offsetPos[2]) + "," + std::to_string(offsetPos[3]) + "," +
                 std::to_string(offsetPos[4]) + "," + std::to_string(offsetPos[5]) + "]") : " offset=none"));
@@ -6925,7 +6947,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.51"
+#define APP_VERSION_STRING "1.1.52"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
