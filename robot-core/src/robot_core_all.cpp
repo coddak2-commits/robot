@@ -662,8 +662,10 @@ int RobotService::moveJ(const double joints[6], int tool, int user,
               << normJoints[0] << ", " << normJoints[1] << ", " << normJoints[2] << ", "
               << normJoints[3] << ", " << normJoints[4] << ", " << normJoints[5]
               << "] vel=" << vel << std::endl;
+    m_moveInProgress = true;
     int ret = m_robot.MoveJ(&jointPos, tool, user, vel, acc, ovl,
                             &epos, blendT, offsetFlag, &offset);
+    m_moveInProgress = false;
     if (ret != 0) {
         FLOG_SDK_ERROR("MoveJ", ret, "관절이동 실패");
     }
@@ -688,9 +690,11 @@ int RobotService::moveL(const double descPos[6], int tool, int user,
               << descPos[0] << ", " << descPos[1] << ", " << descPos[2] << ", "
               << descPos[3] << ", " << descPos[4] << ", " << descPos[5]
               << "] vel=" << vel << " blendR=" << blendR << " velAccParamMode=" << velAccParamMode << std::endl;
+    m_moveInProgress = true;
     int ret = m_robot.MoveL(&targetPos, tool, user, vel, acc, ovl,
                             blendR, 0, &epos, search, offsetFlag, &offset,
                             -1, velAccParamMode, overSpeedStrategy, speedPercent);
+    m_moveInProgress = false;
     if (ret != 0) {
         FLOG_SDK_ERROR("MoveL", ret, "직선이동 실패");
     }
@@ -735,9 +739,11 @@ int RobotService::moveC(const double jointsP[6], const double tcpP[6], int toolP
     std::cout << "[RobotService] MoveC: P=[" << tcpP[0] << "," << tcpP[1] << "," << tcpP[2]
               << "] T=[" << tcpT[0] << "," << tcpT[1] << "," << tcpT[2]
               << "] velP=" << velP << " velT=" << velT << " ovl=" << ovl << std::endl;
+    m_moveInProgress = true;
     int ret = m_robot.MoveC(&jpP, &dpP, toolP, userP, velP, 100, &epos, 0, &offP,
                             &jpT, &dpT, toolT, userT, velT, 100, &epos, 0, &offT,
                             ovl, blendR, oacc, velAccParamMode);
+    m_moveInProgress = false;
     if (ret != 0) {
         FLOG_SDK_ERROR("MoveC", ret, "원호이동 실패");
     }
@@ -764,9 +770,11 @@ int RobotService::moveLWithJoints(const double joints[6], const double descPos[6
               << descPos[0] << "," << descPos[1] << "," << descPos[2]
               << "] vel=" << vel << " velAccParamMode=" << velAccParamMode
               << " acc=" << acc << " ovl=" << ovl << " blendR=" << blendR << std::endl;
+    m_moveInProgress = true;
     int ret = m_robot.MoveL(&jointPos, &targetPos, tool, user, vel, acc, ovl,
                             blendR, 0, &epos, search, offsetFlag, &offset,
                             oacc, velAccParamMode, overSpeedStrategy, speedPercent);
+    m_moveInProgress = false;
     if (ret != 0) {
         FLOG_SDK_ERROR("MoveLWithJoints", ret,
             "vel=" + std::to_string(vel) + " velMode=" + std::to_string(velAccParamMode) +
@@ -1305,13 +1313,17 @@ bool RobotService::checkConnection() {
                 break;
             }
         }
-        // 용접 중(장시간 블로킹 이동 중)에는 상태조회 패킷이 어쩌다 한 번씩 튀어서
-        // 관절값이 전부 0으로 읽힐 수 있다(2026-09-03 확인: 실제 용접은 정상 진행 중인데
-        // 이 단발성 오탐으로 "연결 끊김" 처리됨 -> tryReconnect()가 이동이 끝날 때까지
-        // m_mutex를 기다리며 monitorLoop 전체가 멈추고, 이동이 끝나자마자 정상 연결을
-        // CloseRPC/재연결시켜 관리자 창에 "Disconnected"로 표시됨). 그래서 연속으로
-        // 여러 번(약 7.5초) 반복될 때만 진짜 연결 끊김으로 판단한다.
+        // 장시간 블로킹 이동(moveL 등) 중에는 m_stopRobot 채널의 상태조회 자체가
+        // 몇 십 초씩 비정상 값(관절 전부 0)을 줄 수 있다(2026-09-03 확인: 실제 용접은
+        // 정상 진행 중인데 35초 넘게 "연결 끊김"으로 오탐되어 tryReconnect()가 이동이
+        // 끝날 때까지 m_mutex를 기다리며 monitorLoop 전체가 멈추고, 이동이 끝나자마자
+        // 정상 연결을 CloseRPC/재연결시켜 관리자 창/프론트에 "Disconnected"로 표시됨).
+        // 연속 횟수만 보는 디바운스로는 이 지속시간을 못 버티므로, 이동이 실제로 진행
+        // 중인 동안은 이 판정 자체를 건너뛴다.
         if (allZero && state.robot_mode == 0 && state.main_code == 0) {
+            if (m_moveInProgress) {
+                return true;
+            }
             m_zeroStateStreak++;
             if (m_zeroStateStreak < 3) {
                 return true;
@@ -2632,13 +2644,27 @@ std::string ManagementDialog::captureCommand(const std::wstring& cmd, int timeou
                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
         CloseHandle(hWrite);
         hWrite = NULL;
+        // 예전 코드는 ReadFile로 파이프가 닫힐 때까지(=자식 프로세스가 stdout을 닫을
+        // 때까지) 무조건 블로킹으로 다 읽은 "다음에" WaitForSingleObject(timeoutMs)를
+        // 걸었다 - 그러면 timeoutMs는 사실상 아무 효과가 없고, 자식 프로세스가 멈추면
+        // (백신/EDR 개입, 인증 대기 등으로 stdout을 안 닫으면) ReadFile이 영원히 안
+        // 풀린다(2026-09-03 확인: 관리자 창의 "설치 상태" 조회가 "확인 중..."에서 영원히
+        // 멈추던 진짜 원인). 순서를 바꿔서 먼저 timeoutMs만큼만 기다리고, 그때까지 안
+        // 끝났으면 강제 종료한 뒤 그동안 파이프에 쌓인 출력만 논블로킹으로 읽는다.
+        DWORD waitResult = WaitForSingleObject(pi.hProcess, timeoutMs);
+        if (waitResult == WAIT_TIMEOUT) {
+            TerminateProcess(pi.hProcess, 1);
+            WaitForSingleObject(pi.hProcess, 1000);
+        }
         char buf[4096];
-        DWORD read;
-        while (ReadFile(hRead, buf, sizeof(buf) - 1, &read, NULL) && read > 0) {
+        DWORD avail = 0;
+        while (PeekNamedPipe(hRead, NULL, 0, NULL, &avail, NULL) && avail > 0) {
+            DWORD toRead = (avail < sizeof(buf) - 1) ? avail : sizeof(buf) - 1;
+            DWORD read = 0;
+            if (!ReadFile(hRead, buf, toRead, &read, NULL) || read == 0) break;
             buf[read] = 0;
             output += buf;
         }
-        WaitForSingleObject(pi.hProcess, timeoutMs);
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
     }
@@ -6884,7 +6910,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.49"
+#define APP_VERSION_STRING "1.1.50"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

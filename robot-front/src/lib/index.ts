@@ -14,7 +14,7 @@ export {
   updateTouchSensingConfig,
 } from './api/index';
 export { Axios, emergencyApi, initializeApi, getApiBaseUrl } from './http';
-export const APP_VERSION = '1.1.49';
+export const APP_VERSION = '1.1.50';
 export const AuthKey = {
   ACCESS_TOKEN: '@access',
   REFRESH_TOKEN: '@refresh',

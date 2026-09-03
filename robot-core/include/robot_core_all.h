@@ -122,6 +122,12 @@ private:
     // m_mutex를 오래 쥐는 이동 중에도 상태조회/정지가 막히지 않는 게 목적이므로.
     std::mutex m_stopMutex;
     std::atomic<bool> m_connected{false};
+    // moveL/moveJ/moveC/moveLWithJoints가 실제 SDK 블로킹 호출 중일 때만 true. 이 동안엔
+    // checkConnection()이 "관절값 전부 0"을 오탐으로 간주하고 건너뛴다 - 이동 중엔
+    // m_stopRobot 상태조회가 실제로 몇 십 초씩 정상 범위를 벗어난 값을 줄 수 있어서
+    // (2026-09-03 확인: 용접 중 35초+ 지속된 "연결 끊김" 오탐), 단순히 연속 횟수만 보는
+    // 디바운스로는 못 막았다.
+    std::atomic<bool> m_moveInProgress{false};
     std::mutex m_mutex;
     std::mutex m_stateCacheMutex;
     ROBOT_STATE_PKG m_cachedState{};
