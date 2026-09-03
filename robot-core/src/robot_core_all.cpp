@@ -378,8 +378,19 @@ int runService() {
             }
 #endif
         }
+        // [v1.1.59] startStateMonitor()를 여기(connect() 완료 후)로 옮김. 원래는 메인 스레드에서
+        // connect() 바로 다음 줄로 동기 호출됐었는데, v1.1.57에서 connect()만 백그라운드로 뺐더니
+        // startStateMonitor()는 여전히 메인 스레드에서 "connect() 스레드가 끝나기도 전에" 즉시
+        // 실행돼버렸다. monitorLoop는 시작하자마자 m_connected==false && m_lastIp non-empty를
+        // 보고 자기 나름의 "Auto-reconnect"(tryReconnect())를 곧바로 또 실행하는데, tryReconnect()는
+        // m_robot.CloseRPC()부터 부르고 자기만의 RPC()를 다시 건다 - 이게 connectThread가 아직
+        // 진행 중인 최초 RPC()와 같은 m_robot SDK 객체를 두고 경합하면서 소켓 상태를 망가뜨려,
+        // 이후 enable() 등이 code=-2(ERR_SOCKET_COM_FAILED)로 실패하던 원인으로 추정된다
+        // (2026-09-03, ping은 정상인데 서보 활성화만 실패하는 로그로 확인). 최초 connect()가
+        // 완전히 끝난 뒤에만 monitorLoop(그리고 그 안의 auto-reconnect)가 시작되도록 원래
+        // 순서(연결 시도 → 상태 모니터 시작)를 이 스레드 안에서 그대로 유지한다.
+        robotService.startStateMonitor(50);
     });
-    robotService.startStateMonitor(50);
     robotService.setHangCallback([]() {
         // 여기 도달했다는 건 Fairino SDK 콜이 m_mutex를 쥔 채 영원히 안 풀리고 있다는
         // 뜻이라, 정상 종료 경로(httpServer.stop()/robotService.disconnect() 등)도
@@ -6968,7 +6979,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.58"
+#define APP_VERSION_STRING "1.1.59"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
