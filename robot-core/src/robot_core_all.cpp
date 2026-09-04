@@ -4869,15 +4869,14 @@ void registerWeldingBatchRoutes(
             // 동일한 실제 속도가 나오도록 계산: (1.13/72) / (1/15) = 0.2354
             static constexpr float WELD_BATCH_SPEED_SCALE = 0.2354f;
             float speed = (velModeIn == 1) ? (speedRaw / 15.0f) * WELD_BATCH_SPEED_SCALE : speedRaw;
-            // 포인트에 저장된 speed가 원래 낮은 경우(예: 26) 배율을 곱하면 0.4%대로 떨어져
-            // SDK가 극저속을 거부하는 경우가 있어(2026-09-03 필드 로그, vel=0.408027) 최소
-            // 1.0%는 보장한다. v1.1.53~55에서 15.0까지 올려 vel/blendR/overSpeedStrategy를
-            // 하나씩 배제했고, v1.1.56에서 진짜 원인(저장된 joints가 tcp와 안 맞아 SDK가
-            // MoveL의 joint_pos/desc_pos 일치검증에서 거부, code=74 ERR_LINE_POINT)을 찾아
-            // 수정했으므로 15.0 진단값은 더 이상 필요 없음 - 원래 의도(비드 품질 위한 저속)로 복귀.
-            if (velModeIn == 1 && speed < 1.0f) {
-                speed = 1.0f;
-            }
+            // 예전엔 여기서 0.4%대 저속을 SDK가 거부하는 줄 알고 최소 1.0%로 클램프했었다.
+            // v1.1.53~55에서 15.0까지 올려 vel/blendR/overSpeedStrategy를 하나씩 배제했고,
+            // v1.1.56에서 진짜 원인(저장된 joints가 tcp와 안 맞아 SDK가 MoveL의
+            // joint_pos/desc_pos 일치검증에서 거부, code=74 ERR_LINE_POINT)을 찾아 수정했다.
+            // 즉 1.0% 클램프는 실제로는 필요 없었던 안전장치였고, 이 때문에 v1.1.34 등
+            // 통일 이전 버전보다 저속 포인트(예: 26)에서 최대 2.45배 더 빠르게 동작하고
+            // 있었다. 2026-09-04 사용자 요청으로 클램프를 제거해 v1.1.34와 동일한 실제
+            // 속도(비드 품질 우선, 저속)로 복귀한다.
             if (dbService && dbService->isConnected()) {
                 RobotSettings ovlSettings = dbService->getRobotSettings();
                 int ovlPct = ovlSettings.default_ovl;
@@ -7013,7 +7012,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.63"
+#define APP_VERSION_STRING "1.1.64"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
