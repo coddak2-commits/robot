@@ -4865,9 +4865,13 @@ void registerWeldingBatchRoutes(
             // 구간이라 조그/포인트 이동과 같은 속도로 움직이면 너무 빨라 비드가 끊어짐
             // (2026-09-03 확인). 포인트에 저장된 이동속도 값과 다른 라우트(조그, 포인트 간
             // 이동)는 그대로 두고 이 배치 용접 이동에만 배율을 곱해 실제 속도를 낮춘다.
-            // 배율은 2026-09-02 수정 전(=1.1.39 등 이전 버전)에 쓰이던 speedRaw*1.13/72와
-            // 동일한 실제 속도가 나오도록 계산: (1.13/72) / (1/15) = 0.2354
-            static constexpr float WELD_BATCH_SPEED_SCALE = 0.2354f;
+            // 배율은 원래 2026-09-02 수정 전(=1.1.39 등 이전 버전)에 쓰이던 speedRaw*1.13/72와
+            // 동일한 실제 속도가 나오도록 0.2354로 계산했었다((1.13/72) / (1/15) = 0.2354).
+            // 그런데 v1.1.34 기준 속도 자체도 사용자가 원하는 비드 속도보다 빨랐음이
+            // 2026-09-04 실측으로 확인됨: 수직(CPM30, 546.5mm) 실측 102.2초(목표 55cm/160초),
+            // 수평(CPM50, 372.4mm/69.0초 + 435.2mm/77.8초) 목표 45cm/120초 — 각각 목표에
+            // 맞추려면 배율이 0.1514/0.1605 필요해서 절충값 0.156으로 조정.
+            static constexpr float WELD_BATCH_SPEED_SCALE = 0.156f;
             float speed = (velModeIn == 1) ? (speedRaw / 15.0f) * WELD_BATCH_SPEED_SCALE : speedRaw;
             // 예전엔 여기서 0.4%대 저속을 SDK가 거부하는 줄 알고 최소 1.0%로 클램프했었다.
             // v1.1.53~55에서 15.0까지 올려 vel/blendR/overSpeedStrategy를 하나씩 배제했고,
@@ -7012,7 +7016,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.64"
+#define APP_VERSION_STRING "1.1.65"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
