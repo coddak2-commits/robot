@@ -653,21 +653,22 @@ export async function executeWelding(
     }
     if (stopRef.current) {
       // 2026-09-04: 정지 버튼 누른 위치에 토치가 그대로 남아있으면 와이어가 부품에 눌려
-      // 휘는 경우가 있어(사용자 확인), stopRef와 무관하게 base +Z 100mm 한 번만 후퇴한다.
+      // 휘는 경우가 있어(사용자 확인), stopRef와 무관하게 base +X(수평, approachOffset과 동일
+      // 방향/거리 - 파트 전환 후퇴와 동일한 패턴) 한 번만 후퇴한다. 처음엔 base +Z로 들어올리는
+      // 방식이었으나 위로 들어올리는 것만으로는 와이어 휨을 못 막아 수평 후퇴로 변경.
       // 실패해도 정지 처리 자체는 그대로 진행한다.
       if (lastAttemptedPoint?.tcp && lastAttemptedPoint.joints && lastAttemptedPoint.joints.length === 6) {
-        const STOP_RETREAT_Z = 100;
         const retreatPose = [
-          lastAttemptedPoint.tcp.x,
+          lastAttemptedPoint.tcp.x + approachOffset,
           lastAttemptedPoint.tcp.y,
-          lastAttemptedPoint.tcp.z + STOP_RETREAT_Z,
+          lastAttemptedPoint.tcp.z,
           lastAttemptedPoint.tcp.rx,
           lastAttemptedPoint.tcp.ry,
           lastAttemptedPoint.tcp.rz,
         ];
         const retreatJoints = await getInverseKin(retreatPose, lastAttemptedPoint.joints);
         if (retreatJoints) {
-          log_weldingExecution.info('welding.stopRetreat', `정지 후 base +Z ${STOP_RETREAT_Z}mm 후퇴`);
+          log_weldingExecution.info('welding.stopRetreat', `정지 후 base +X ${approachOffset}mm 수평 후퇴`);
           const stopRetreatResult = await moveToJointIgnoringStop(
             retreatJoints,
             30,
@@ -718,21 +719,21 @@ export async function executeWelding(
     if (!stopRef.current && homePoint?.joints) {
       // 2026-09-04: 마지막 포인트 근처에서 홈까지 바로 관절이동(MoveJ)하면 경로상의
       // 지그/부품에 부딪히는 사례가 있어(사용자 확인, 좌측 수직 3-2-1 종료 후 충돌),
-      // 파트 전환 때와 같은 방식(IK로 base +Z 100mm 들어올린 자세를 구해 MoveJ)으로
-      // 한 번 더 후퇴한 뒤 홈으로 이동한다. IK 실패 시엔 기존처럼 바로 홈으로 이동.
-      const HOME_LIFT_Z = 100;
+      // 파트 전환 때와 같은 방식(IK로 base +X 수평 후퇴 자세를 구해 MoveJ)으로 한 번 더
+      // 후퇴한 뒤 홈으로 이동한다. IK 실패 시엔 기존처럼 바로 홈으로 이동. 처음엔 base +Z로
+      // 들어올리는 방식이었으나 위로 들어올리는 것만으로는 와이어 휨을 못 막아 수평 후퇴로 변경.
       if (lastWeldPoint?.tcp && lastWeldPoint.joints && lastWeldPoint.joints.length === 6) {
         const liftPose = [
-          lastWeldPoint.tcp.x,
+          lastWeldPoint.tcp.x + approachOffset,
           lastWeldPoint.tcp.y,
-          lastWeldPoint.tcp.z + HOME_LIFT_Z,
+          lastWeldPoint.tcp.z,
           lastWeldPoint.tcp.rx,
           lastWeldPoint.tcp.ry,
           lastWeldPoint.tcp.rz,
         ];
         const liftJoints = await getInverseKin(liftPose, lastWeldPoint.joints);
         if (liftJoints) {
-          log_weldingExecution.info('welding.homeReturn.lift', `Home 복귀 전 base +Z ${HOME_LIFT_Z}mm 추가 후퇴`);
+          log_weldingExecution.info('welding.homeReturn.lift', `Home 복귀 전 base +X ${approachOffset}mm 수평 후퇴`);
           const liftResult = await moveToJointWithStopCheck(
             liftJoints,
             30,

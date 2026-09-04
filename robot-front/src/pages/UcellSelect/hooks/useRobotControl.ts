@@ -96,7 +96,11 @@ export function useRobotControl(): UseRobotControlReturn {
           return false;
         }
       }
-      const speed = opts.overrideSpeed ?? point.moveSpeed;
+      // 2026-09-04: 수동 이동속도(manualMoveSpeed) 기본값은 터치센싱 접근 속도용으로 40%까지
+      // 올려둔 값이라, 포인트 클릭 이동(이 함수)에 그대로 쓰면 관절 이동거리가 큰 포인트에서
+      // 너무 빠르게(훅 내려가는 느낌) 움직인다. 터치센싱은 이 함수를 거치지 않으므로,
+      // 여기서만 20%로 캡을 걸어 슬라이더 기본값(40%)에는 영향 없이 포인트 이동만 완화한다.
+      const speed = Math.min(opts.overrideSpeed ?? point.moveSpeed, 20);
       const totalTimer = log_useRobotControl.startTimer();
       setIsRobotMoving(true);
       stopMoveRef.current = false;
