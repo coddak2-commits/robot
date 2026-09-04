@@ -7016,7 +7016,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.68"
+#define APP_VERSION_STRING "1.1.69"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -9297,8 +9297,14 @@ bool DatabaseService::updateWeldingPartOrder(const json& orderArray) {
     for (size_t i = 0; i < orderArray.size(); i++) {
         auto& item = orderArray[i];
         int partIndex = item.value("part_index", (int)i);
-        std::string sql = "UPDATE welding_part_order SET execution_order = " + std::to_string(i) +
-            " WHERE part_index = " + std::to_string(partIndex);
+        std::string sql = "UPDATE welding_part_order SET execution_order = " + std::to_string(i);
+        // 2026-09-04: 파트 순서뿐 아니라 파트 내부 포인트 방향(예: 10,11,12 -> 12,11,10)도
+        // 같이 바꿀 수 있도록, items에 points 배열이 들어있으면 points 컬럼도 같이 갱신한다.
+        // points가 없거나 빈 배열이면 기존처럼 execution_order만 바꾼다(하위호환).
+        if (item.contains("points") && item["points"].is_array() && !item["points"].empty()) {
+            sql += ", points = '" + escapeString(item["points"].dump()) + "'";
+        }
+        sql += " WHERE part_index = " + std::to_string(partIndex);
         if (!executeQuery(sql)) return false;
     }
     return true;
