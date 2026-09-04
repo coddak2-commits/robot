@@ -599,6 +599,7 @@ export async function executeWelding(
           vel_mode: pt.velMode ?? 1,
           offset_flag: useOffset ? 1 : 0,
           offset,
+          weaving_type: pt.weavingType,
         });
         batchIndices.push(j);
       }

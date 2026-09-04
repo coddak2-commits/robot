@@ -4870,8 +4870,19 @@ void registerWeldingBatchRoutes(
             // 그런데 v1.1.34 기준 속도 자체도 사용자가 원하는 비드 속도보다 빨랐음이
             // 2026-09-04 실측으로 확인됨: 수직(CPM30, 546.5mm) 실측 102.2초(목표 55cm/160초),
             // 수평(CPM50, 372.4mm/69.0초 + 435.2mm/77.8초) 목표 45cm/120초 — 각각 목표에
-            // 맞추려면 배율이 0.1514/0.1605 필요해서 절충값 0.156으로 조정.
-            static constexpr float WELD_BATCH_SPEED_SCALE = 0.156f;
+            // 맞추려면 배율이 0.1514/0.1605 필요해서 절충값 0.156으로 1차 조정했었다.
+            // 그런데 0.156 단일 배율로 실측(홈 왕복 1회만 포함한 4파트 연속 실행,
+            // 2440.9mm/868.6초)을 역산해보니 수직/수평이 필요한 배율 자체가 서로 달라서
+            // (수직 약 0.27~0.33, 수평 약 0.16~0.19) 단일 배율로는 한쪽이 최소 20~30%
+            // 이상 어긋난다. 위빙 타입(수직/평면)으로 배율을 나눠 각각 목표(수직 160초,
+            // 수평 120초, 55cm/45cm 기준)에 맞게 재조정.
+            static constexpr float WELD_BATCH_SPEED_SCALE_VERTICAL = 0.30f;
+            static constexpr float WELD_BATCH_SPEED_SCALE_HORIZONTAL = 0.175f;
+            std::string weavingTypeIn = firstPt.value("weaving_type", std::string(""));
+            bool isVerticalWeave = weavingTypeIn.rfind("vertical", 0) == 0;
+            float WELD_BATCH_SPEED_SCALE = isVerticalWeave
+                ? WELD_BATCH_SPEED_SCALE_VERTICAL
+                : WELD_BATCH_SPEED_SCALE_HORIZONTAL;
             float speed = (velModeIn == 1) ? (speedRaw / 15.0f) * WELD_BATCH_SPEED_SCALE : speedRaw;
             // 예전엔 여기서 0.4%대 저속을 SDK가 거부하는 줄 알고 최소 1.0%로 클램프했었다.
             // v1.1.53~55에서 15.0까지 올려 vel/blendR/overSpeedStrategy를 하나씩 배제했고,
@@ -7016,7 +7027,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.70"
+#define APP_VERSION_STRING "1.1.71"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

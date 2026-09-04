@@ -1699,6 +1699,7 @@ export interface BatchMovePoint {
   vel_mode: number;
   offset_flag: number;
   offset: number[];
+  weaving_type?: string;
 }
 export interface BatchMoveResult {
   status_code: number;
