@@ -387,7 +387,11 @@ export async function executeWelding(
               stopRef,
             );
             if (mjRetractResult.stopped) stopRef.current = true;
-            else if (!mjRetractResult.success) throw new Error('파트 전환 후퇴 이동 실패(MoveJ)');
+            else if (!mjRetractResult.success)
+              log_weldingExecution.warn(
+                'welding.partTransition.retract.mjFailed',
+                '파트 전환 후퇴 이동 실패(MoveJ) - 건너뛰고 접근 단계로 진행',
+              );
           } else {
             const retractResult = await moveToCartesianPosition(
               prevPoint.tcp,
@@ -402,7 +406,15 @@ export async function executeWelding(
               prevPoint.userNum ?? 0,
               0,
             );
-            if (retractResult?.status_code !== 200) throw new Error('파트 전환 후퇴 이동 실패');
+            // 2026-09-04: 후퇴 목표 자세 자체가 특이점(IK도 code=38로 실패)인 경우가 있어,
+            // 여기서 막지 않고 경고만 남긴 뒤 다음 접근 단계로 진행한다(최종 후퇴 실패와
+            // 동일하게 비필수 여유 이동으로 취급 - 아래 welding.retract.failed 참고).
+            if (retractResult?.status_code !== 200)
+              log_weldingExecution.warn(
+                'welding.partTransition.retract.failed',
+                '파트 전환 후퇴 이동 실패 - 건너뛰고 접근 단계로 진행',
+                { status: retractResult?.status_code },
+              );
           }
         }
         if (!stopRef.current) {
