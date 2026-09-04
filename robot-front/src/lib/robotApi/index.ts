@@ -1719,8 +1719,10 @@ export const batchMoveL = async (
       body.per_point = true;
       if (options.blendR !== undefined) body.blend_r = options.blendR;
     }
+    // 2026-09-04 속도 배율 인하(0.156)로 파트 하나(포인트 몇 개) 이동시간도 늘어나
+    // 기존 300000ms(5분)로는 부족해질 수 있어 30분으로 상향.
     const response = await api.post('/welding/batch-move', body, {
-      timeout: 300000,
+      timeout: 1800000,
     });
     return response.data;
   } catch (error) {
