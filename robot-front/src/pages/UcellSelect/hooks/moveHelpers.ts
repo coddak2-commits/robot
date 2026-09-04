@@ -1,5 +1,5 @@
 import { TeachingPoint, WeaveParams, createInitialTeachingPoints, UCELL_POINT_DEFINITIONS, UCellData, NORMAL_CELLS, COLLAR_PLATE_CELLS, PartWeldEnabled, DEFAULT_PART_WELD_ENABLED, DEFAULT_WEAVE_PARAMS, WELDING_PARTS } from '..';
-import { moveToJointPositionNonBlocking, moveToCartesianPositionNonBlocking, checkMotionDone, getWeldingConfig, updateTeachingJob, TeachingPointData, RealtimeRobotStatus, enableRobot, createTeachingJob, getTeachingJobs, getTeachingJob, deleteTeachingJob, updateTeachingJobName, TeachingJob, getRealtimeRobotStatus, stopRobotSDK, emergencyStop, endArc, endWeave, arcOff, arcTraceControl, wireSearchEnd, forwardWireFeed, reverseWireFeed, stopForwardWireFeed, stopReverseWireFeed } from '../../../lib';
+import { moveToJointPositionNonBlocking, moveToCartesianPositionNonBlocking, checkMotionDone, getWeldingConfig, updateTeachingJob, TeachingPointData, RealtimeRobotStatus, enableRobot, createTeachingJob, getTeachingJobs, getTeachingJob, deleteTeachingJob, updateTeachingJobName, TeachingJob, getRealtimeRobotStatus, stopRobotSDK, emergencyStop, endArc, endWeave, arcOff, arcTraceControl, wireSearchEnd, forwardWireFeed, reverseWireFeed, stopForwardWireFeed, stopReverseWireFeed, getInverseKin } from '../../../lib';
 import { getErrorMessage, extractResultCode } from '../../../lib/api';
 import { createLogger } from '../../../lib';
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
@@ -70,6 +70,38 @@ export async function executeRetract(
     return true;
   }
   return await waitForMotionComplete(stopMoveRef, 30000, 'retract');
+}
+// 2026-09-04: U셀 앞에 판이 있어서, 홈 등에서 특정 포인트(예: 1번)로 바로 관절이동(MoveJ)하면
+// 관절 경로가 그 판을 가로질러 부딪히는 사례가 있다(사용자 확인, 와이어 휨). 현재 위치에서
+// base +Z로 먼저 들어올린 뒤 이동하면 판 위로 넘어갈 수 있어, 포인트 이동 전에 항상 시도한다.
+// IK 실패/정보 없음 시엔 안전하게 스킵하고 기존처럼 바로 이동한다.
+export async function executeSafeLift(
+  currentTcp: number[] | null,
+  currentJoints: number[] | null | undefined,
+  speed: number,
+  toolNum: number,
+  userNum: number,
+  stopMoveRef: React.MutableRefObject<boolean>,
+): Promise<boolean> {
+  if (!currentTcp || currentTcp.length < 6 || !currentJoints || currentJoints.length !== 6) {
+    return true;
+  }
+  const SAFE_LIFT_Z = 150;
+  const [px, py, pz, prx, pry, prz] = currentTcp;
+  const liftPose = [px, py, pz + SAFE_LIFT_Z, prx, pry, prz];
+  const liftJoints = await getInverseKin(liftPose, currentJoints);
+  if (!liftJoints) {
+    log.info('safeLift.ikFailed', 'IK 실패, 상승 없이 바로 이동');
+    return true;
+  }
+  log.info('safeLift.start', `현재 위치 base +Z ${SAFE_LIFT_Z}mm 상승 후 이동 (전면 판 회피)`);
+  const result = await moveToJointPositionNonBlocking(liftJoints, Math.min(speed, 20), 100, 100, toolNum, userNum);
+  const rc = extractResultCode(result);
+  if (result?.status_code !== 200 || rc !== 0) {
+    log.warn('safeLift.failed', '상승 이동 실패 - 건너뛰고 진행');
+    return true;
+  }
+  return await waitForMotionComplete(stopMoveRef, 30000, 'safeLift');
 }
 export async function executeApproachWithOffset(
   point: TeachingPoint,

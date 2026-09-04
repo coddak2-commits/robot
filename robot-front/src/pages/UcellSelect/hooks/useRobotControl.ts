@@ -8,7 +8,7 @@ import { playSaveOkBeep, playErrorBeep } from '../../../lib/audio';
 import { RobotPosition } from '../components/index';
 import { getBlockPointIds, getBlockName } from '..';
 import { TouchSensingOptions, TouchSensingResult, WeldingStartOptions, WeldingResult, ClosestCenterlineResult, UseWeldingOperationsReturn, findClosestCenterlinePoint as findClosestCenterlinePointFn, executeTouchSensing, TouchSensingContext, executeArcTest, ArcTestContext, executeWelding, WeldingExecutionContext } from './weldingCore';
-import { executeRetract, executeMoveJ } from './moveHelpers';
+import { executeRetract, executeMoveJ, executeSafeLift } from './moveHelpers';
 
 const log_useRobotControl = createLogger('useRobotControl');
 export interface MoveToPointOptions {
@@ -130,6 +130,16 @@ export function useRobotControl(): UseRobotControlReturn {
           );
           if (!retractOk) return false;
         }
+        // 2026-09-04: U셀 전면 판과의 충돌(와이어 휨) 방지 — skipRetract 여부와 무관하게
+        // 현재 위치에서 항상 한 번 더 상승 시도 후 관절이동한다.
+        await executeSafeLift(
+          teachingRobotState?.tcp ?? null,
+          teachingRobotState?.joints,
+          speed,
+          toolNum,
+          userNum,
+          stopMoveRef,
+        );
         const moveJOk = await executeMoveJ(point, speed, toolNum, userNum, stopMoveRef, teachingRobotState?.joints);
         if (!moveJOk) return false;
         totalTimer.end('moveToPoint.done', `${point.name} 이동 완료`);
