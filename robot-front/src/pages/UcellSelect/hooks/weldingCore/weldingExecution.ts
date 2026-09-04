@@ -599,7 +599,7 @@ export async function executeWelding(
           vel_mode: pt.velMode ?? 1,
           offset_flag: useOffset ? 1 : 0,
           offset,
-          weaving_type: pt.weavingType,
+          weaving_type: pt.weavingType ?? undefined,
         });
         batchIndices.push(j);
       }
@@ -692,8 +692,8 @@ export async function executeWelding(
       await arcOff(0, 0, 1000, safetySettings.gasPostFlowTime);
     if (sequenceSettings.arcTrackingEnabled && hasWelding && !simMode && !isWeldingTest)
       await arcTraceControl({ flag: 0 });
+    const lastWeldPoint = weldingPoints[weldingPoints.length - 1];
     if (!stopRef.current) {
-      const lastWeldPoint = weldingPoints[weldingPoints.length - 1];
       if (lastWeldPoint?.tcp) {
         log_weldingExecution.info('welding.retract', 'TCP Z -100mm 후퇴');
         const retreatResult = await moveToCartesianPosition(
