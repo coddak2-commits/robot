@@ -6,7 +6,7 @@ import { setWeldingPartOrder } from '../..';
 import { WeldingResult, WeldingStartOptions, ClosestCenterlineResult } from './weldingCoreTypes';
 import { findClosestCenterlinePoint } from './pathFinding';
 import { saveStoppedLog, saveWeldingLog } from './loggingHelpers';
-import { moveToJointWithStopCheck, getWeaveTypeCode, calculateDistance, getMinimumWeavingDistance } from './moveStopCheck';
+import { moveToJointWithStopCheck, moveToJointIgnoringStop, getWeaveTypeCode, calculateDistance, getMinimumWeavingDistance } from './moveStopCheck';
 import { loadWeldingSettings } from './sequenceSettings';
 import { safeArcOn, setupAndStartWeave, endPartWelding, startPartWelding, safeEndWeave, safeArcOff } from './weaveHelpers';
 import { determinePointTouchOffset } from './weldingPointLoop';
@@ -94,6 +94,8 @@ export async function executeWelding(
   let totalExpectedDurationSec = 0;
   let segments: WeldingLogSegment[] = [];
   let firstWeldPoint = weldingPoints[paramPointIndex] || weldingPoints[0];
+  // 2026-09-04: 정지 버튼 눌렀을 때 후퇴 이동에 쓸 기준점. 루프 진행하면서 계속 최신 포인트로 갱신됨.
+  let lastAttemptedPoint: typeof firstWeldPoint = firstWeldPoint;
   const handleStopped = async (completedPtIdx: number) => {
     const result = await saveStoppedLog({
       startedAt,
@@ -324,6 +326,7 @@ export async function executeWelding(
     while (i < weldingPoints.length) {
       if (stopRef.current) break;
       const point = weldingPoints[i];
+      lastAttemptedPoint = point;
       setCurrentPointIndex(i);
       const isPartStart = partBoundaryInfo.partStartIndices.includes(i);
       const currentPartIndex = partBoundaryInfo.pointPartIndices[i];
@@ -634,6 +637,7 @@ export async function executeWelding(
         segmentStartTime = Date.now();
         if (completedIndices.length > 0) {
           setCurrentPointIndex(completedIndices[completedIndices.length - 1]);
+          lastAttemptedPoint = weldingPoints[completedIndices[completedIndices.length - 1]];
         }
         if (batchResult.data?.stopped || batchResult.status_code !== 200) {
           log_weldingExecution.warn('welding.batch.stopped', 'Batch 중단', batchResult.data);
@@ -647,6 +651,32 @@ export async function executeWelding(
       i += batchPoints.length;
     }
     if (stopRef.current) {
+      // 2026-09-04: 정지 버튼 누른 위치에 토치가 그대로 남아있으면 와이어가 부품에 눌려
+      // 휘는 경우가 있어(사용자 확인), stopRef와 무관하게 base +Z 100mm 한 번만 후퇴한다.
+      // 실패해도 정지 처리 자체는 그대로 진행한다.
+      if (lastAttemptedPoint?.tcp && lastAttemptedPoint.joints && lastAttemptedPoint.joints.length === 6) {
+        const STOP_RETREAT_Z = 100;
+        const retreatPose = [
+          lastAttemptedPoint.tcp.x,
+          lastAttemptedPoint.tcp.y,
+          lastAttemptedPoint.tcp.z + STOP_RETREAT_Z,
+          lastAttemptedPoint.tcp.rx,
+          lastAttemptedPoint.tcp.ry,
+          lastAttemptedPoint.tcp.rz,
+        ];
+        const retreatJoints = await getInverseKin(retreatPose, lastAttemptedPoint.joints);
+        if (retreatJoints) {
+          log_weldingExecution.info('welding.stopRetreat', `정지 후 base +Z ${STOP_RETREAT_Z}mm 후퇴`);
+          const stopRetreatResult = await moveToJointIgnoringStop(
+            retreatJoints,
+            30,
+            lastAttemptedPoint.toolNum ?? 3,
+            lastAttemptedPoint.userNum ?? 0,
+          );
+          if (!stopRetreatResult.success)
+            log_weldingExecution.warn('welding.stopRetreat.failed', '정지 후 후퇴 이동 실패');
+        }
+      }
       const stoppedResult = await handleStopped(context.currentPointIndex);
       const opName = simMode ? (isDryRun ? 'DryRun' : '시뮬레이션') : '용접';
       showAlert(`${opName}이(가) 중단되었습니다.`, { type: 'warning', title: `${opName} 중단` });
@@ -685,14 +715,43 @@ export async function executeWelding(
       }
     }
     if (!stopRef.current && homePoint?.joints) {
-      log_weldingExecution.info('welding.homeReturn', 'Home으로 복귀');
-      await moveToJointWithStopCheck(
-        homePoint.joints,
-        homePoint.moveSpeed || 50,
-        homePoint.toolNum ?? 3,
-        homePoint.userNum ?? 0,
-        stopRef,
-      );
+      // 2026-09-04: 마지막 포인트 근처에서 홈까지 바로 관절이동(MoveJ)하면 경로상의
+      // 지그/부품에 부딪히는 사례가 있어(사용자 확인, 좌측 수직 3-2-1 종료 후 충돌),
+      // 파트 전환 때와 같은 방식(IK로 base +Z 100mm 들어올린 자세를 구해 MoveJ)으로
+      // 한 번 더 후퇴한 뒤 홈으로 이동한다. IK 실패 시엔 기존처럼 바로 홈으로 이동.
+      const HOME_LIFT_Z = 100;
+      if (lastWeldPoint?.tcp && lastWeldPoint.joints && lastWeldPoint.joints.length === 6) {
+        const liftPose = [
+          lastWeldPoint.tcp.x,
+          lastWeldPoint.tcp.y,
+          lastWeldPoint.tcp.z + HOME_LIFT_Z,
+          lastWeldPoint.tcp.rx,
+          lastWeldPoint.tcp.ry,
+          lastWeldPoint.tcp.rz,
+        ];
+        const liftJoints = await getInverseKin(liftPose, lastWeldPoint.joints);
+        if (liftJoints) {
+          log_weldingExecution.info('welding.homeReturn.lift', `Home 복귀 전 base +Z ${HOME_LIFT_Z}mm 추가 후퇴`);
+          const liftResult = await moveToJointWithStopCheck(
+            liftJoints,
+            30,
+            lastWeldPoint.toolNum ?? 3,
+            lastWeldPoint.userNum ?? 0,
+            stopRef,
+          );
+          if (liftResult.stopped) stopRef.current = true;
+        }
+      }
+      if (!stopRef.current) {
+        log_weldingExecution.info('welding.homeReturn', 'Home으로 복귀');
+        await moveToJointWithStopCheck(
+          homePoint.joints,
+          homePoint.moveSpeed || 50,
+          homePoint.toolNum ?? 3,
+          homePoint.userNum ?? 0,
+          stopRef,
+        );
+      }
     }
     const completedAt = new Date();
     const actualDurationSec = (completedAt.getTime() - startedAt.getTime()) / 1000;

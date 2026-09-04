@@ -46,6 +46,42 @@ export const moveToJointWithStopCheck = async (
     return { success: false, stopped: false };
   }
 };
+// 2026-09-04: 정지 버튼을 눌러 stopRef.current가 이미 true가 된 뒤에도, 안전을 위해
+// 딱 한 번 후퇴 이동만 마저 끝내고 싶을 때 쓴다. moveToJointWithStopCheck는 stopRef가
+// true면 아무것도 안 하고 즉시 리턴하므로, 정지 후 후퇴처럼 stopRef와 무관하게 반드시
+// 끝까지 실행해야 하는 이동에는 이 함수를 쓴다. 타임아웃은 짧게 잡아 문제가 있어도
+// 정지 처리 자체가 오래 막히지 않게 한다.
+export const moveToJointIgnoringStop = async (
+  joints: number[],
+  speed: number,
+  tool: number,
+  user: number,
+  timeout = 15000
+): Promise<{ success: boolean }> => {
+  try {
+    const result = await moveToJointPositionNonBlocking(joints, speed, 100, 100, tool, user);
+    const resultCode = result?.result ?? result?.data?.result;
+    if (result?.status_code !== 200 || resultCode !== 0) {
+      log_helpers.error('moveToJointIgnoringStop.failed', '이동 명령 실패', { result });
+      return { success: false };
+    }
+    const startTime = Date.now();
+    await new Promise(resolve => setTimeout(resolve, 200));
+    while (Date.now() - startTime < timeout) {
+      try {
+        const motionResult = await checkMotionDone();
+        if (motionResult?.done) return { success: true };
+      } catch {
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    log_helpers.warn('moveToJointIgnoringStop.timeout', '이동 타임아웃');
+    return { success: false };
+  } catch (error) {
+    log_helpers.error('moveToJointIgnoringStop.error', '이동 오류', { error: String(error) });
+    return { success: false };
+  }
+};
 export const moveToCartesianWithStopCheck = async (
   tcp: { x: number; y: number; z: number; rx: number; ry: number; rz: number },
   vel: number,
