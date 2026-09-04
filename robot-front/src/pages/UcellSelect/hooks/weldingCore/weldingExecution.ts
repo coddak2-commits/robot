@@ -357,20 +357,53 @@ export async function executeWelding(
               ? `파트 전환 ①: base +X +${approachOffset}mm 후퇴`
               : `파트 전환 ①(횡단): base +X +${CROSS_CLEARANCE_X} / +Z +${CROSS_LIFT_Z}mm 후퇴`,
           );
-          const retractResult = await moveToCartesianPosition(
-            prevPoint.tcp,
-            transitionSpeed,
-            100,
-            100,
-            -1,
-            1,
-            retractOffset,
-            undefined,
-            prevPoint.toolNum ?? 3,
-            prevPoint.userNum ?? 0,
-            0,
-          );
-          if (retractResult?.status_code !== 200) throw new Error('파트 전환 후퇴 이동 실패');
+          // 2026-09-04: 후퇴는 아크 꺼진 상태의 단순 이격 이동이라 직선(MoveL)일 필요가 없다.
+          // MoveL이 손목 특이점(ERR_STRANGE_POSE, code=38)에 걸려 실패하는 사례가 있어,
+          // prevPoint.joints가 있으면 IK로 오프셋 자세의 관절각을 구해 MoveJ로 대체한다
+          // (파트 전환 ②(횡단) 접근 이동과 동일한 패턴). joints가 없거나 IK 실패 시엔
+          // 기존 MoveL 방식으로 폴백.
+          let retractJoints: number[] | null = null;
+          if (prevPoint.joints && prevPoint.joints.length === 6) {
+            const retractPose = [
+              prevPoint.tcp.x + retractOffset[0],
+              prevPoint.tcp.y + retractOffset[1],
+              prevPoint.tcp.z + retractOffset[2],
+              prevPoint.tcp.rx,
+              prevPoint.tcp.ry,
+              prevPoint.tcp.rz,
+            ];
+            retractJoints = await getInverseKin(retractPose, prevPoint.joints);
+          }
+          if (retractJoints) {
+            log_weldingExecution.info(
+              'welding.partTransition.retract.ikMoveJ',
+              `파트 전환 ①: IK 관절로 MoveJ 후퇴 (특이점 회피)`,
+            );
+            const mjRetractResult = await moveToJointWithStopCheck(
+              retractJoints,
+              transitionSpeed,
+              prevPoint.toolNum ?? 3,
+              prevPoint.userNum ?? 0,
+              stopRef,
+            );
+            if (mjRetractResult.stopped) stopRef.current = true;
+            else if (!mjRetractResult.success) throw new Error('파트 전환 후퇴 이동 실패(MoveJ)');
+          } else {
+            const retractResult = await moveToCartesianPosition(
+              prevPoint.tcp,
+              transitionSpeed,
+              100,
+              100,
+              -1,
+              1,
+              retractOffset,
+              undefined,
+              prevPoint.toolNum ?? 3,
+              prevPoint.userNum ?? 0,
+              0,
+            );
+            if (retractResult?.status_code !== 200) throw new Error('파트 전환 후퇴 이동 실패');
+          }
         }
         if (!stopRef.current) {
           if (isSameSide && point.tcp) {
