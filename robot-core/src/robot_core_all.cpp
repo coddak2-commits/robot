@@ -549,11 +549,20 @@ int RobotService::setMode(int mode) {
 }
 ROBOT_STATE_PKG RobotService::getState() {
     ROBOT_STATE_PKG state = {0};
+    bool gotFreshState = false;
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if (m_connected) {
+        // [v1.1.61 역적용] moveL() 등 블로킹 이동 명령이 m_mutex를 오래 잡고 있어도
+        // 상태조회가 막히지 않도록, 못 잡으면 즉시 포기하고(아래에서 마지막 캐시값 반환)
+        // 진짜 이동이 방해되지 않게 한다.
+        std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
+        if (lock.owns_lock() && m_connected) {
             m_robot.GetRobotRealTimeState(&state);
+            gotFreshState = true;
         }
+    }
+    if (!gotFreshState) {
+        std::lock_guard<std::mutex> cacheLock(m_stateCacheMutex);
+        return m_cachedState;
     }
     {
         std::lock_guard<std::mutex> cacheLock(m_stateCacheMutex);
@@ -749,6 +758,92 @@ int RobotService::relativeMoveL(const double descPosDeltas[6], int tool, int use
               << targetPos[3] << ", " << targetPos[4] << ", " << targetPos[5]
               << "] vel=" << vel << std::endl;
     return moveL(targetPos, tool, user, vel, acc, ovl, blendR);
+}
+int RobotService::getCurToolCoord(double coord[6]) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(0, 0, 0, 0, 0, 0);
+    int ret = m_robot.GetCurToolCoord(pose);
+    coord[0] = pose.tran.x; coord[1] = pose.tran.y; coord[2] = pose.tran.z;
+    coord[3] = pose.rpy.rx; coord[4] = pose.rpy.ry; coord[5] = pose.rpy.rz;
+    return ret;
+}
+int RobotService::getCurWObjCoord(double coord[6]) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(0, 0, 0, 0, 0, 0);
+    int ret = m_robot.GetCurWObjCoord(pose);
+    coord[0] = pose.tran.x; coord[1] = pose.tran.y; coord[2] = pose.tran.z;
+    coord[3] = pose.rpy.rx; coord[4] = pose.rpy.ry; coord[5] = pose.rpy.rz;
+    return ret;
+}
+int RobotService::getToolCoordWithID(int id, double coord[6], int& type, int& install, int& toolID, int& loadNo) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(0, 0, 0, 0, 0, 0);
+    int ret = m_robot.GetToolCoordWithID(id, pose, type, install, toolID, loadNo);
+    coord[0] = pose.tran.x; coord[1] = pose.tran.y; coord[2] = pose.tran.z;
+    coord[3] = pose.rpy.rx; coord[4] = pose.rpy.ry; coord[5] = pose.rpy.rz;
+    return ret;
+}
+int RobotService::getWObjCoordWithID(int id, double coord[6], int& refFrame) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(0, 0, 0, 0, 0, 0);
+    int ret = m_robot.GetWObjCoordWithID(id, pose, refFrame);
+    coord[0] = pose.tran.x; coord[1] = pose.tran.y; coord[2] = pose.tran.z;
+    coord[3] = pose.rpy.rx; coord[4] = pose.rpy.ry; coord[5] = pose.rpy.rz;
+    return ret;
+}
+int RobotService::setToolCoord(int id, const double coord[6], int type, int install, int toolID, int loadNum) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(coord[0], coord[1], coord[2], coord[3], coord[4], coord[5]);
+    std::cout << "[RobotService] SetToolCoord: id=" << id << " loadNum=" << loadNum << std::endl;
+    return m_robot.SetToolCoord(id, &pose, type, install, toolID, loadNum);
+}
+int RobotService::setWObjCoord(int id, const double coord[6], int refFrame) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose pose(coord[0], coord[1], coord[2], coord[3], coord[4], coord[5]);
+    std::cout << "[RobotService] SetWObjCoord: id=" << id << " refFrame=" << refFrame << std::endl;
+    return m_robot.SetWObjCoord(id, &pose, refFrame);
+}
+int RobotService::getTargetPayloadWithID(int id, double& weight, double cog[3]) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescTran tran(0, 0, 0);
+    int ret = m_robot.GetTargetPayloadWithID(id, weight, tran);
+    cog[0] = tran.x; cog[1] = tran.y; cog[2] = tran.z;
+    return ret;
+}
+int RobotService::setLoadWeight(int loadNum, float weight) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    std::cout << "[RobotService] SetLoadWeight: loadNum=" << loadNum << " weight=" << weight << "kg" << std::endl;
+    return m_robot.SetLoadWeight(loadNum, weight);
+}
+int RobotService::setLoadCoord(int loadNum, const double coord[3]) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescTran tran(coord[0], coord[1], coord[2]);
+    std::cout << "[RobotService] SetLoadCoord: loadNum=" << loadNum << std::endl;
+    return m_robot.SetLoadCoord(loadNum, &tran);
+}
+int RobotService::getSafetyStopState(uint8_t& si0State, uint8_t& si1State) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    return m_robot.GetSafetyStopState(&si0State, &si1State);
+}
+int RobotService::getDOState(uint8_t& doStateH, uint8_t& doStateL) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    return m_robot.GetDO(&doStateH, &doStateL);
+}
+int RobotService::getToolDOState(uint8_t& doState) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    return m_robot.GetToolDO(&doState);
 }
 int RobotService::stopMotion() {
     if (!m_connected) return -1;
@@ -1043,7 +1138,12 @@ void RobotService::monitorLoop(int intervalMs) {
     }
 }
 bool RobotService::checkConnection() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    // [v1.1.61 역적용] 위 getState()와 동일한 이유로 try_to_lock 사용 — 긴 이동(m_mutex 점유) 중에는
+    // 잠금 실패를 "연결 끊김"이 아니라 "이동 중이라 확인 못함, 연결된 것으로 간주"로 처리한다.
+    std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        return true;
+    }
     if (!m_connected) return false;
     try {
         ROBOT_STATE_PKG state = {0};
@@ -3920,35 +4020,44 @@ void registerWeldingRoutes(
         // 아크/위빙/가스를 정리한다 (물리적 정지가 프로세스 정리보다 우선).
         try {
             int r = robotService.stopMotion();
-            FLOG_INFO("WeldingRoute", "Emergency step 1/4 StopMotion: result=" + std::to_string(r));
+            FLOG_INFO("WeldingRoute", "Emergency step 1/5 StopMotion: result=" + std::to_string(r));
             results["steps"].push_back({{"step", "stop_motion"}, {"result", r}});
         } catch (...) {
-            FLOG_ERROR("WeldingRoute", "Emergency step 1/4 StopMotion: EXCEPTION");
+            FLOG_ERROR("WeldingRoute", "Emergency step 1/5 StopMotion: EXCEPTION");
             results["steps"].push_back({{"step", "stop_motion"}, {"result", -1}, {"error", "exception"}});
         }
         try {
             int r = robotService.arcEnd(0, 0, 1000);
-            FLOG_INFO("WeldingRoute", "Emergency step 2/4 Arc OFF: result=" + std::to_string(r));
+            FLOG_INFO("WeldingRoute", "Emergency step 2/5 Arc OFF: result=" + std::to_string(r));
             results["steps"].push_back({{"step", "arc_off"}, {"result", r}});
         } catch (...) {
-            FLOG_ERROR("WeldingRoute", "Emergency step 2/4 Arc OFF: EXCEPTION");
+            FLOG_ERROR("WeldingRoute", "Emergency step 2/5 Arc OFF: EXCEPTION");
             results["steps"].push_back({{"step", "arc_off"}, {"result", -1}, {"error", "exception"}});
         }
         try {
             int r = robotService.weaveEnd(0);
-            FLOG_INFO("WeldingRoute", "Emergency step 3/4 Weave OFF: result=" + std::to_string(r));
+            FLOG_INFO("WeldingRoute", "Emergency step 3/5 Weave OFF: result=" + std::to_string(r));
             results["steps"].push_back({{"step", "weave_off"}, {"result", r}});
         } catch (...) {
-            FLOG_ERROR("WeldingRoute", "Emergency step 3/4 Weave OFF: EXCEPTION");
+            FLOG_ERROR("WeldingRoute", "Emergency step 3/5 Weave OFF: EXCEPTION");
             results["steps"].push_back({{"step", "weave_off"}, {"result", -1}, {"error", "exception"}});
         }
         try {
             int r = robotService.setAspirated(0, 0);
-            FLOG_INFO("WeldingRoute", "Emergency step 4/4 Gas OFF: result=" + std::to_string(r));
+            FLOG_INFO("WeldingRoute", "Emergency step 4/5 Gas OFF: result=" + std::to_string(r));
             results["steps"].push_back({{"step", "gas_off"}, {"result", r}});
         } catch (...) {
-            FLOG_ERROR("WeldingRoute", "Emergency step 4/4 Gas OFF: EXCEPTION");
+            FLOG_ERROR("WeldingRoute", "Emergency step 4/5 Gas OFF: EXCEPTION");
             results["steps"].push_back({{"step", "gas_off"}, {"result", -1}, {"error", "exception"}});
+        }
+        try {
+            int rc = robotService.setWeldingCurrent(0, 0.0f, 1, 0);
+            int rv = robotService.setWeldingVoltage(0, 0.0f, 0, 0);
+            FLOG_INFO("WeldingRoute", "Emergency step 5/5 Current/Voltage reset: current_result=" + std::to_string(rc) + " voltage_result=" + std::to_string(rv));
+            results["steps"].push_back({{"step", "current_voltage_reset"}, {"current_result", rc}, {"voltage_result", rv}});
+        } catch (...) {
+            FLOG_ERROR("WeldingRoute", "Emergency step 5/5 Current/Voltage reset: EXCEPTION");
+            results["steps"].push_back({{"step", "current_voltage_reset"}, {"result", -1}, {"error", "exception"}});
         }
         if (dbService && dbService->isConnected()) {
             dbService->logDebug("EmergencyShutdown", "COMPLETE", results.dump());
@@ -4199,6 +4308,12 @@ void registerWeldingConfigRoutes(
             if (dbService && dbService->isConnected()) {
                 dbService->logDebug("ArcOff", "ARC_END", "result=" + std::to_string(resultArc));
             }
+            int resultCurrentReset = robotService.setWeldingCurrent(ioType, 0.0f, 1, 0);
+            int resultVoltageReset = robotService.setWeldingVoltage(ioType, 0.0f, 0, 0);
+            FLOG_INFO("WeldingConfig", "ArcOff current/voltage reset: current_result=" + std::to_string(resultCurrentReset) + " voltage_result=" + std::to_string(resultVoltageReset));
+            if (dbService && dbService->isConnected()) {
+                dbService->logDebug("ArcOff", "PARAM_RESET", "current_result=" + std::to_string(resultCurrentReset) + " voltage_result=" + std::to_string(resultVoltageReset));
+            }
             if (gasPostFlowMs > 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(gasPostFlowMs));
             }
@@ -4412,7 +4527,8 @@ void registerWeldingBatchRoutes(
             }
             float speedRaw = firstPt.value("speed", 15.0f);
             int velModeIn = firstPt.value("vel_mode", 1);
-            float speed = (velModeIn == 1) ? speedRaw * 1.13f / 72.0f : speedRaw;
+            float speed = (velModeIn == 1) ? speedRaw / 15.0f : speedRaw;
+            speed = clampMotionPercent(speed);
             if (dbService && dbService->isConnected()) {
                 RobotSettings ovlSettings = dbService->getRobotSettings();
                 int ovlPct = ovlSettings.default_ovl;
@@ -5659,6 +5775,235 @@ void registerSdkMotionRoutes(
         response["result"] = result;
         res.set_content(response.dump(), "application/json");
     });
+    server.Get("/robot_sdk/tool-coord/current", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        double coord[6] = {0};
+        int ret = robotService.getCurToolCoord(coord);
+        if (ret != 0) {
+            FLOG_SDK_ERROR("getCurToolCoord", ret, "");
+            res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", "GetCurToolCoord failed"}, {"result", ret}}).dump(), "application/json");
+            return;
+        }
+        json data;
+        data["coord"] = {coord[0], coord[1], coord[2], coord[3], coord[4], coord[5]};
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, data).dump(), "application/json");
+    });
+    server.Get("/robot_sdk/wobj-coord/current", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        double coord[6] = {0};
+        int ret = robotService.getCurWObjCoord(coord);
+        if (ret != 0) {
+            FLOG_SDK_ERROR("getCurWObjCoord", ret, "");
+            res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", "GetCurWObjCoord failed"}, {"result", ret}}).dump(), "application/json");
+            return;
+        }
+        json data;
+        data["coord"] = {coord[0], coord[1], coord[2], coord[3], coord[4], coord[5]};
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, data).dump(), "application/json");
+    });
+    server.Get("/robot_sdk/tool-coord", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        int id = req.has_param("id") ? std::stoi(req.get_param_value("id")) : 0;
+        double coord[6] = {0};
+        int type = 0, install = 0, toolID = 0, loadNo = 0;
+        int ret = robotService.getToolCoordWithID(id, coord, type, install, toolID, loadNo);
+        if (ret != 0) {
+            FLOG_SDK_ERROR("getToolCoordWithID", ret, "id=" + std::to_string(id));
+            res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", "GetToolCoordWithID failed"}, {"result", ret}}).dump(), "application/json");
+            return;
+        }
+        json data;
+        data["id"] = id;
+        data["coord"] = {coord[0], coord[1], coord[2], coord[3], coord[4], coord[5]};
+        data["type"] = type;
+        data["install"] = install;
+        data["toolID"] = toolID;
+        data["loadNo"] = loadNo;
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, data).dump(), "application/json");
+    });
+    server.Get("/robot_sdk/wobj-coord", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        int id = req.has_param("id") ? std::stoi(req.get_param_value("id")) : 0;
+        double coord[6] = {0};
+        int refFrame = 0;
+        int ret = robotService.getWObjCoordWithID(id, coord, refFrame);
+        if (ret != 0) {
+            FLOG_SDK_ERROR("getWObjCoordWithID", ret, "id=" + std::to_string(id));
+            res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", "GetWObjCoordWithID failed"}, {"result", ret}}).dump(), "application/json");
+            return;
+        }
+        json data;
+        data["id"] = id;
+        data["coord"] = {coord[0], coord[1], coord[2], coord[3], coord[4], coord[5]};
+        data["refFrame"] = refFrame;
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, data).dump(), "application/json");
+    });
+    server.Post("/robot_sdk/tool-coord", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            int id = body.value("id", 0);
+            double coord[6] = {0};
+            for (int k = 0; k < 6 && k < (int)body["coord"].size(); k++) coord[k] = body["coord"][k].get<double>();
+            int type = body.value("type", 0);
+            int install = body.value("install", 0);
+            int toolID = body.value("toolID", 0);
+            int loadNum = body.value("loadNum", 0);
+            int ret = robotService.setToolCoord(id, coord, type, install, toolID, loadNum);
+            if (ret != 0) FLOG_SDK_ERROR("setToolCoord", ret, "id=" + std::to_string(id));
+            res.set_content(HttpRouteHelpers::makeStatusResponse(ret == 0 ? 200 : 500, {{"result", ret}}).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", std::string("Invalid request: ") + e.what()}}).dump(), "application/json");
+        }
+    });
+    server.Post("/robot_sdk/wobj-coord", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            int id = body.value("id", 0);
+            double coord[6] = {0};
+            for (int k = 0; k < 6 && k < (int)body["coord"].size(); k++) coord[k] = body["coord"][k].get<double>();
+            int refFrame = body.value("refFrame", 0);
+            int ret = robotService.setWObjCoord(id, coord, refFrame);
+            if (ret != 0) FLOG_SDK_ERROR("setWObjCoord", ret, "id=" + std::to_string(id));
+            res.set_content(HttpRouteHelpers::makeStatusResponse(ret == 0 ? 200 : 500, {{"result", ret}}).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", std::string("Invalid request: ") + e.what()}}).dump(), "application/json");
+        }
+    });
+    server.Get("/robot_sdk/payload", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        int id = req.has_param("id") ? std::stoi(req.get_param_value("id")) : 0;
+        double weight = 0;
+        double cog[3] = {0};
+        int ret = robotService.getTargetPayloadWithID(id, weight, cog);
+        if (ret != 0) {
+            FLOG_SDK_ERROR("getTargetPayloadWithID", ret, "id=" + std::to_string(id));
+            res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", "GetTargetPayloadWithID failed"}, {"result", ret}}).dump(), "application/json");
+            return;
+        }
+        json data;
+        data["id"] = id;
+        data["weight"] = weight;
+        data["cog"] = {cog[0], cog[1], cog[2]};
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, data).dump(), "application/json");
+    });
+    server.Post("/robot_sdk/load-weight", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            int loadNum = body.value("loadNum", 0);
+            float weight = body.value("weight", 0.0f);
+            int ret = robotService.setLoadWeight(loadNum, weight);
+            if (ret != 0) FLOG_SDK_ERROR("setLoadWeight", ret, "loadNum=" + std::to_string(loadNum));
+            res.set_content(HttpRouteHelpers::makeStatusResponse(ret == 0 ? 200 : 500, {{"result", ret}}).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", std::string("Invalid request: ") + e.what()}}).dump(), "application/json");
+        }
+    });
+    server.Post("/robot_sdk/load-coord", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            int loadNum = body.value("loadNum", 0);
+            double coord[3] = {0};
+            for (int k = 0; k < 3 && k < (int)body["coord"].size(); k++) coord[k] = body["coord"][k].get<double>();
+            int ret = robotService.setLoadCoord(loadNum, coord);
+            if (ret != 0) FLOG_SDK_ERROR("setLoadCoord", ret, "loadNum=" + std::to_string(loadNum));
+            res.set_content(HttpRouteHelpers::makeStatusResponse(ret == 0 ? 200 : 500, {{"result", ret}}).dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", std::string("Invalid request: ") + e.what()}}).dump(), "application/json");
+        }
+    });
+    server.Get("/robot_sdk/safety-stop-state", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        uint8_t si0 = 0, si1 = 0;
+        int ret = robotService.getSafetyStopState(si0, si1);
+        if (ret != 0) {
+            FLOG_SDK_ERROR("getSafetyStopState", ret, "");
+            res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", "GetSafetyStopState failed"}, {"result", ret}}).dump(), "application/json");
+            return;
+        }
+        json data;
+        data["si0_state"] = si0;
+        data["si1_state"] = si1;
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, data).dump(), "application/json");
+    });
+    server.Get("/robot_sdk/do-state", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        uint8_t doH = 0, doL = 0;
+        int ret = robotService.getDOState(doH, doL);
+        if (ret != 0) {
+            FLOG_SDK_ERROR("getDOState", ret, "");
+            res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", "GetDO failed"}, {"result", ret}}).dump(), "application/json");
+            return;
+        }
+        json data;
+        data["do_state_h"] = doH;
+        data["do_state_l"] = doL;
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, data).dump(), "application/json");
+    });
+    server.Get("/robot_sdk/tool-do-state", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        uint8_t doState = 0;
+        int ret = robotService.getToolDOState(doState);
+        if (ret != 0) {
+            FLOG_SDK_ERROR("getToolDOState", ret, "");
+            res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", "GetToolDO failed"}, {"result", ret}}).dump(), "application/json");
+            return;
+        }
+        json data;
+        data["do_state"] = doState;
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, data).dump(), "application/json");
+    });
     server.Post("/robot_sdk/robot/mode", [&robotService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         if (!robotService.isConnected()) {
@@ -6237,7 +6582,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.30"
+#define APP_VERSION_STRING "1.1.116"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -7156,6 +7501,12 @@ void registerUpdaterRoutes(
             std::thread([]() {
                 std::this_thread::sleep_for(std::chrono::seconds(10));
                 FLOG_INFO("Updater", "본체 종료 (인스톨러 실행 후)");
+#ifdef _WIN32
+                // 업데이트로 인한 종료는 std::exit()로 바로 빠져나가 정상 종료 경로의
+                // closeKioskBrowsers() 호출을 건너뛴다. 그대로 두면 새 버전이 새 브라우저
+                // 창을 띄운 뒤에도 업데이트 전 페이지가 그대로 남는다 -> 먼저 닫아준다.
+                closeKioskBrowsers();
+#endif
                 std::exit(0);
             }).detach();
         } catch (const std::exception& e) {

@@ -330,26 +330,24 @@ export function CellSelectionCore({
   useEffect(() => {
     const loadLastJob = async () => {
       try {
+        await fetchJobList();
         const response = await getTeachingJobs();
         const jobs = response?.data?.jobs ?? [];
         const jobWithPoints = jobs.find(
           (job: { total_points?: number }) => (job.total_points ?? 0) > 0,
         );
         if (jobWithPoints) {
-          const points = await loadJob(jobWithPoints.id);
-          if (points) {
-            loadPointsFromJob(points);
-            log.info(
-              'autoLoad',
-              `마지막 작업 자동 로드: ${jobWithPoints.name} (포인트 ${jobWithPoints.total_points}개)`,
-            );
-          }
+          await handleLoadJob(jobWithPoints.id);
+          log.info(
+            'autoLoad',
+            `마지막 작업 자동 로드: ${jobWithPoints.name} (포인트 ${jobWithPoints.total_points}개)`,
+          );
         }
       } catch {
       }
     };
     loadLastJob();
-  }, [loadJob, loadPointsFromJob]);
+  }, [handleLoadJob, fetchJobList]);
   useEffect(() => {
     if (propSelectedHeight !== undefined) setSelectedHeight(propSelectedHeight);
     if (propSelectedType !== undefined) {

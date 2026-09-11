@@ -1781,3 +1781,186 @@ export interface UserData {
   lastLogin?: string | null;
   createdAt?: string;
 }
+export interface ToolCoordData {
+  id?: number;
+  coord: number[];
+  type?: number;
+  install?: number;
+  toolID?: number;
+  loadNo?: number;
+}
+export interface WObjCoordData {
+  id?: number;
+  coord: number[];
+  refFrame?: number;
+}
+export interface PayloadData {
+  id: number;
+  weight: number;
+  cog: number[];
+}
+export interface SafetyStopStateData {
+  si0_state: number;
+  si1_state: number;
+}
+export interface DOStateData {
+  do_state_h: number;
+  do_state_l: number;
+}
+export interface ToolDOStateData {
+  do_state: number;
+}
+export const getCurToolCoord = async (): Promise<ToolCoordData> => {
+  try {
+    const response = await api.get('/robot_sdk/tool-coord/current');
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || '현재 툴 좌표계 조회 실패');
+    }
+    return response.data.data;
+  } catch (error) {
+    console.error('현재 툴 좌표계 조회 오류:', error);
+    throw error;
+  }
+};
+export const getCurWObjCoord = async (): Promise<WObjCoordData> => {
+  try {
+    const response = await api.get('/robot_sdk/wobj-coord/current');
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || '현재 워크 좌표계 조회 실패');
+    }
+    return response.data.data;
+  } catch (error) {
+    console.error('현재 워크 좌표계 조회 오류:', error);
+    throw error;
+  }
+};
+export const getToolCoordWithID = async (id: number): Promise<ToolCoordData> => {
+  try {
+    const response = await api.get(`/robot_sdk/tool-coord?id=${id}`);
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || '툴 좌표계 조회 실패');
+    }
+    return response.data.data;
+  } catch (error) {
+    console.error('툴 좌표계 조회 오류:', error);
+    throw error;
+  }
+};
+export const getWObjCoordWithID = async (id: number): Promise<WObjCoordData> => {
+  try {
+    const response = await api.get(`/robot_sdk/wobj-coord?id=${id}`);
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || '워크 좌표계 조회 실패');
+    }
+    return response.data.data;
+  } catch (error) {
+    console.error('워크 좌표계 조회 오류:', error);
+    throw error;
+  }
+};
+export const setToolCoord = async (
+  id: number,
+  coord: number[],
+  type: number,
+  install: number,
+  toolID: number,
+  loadNum: number,
+): Promise<void> => {
+  try {
+    const response = await api.post('/robot_sdk/tool-coord', {
+      id,
+      coord,
+      type,
+      install,
+      toolID,
+      loadNum,
+    });
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || '툴 좌표계 설정 실패');
+    }
+  } catch (error) {
+    console.error('툴 좌표계 설정 오류:', error);
+    throw error;
+  }
+};
+export const setWObjCoord = async (id: number, coord: number[], refFrame: number): Promise<void> => {
+  try {
+    const response = await api.post('/robot_sdk/wobj-coord', { id, coord, refFrame });
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || '워크 좌표계 설정 실패');
+    }
+  } catch (error) {
+    console.error('워크 좌표계 설정 오류:', error);
+    throw error;
+  }
+};
+export const getTargetPayloadWithID = async (id: number): Promise<PayloadData> => {
+  try {
+    const response = await api.get(`/robot_sdk/payload?id=${id}`);
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || '부하 파라미터 조회 실패');
+    }
+    return response.data.data;
+  } catch (error) {
+    console.error('부하 파라미터 조회 오류:', error);
+    throw error;
+  }
+};
+export const setLoadWeight = async (loadNum: number, weight: number): Promise<void> => {
+  try {
+    const response = await api.post('/robot_sdk/load-weight', { loadNum, weight });
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || '부하 무게 설정 실패');
+    }
+  } catch (error) {
+    console.error('부하 무게 설정 오류:', error);
+    throw error;
+  }
+};
+export const setLoadCoord = async (loadNum: number, coord: number[]): Promise<void> => {
+  try {
+    const response = await api.post('/robot_sdk/load-coord', { loadNum, coord });
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || '부하 중심좌표 설정 실패');
+    }
+  } catch (error) {
+    console.error('부하 중심좌표 설정 오류:', error);
+    throw error;
+  }
+};
+export const getSafetyStopState = async (): Promise<SafetyStopStateData> => {
+  try {
+    const response = await api.get('/robot_sdk/safety-stop-state');
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || '세이프티 정지 상태 조회 실패');
+    }
+    return response.data.data;
+  } catch (error) {
+    console.error('세이프티 정지 상태 조회 오류:', error);
+    throw error;
+  }
+};
+export const getDOState = async (): Promise<DOStateData> => {
+  try {
+    const response = await api.get('/robot_sdk/do-state');
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || 'DO 상태 조회 실패');
+    }
+    return response.data.data;
+  } catch (error) {
+    console.error('DO 상태 조회 오류:', error);
+    throw error;
+  }
+};
+export const getToolDOState = async (): Promise<ToolDOStateData> => {
+  try {
+    const response = await api.get('/robot_sdk/tool-do-state');
+    if (response.data.status_code !== 200) {
+      throw new Error(response.data.data?.message || '툴 DO 상태 조회 실패');
+    }
+    return response.data.data;
+  } catch (error) {
+    console.error('툴 DO 상태 조회 오류:', error);
+    throw error;
+  }
+};

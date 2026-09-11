@@ -1,0 +1,1 @@
+﻿gh release edit v1.1.99 --repo coddak2-commits/robot --notes "SDK 래퍼 함수 12개 추가 (툴/워크 좌표계 조회/설정, 부하 파라미터 조회/설정, 세이프티 정지 상태, DO 상태 읽기)"

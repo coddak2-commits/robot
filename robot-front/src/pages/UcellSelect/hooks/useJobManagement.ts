@@ -23,7 +23,13 @@ export interface UseJobManagementReturn {
   setEditingJobName: (name: string) => void;
   fetchJobList: () => Promise<void>;
   saveJob: (teachingPoints: TeachingPoint[], cellType: string, cellId: number, height: number, width: number, jobName?: string) => Promise<boolean>;
-  loadJob: (jobId: number) => Promise<TeachingPoint[] | null>;
+  loadJob: (jobId: number) => Promise<{
+    points: TeachingPoint[];
+    cellType?: string;
+    cellId?: number;
+    height?: number;
+    width?: number;
+  } | null>;
   pendingDeleteJobIds: number[];
   requestDeleteJob: (jobId: number, jobName: string) => void;
   undoDeleteJob: (jobId: number) => void;
@@ -107,7 +113,13 @@ export function useJobManagement(): UseJobManagementReturn {
       setIsSavingJob(false);
     }
   }, [fetchJobList]);
-  const loadJob = useCallback(async (jobId: number): Promise<TeachingPoint[] | null> => {
+  const loadJob = useCallback(async (jobId: number): Promise<{
+    points: TeachingPoint[];
+    cellType?: string;
+    cellId?: number;
+    height?: number;
+    width?: number;
+  } | null> => {
     try {
       const response = await getTeachingJob(jobId);
       const jobData = response?.data;
@@ -155,7 +167,13 @@ export function useJobManagement(): UseJobManagementReturn {
       });
       setCurrentJobId(jobId);
       setIsJobListModalOpen(false);
-      return loadedPoints;
+      return {
+        points: loadedPoints,
+        cellType: jobData.cell_type,
+        cellId: jobData.cell_id,
+        height: jobData.height,
+        width: jobData.width,
+      };
     } catch (error) {
       console.error('작업 불러오기 실패:', error);
       alert('작업 불러오기에 실패했습니다.');

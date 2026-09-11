@@ -1,5 +1,5 @@
 import { TeachingPoint, WeaveParams, createInitialTeachingPoints, UCELL_POINT_DEFINITIONS, UCellData, NORMAL_CELLS, COLLAR_PLATE_CELLS, PartWeldEnabled, DEFAULT_PART_WELD_ENABLED, DEFAULT_WEAVE_PARAMS, WELDING_PARTS } from '..';
-import { moveToJointPositionNonBlocking, moveToCartesianPositionNonBlocking, checkMotionDone, getWeldingConfig, updateTeachingJob, TeachingPointData, RealtimeRobotStatus, enableRobot, createTeachingJob, getTeachingJobs, getTeachingJob, deleteTeachingJob, updateTeachingJobName, TeachingJob, getRealtimeRobotStatus, stopRobotSDK, emergencyStop, endArc, endWeave, arcOff, arcTraceControl, wireSearchEnd, forwardWireFeed, reverseWireFeed, stopForwardWireFeed, stopReverseWireFeed } from '../../../lib';
+import { moveToJointPositionNonBlocking, moveToCartesianPositionNonBlocking, checkMotionDone, getWeldingConfig, updateTeachingJob, TeachingPointData, RealtimeRobotStatus, enableRobot, createTeachingJob, getTeachingJobs, getTeachingJob, deleteTeachingJob, updateTeachingJobName, TeachingJob, getRealtimeRobotStatus, stopRobotSDK, emergencyStop, endArc, endWeave, arcOff, arcTraceControl, forwardWireFeed, reverseWireFeed, stopForwardWireFeed, stopReverseWireFeed } from '../../../lib';
 import { getErrorMessage, extractResultCode } from '../../../lib/api';
 import { createLogger } from '../../../lib';
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
@@ -46,10 +46,7 @@ export function useWeldingOperations(): UseWeldingOperationsReturn {
     stopRef.current = true;
     try {
       await emergencyStop().catch(() => {});
-      await Promise.all([
-        stopRobotSDK().catch(() => {}),
-        wireSearchEnd({}).catch(() => {})
-      ]);
+      await stopRobotSDK().catch(() => {});
     } catch {  }
     setIsTouchSensing(false);
     setCurrentPointIndex(-1);

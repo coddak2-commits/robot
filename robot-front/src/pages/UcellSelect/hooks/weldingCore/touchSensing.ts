@@ -1,5 +1,5 @@
 import { TeachingPoint, getExecutableParts, flattenExecutableParts, WEAVING_TYPE_OPTIONS, PartWeldEnabled, getPartBoundaryInfo } from '../..';
-import { enableRobot, RealtimeRobotStatus, startArc, endArc, endWeave, getWeldingConfig, WeldingConfigData, moveToJointPositionNonBlocking, checkMotionDone, createWeldingLog, WeldingLogData, WeldingLogSegment, wireSearchEnd, findDx, findDy, findDz, setWeaveParams, startWeave, arcOn, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, isApiSuccess } from '../../../../lib';
+import { enableRobot, RealtimeRobotStatus, startArc, endArc, endWeave, getWeldingConfig, WeldingConfigData, moveToJointPositionNonBlocking, checkMotionDone, createWeldingLog, WeldingLogData, WeldingLogSegment, findDx, findDy, findDz, setWeaveParams, startWeave, arcOn, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, isApiSuccess } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { setWeldingPartOrder } from '../..';
@@ -133,7 +133,6 @@ async function performRealTouchSensing(
         log_touchSensing.info('touchSensing.findDz.bottom.result', `하단 터치 완료`, { dz, averaged: hasTop });
       }
     }
-    await wireSearchEnd({});
   } catch (error) {
     log_touchSensing.error('touchSensing.point.error', `${point.name} 터치 센싱 오류`, { error: String(error) });
     return { dx, dy, dz, stopped: false, error: String(error) };
@@ -199,11 +198,30 @@ export async function executeTouchSensing(
   setCurrentPointIndex(0);
   const touchResults: TouchSensingResult[] = [];
   const Z_APPROACH_OFFSET = sequenceSettings.touchApproachOffset;
+  // p9/p10: 같은 위치(우측 수평 코너)에 티칭되어 있고, U셀 구조물과의 간섭으로
+  // 로컬 +X 접근 시 충돌(code=185) 반복 확인됨. 로컬 -Y로 접근.
+  const NEAR_UCELL_CORNER = ['p9', 'p10'];
+  const getApproachOffsetPos = (pointId: string, offset: number): number[] =>
+    NEAR_UCELL_CORNER.includes(pointId.toLowerCase()) ? [0, -offset, 0, 0, 0, 0] : [offset, 0, 0, 0, 0, 0];
   try {
     if (!robotState?.servo_enabled) {
       log_touchSensing.info('touchSensing.setup', '서보 활성화 중...');
       await enableRobot();
     }
+    let lastPoint: TeachingPoint | null = null;
+    const isSameTcpPosition = (a: TeachingPoint | null, b: TeachingPoint): boolean => {
+      if (!a?.tcp || !b.tcp) return false;
+      return (
+        a.tcp.x === b.tcp.x &&
+        a.tcp.y === b.tcp.y &&
+        a.tcp.z === b.tcp.z &&
+        a.tcp.rx === b.tcp.rx &&
+        a.tcp.ry === b.tcp.ry &&
+        a.tcp.rz === b.tcp.rz &&
+        (a.toolNum ?? 0) === (b.toolNum ?? 0) &&
+        (a.userNum ?? 0) === (b.userNum ?? 0)
+      );
+    };
     for (let i = 0; i < savedPoints.length; i++) {
       if (stopRef.current) break;
       const point = savedPoints[i];
@@ -231,31 +249,46 @@ export async function executeTouchSensing(
         log_touchSensing.info('touchSensing.skipPoint', `${point.name} 테스트할 면 없음 - 포인트 건너뜀`);
         continue;
       }
+      const samePositionAsPrev = isSameTcpPosition(lastPoint, point);
+      lastPoint = point;
       if (point.tcp) {
         const { x: px, y: py, z: pz, rx: prx, ry: pry, rz: prz } = point.tcp;
         const toolNum = point.toolNum ?? 0;
         const userNum = point.userNum ?? 0;
-        log_touchSensing.info('touchSensing.approach', `${point.name} +X 오프셋 위치로 이동`);
-        const approachResult = await moveToCartesianWithStopCheck(
-          { x: px, y: py, z: pz, rx: prx, ry: pry, rz: prz },
-          sequenceSettings.touchSensingPointSpeed,
-          100,
-          100,
-          -1,
-          1,
-          [Z_APPROACH_OFFSET, 0, 0, 0, 0, 0],
-          undefined,
-          toolNum,
-          userNum,
-          stopRef,
-        );
-        if (approachResult.stopped) {
-          log_touchSensing.info('touchSensing.approach.stopped', '접근 중 정지됨');
-          break;
-        }
-        if (!approachResult.success) {
-          log_touchSensing.error('touchSensing.approach.failed', `${point.name} 접근 실패`);
-          continue;
+        if (!samePositionAsPrev) {
+          const approachOffsetPos = getApproachOffsetPos(point.id, Z_APPROACH_OFFSET);
+          log_touchSensing.info(
+            'touchSensing.approach',
+            `${point.name} ${NEAR_UCELL_CORNER.includes(pointIdLower) ? '-Y' : '+X'} 오프셋 위치로 이동`,
+          );
+          const approachResult = await moveToCartesianWithStopCheck(
+            { x: px, y: py, z: pz, rx: prx, ry: pry, rz: prz },
+            sequenceSettings.touchSensingPointSpeed,
+            100,
+            100,
+            -1,
+            1,
+            approachOffsetPos,
+            undefined,
+            toolNum,
+            userNum,
+            stopRef,
+          );
+          if (approachResult.stopped) {
+            log_touchSensing.info('touchSensing.approach.stopped', '접근 중 정지됨');
+            break;
+          }
+          if (!approachResult.success) {
+            log_touchSensing.error('touchSensing.approach.failed', `${point.name} 접근 실패`);
+            continue;
+          }
+        } else {
+          // 이전 포인트와 같은 좌표라도, 터치센싱 탐색+후퇴로 실제 위치가 티칭 좌표에서
+          // 미세하게 벗어나 있을 수 있으므로 오프셋 접근(왕복)만 생략하고 정확 위치 이동은 항상 실행한다.
+          log_touchSensing.info(
+            'touchSensing.samePosition',
+            `${point.name} 이전 포인트와 동일 좌표 - 오프셋 접근 생략 (정확 위치 이동은 실행)`,
+          );
         }
         log_touchSensing.info('touchSensing.move', `${point.name} 정확한 위치로 이동`);
         const moveResult = await moveToCartesianWithStopCheck(
@@ -315,8 +348,25 @@ export async function executeTouchSensing(
         pt => pt.id === 'home' && pt.isSaved && pt.joints && pt.joints.length > 0,
       );
       if (homePoint?.joints) {
-        log_touchSensing.info('touchSensing.homeReturn', 'Home으로 복귀');
         try {
+          if (lastPoint?.tcp) {
+            const { x: lx, y: ly, z: lz, rx: lrx, ry: lry, rz: lrz } = lastPoint.tcp;
+            log_touchSensing.info('touchSensing.homeReturn.retract', `${lastPoint.name} +X 오프셋으로 후퇴`);
+            await moveToCartesianWithStopCheck(
+              { x: lx, y: ly, z: lz, rx: lrx, ry: lry, rz: lrz },
+              sequenceSettings.touchSensingPointSpeed,
+              100,
+              100,
+              -1,
+              1,
+              [Z_APPROACH_OFFSET, 0, 0, 0, 0, 0],
+              undefined,
+              lastPoint.toolNum ?? 0,
+              lastPoint.userNum ?? 0,
+              stopRef,
+            );
+          }
+          log_touchSensing.info('touchSensing.homeReturn', 'Home으로 복귀');
           await moveToJointWithStopCheck(
             homePoint.joints,
             homePoint.moveSpeed || 50,

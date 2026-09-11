@@ -94,7 +94,7 @@ export function ToolbarControls({
             ? 'bg-blue-500 text-white border border-blue-400 animate-pulse'
             : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
         }`}
-        title={wireContinuous ? '와이어 집어넣기 (연속)' : '와이어 집어넣기 (5mm)'}
+        title={wireContinuous ? '와이어 집어넣기 (연속)' : '와이어 집어넣기 (1mm)'}
       >
         {wireFeeding === 'in' ? '■ Stop' : 'Wire In'}
       </button>
@@ -105,7 +105,7 @@ export function ToolbarControls({
             ? 'bg-orange-500 text-white border border-orange-400 animate-pulse'
             : 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
         }`}
-        title={wireContinuous ? '와이어 내보내기 (연속)' : '와이어 내보내기 (5mm)'}
+        title={wireContinuous ? '와이어 내보내기 (연속)' : '와이어 내보내기 (1mm)'}
       >
         {wireFeeding === 'out' ? '■ Stop' : 'Wire Out'}
       </button>

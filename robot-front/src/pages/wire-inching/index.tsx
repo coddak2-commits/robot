@@ -13,8 +13,10 @@ import { Axios as api } from '../../lib';
 import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 
-// 기본 송급 속도 (mm/s) — 미실측 placeholder 값. 실제 용접기/피더로 캘리브레이션 후 반드시 교체할 것
-const FEED_SPEED_MM_PER_SEC = 1.0;
+// 기본 송급 속도 (mm/s) — 기존 상수(3.5) 기준 1mm 요청 시 실제 0.5mm만 나온 실측값으로부터
+// 역산한 실제 속도: 0.5mm ÷ (1mm/3.5mm/s) = 1.75mm/s.
+// 용접 직후 과다 송급은 arc off 시 전류 리셋 누락이 원인으로 확인되어 별도 수정함(로봇 전류 리셋).
+const FEED_SPEED_MM_PER_SEC = 1.75;
 
 const TARGET_STICKOUT_MM = 25;
 

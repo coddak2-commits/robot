@@ -133,8 +133,8 @@ const PendantInner: React.FC = () => {
     setJobPickerOpen(true);
   };
   const pickJob = async (jobId: number) => {
-    const pts = await loadJob(jobId);
-    if (pts) loadPointsFromJob(pts);
+    const result = await loadJob(jobId);
+    if (result) loadPointsFromJob(result.points);
     setJobPickerOpen(false);
   };
   const {

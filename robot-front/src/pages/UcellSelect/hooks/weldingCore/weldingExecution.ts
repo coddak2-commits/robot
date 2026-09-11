@@ -184,6 +184,11 @@ export async function executeWelding(
     const { sequence: sequenceSettings, safety: safetySettings } = await loadWeldingSettings();
     const hasStoredTouchOffsets = weldingPoints.some(pt => pt.touchOffset !== null);
     const approachOffset = sequenceSettings.touchApproachOffset;
+    // p9/p10: 같은 위치(우측 수평 코너)에 티칭되어 있고, U셀 구조물과의 간섭으로
+    // base +X 접근 시 충돌(code=185) 확인됨 (터치센싱에서 확인, 시작점으로 선택될 때도 동일 적용).
+    const NEAR_UCELL_CORNER = ['p9', 'p10'];
+    const getStartApproachOffsetPos = (pointId: string, offset: number): number[] =>
+      NEAR_UCELL_CORNER.includes(pointId.toLowerCase()) ? [0, -offset, 0, 0, 0, 0] : [offset, 0, 0, 0, 0, 0];
     setCurrentPointIndex(startPointIndex);
     const startPoint = weldingPoints[startPointIndex];
     const paramPoint = weldingPoints[paramPointIndex];
@@ -222,21 +227,51 @@ export async function executeWelding(
       }
     } else {
       if (startPoint.tcp && !stopRef.current) {
-        log_weldingExecution.info('welding.start.approach', `시작점 +X +${approachOffset}mm 접근`);
-        const approachResult = await moveToCartesianPosition(
-          startPoint.tcp,
-          30,
-          100,
-          100,
-          -1,
-          1,
-          [approachOffset, 0, 0, 0, 0, 0],
-          undefined,
-          startPoint.toolNum ?? 3,
-          startPoint.userNum ?? 0,
-          0,
-        );
-        if (approachResult?.status_code !== 200) throw new Error('시작점 접근 이동 실패');
+        const startOffsetDir = getStartApproachOffsetPos(startPoint.id, approachOffset);
+        const startOffsetPose = [
+          startPoint.tcp.x + startOffsetDir[0],
+          startPoint.tcp.y + startOffsetDir[1],
+          startPoint.tcp.z + startOffsetDir[2],
+          startPoint.tcp.rx,
+          startPoint.tcp.ry,
+          startPoint.tcp.rz,
+        ];
+        const startOffsetLabel = NEAR_UCELL_CORNER.includes(startPoint.id.toLowerCase()) ? '-Y' : '+X';
+        let startApproachJoints: number[] | null = null;
+        if (startPoint.joints && startPoint.joints.length === 6) {
+          startApproachJoints = await getInverseKin(startOffsetPose, startPoint.joints);
+        }
+        if (startApproachJoints) {
+          log_weldingExecution.info(
+            'welding.start.approachJoint',
+            `시작점 ${startOffsetLabel} ${approachOffset}mm 접근 (IK 관절 이동, 특이점 회피)`,
+          );
+          const jointResult = await moveToJointWithStopCheck(
+            startApproachJoints,
+            30,
+            startPoint.toolNum ?? 3,
+            startPoint.userNum ?? 0,
+            stopRef,
+          );
+          if (jointResult.stopped) stopRef.current = true;
+          else if (!jointResult.success) throw new Error('시작점 접근 이동 실패');
+        } else {
+          log_weldingExecution.info('welding.start.approach', `시작점 ${startOffsetLabel} ${approachOffset}mm 접근`);
+          const approachResult = await moveToCartesianPosition(
+            startPoint.tcp,
+            30,
+            100,
+            100,
+            -1,
+            1,
+            startOffsetDir,
+            undefined,
+            startPoint.toolNum ?? 3,
+            startPoint.userNum ?? 0,
+            0,
+          );
+          if (approachResult?.status_code !== 200) throw new Error('시작점 접근 이동 실패');
+        }
       }
     }
     if (stopRef.current) return await handleStopped(0);
@@ -317,6 +352,67 @@ export async function executeWelding(
         );
         const prevPoint = weldingPoints[i - 1];
         const transitionSpeed = 30;
+        if (prevPoint?.id === 'p6' && point?.id === 'p9' && point.joints && point.joints.length === 6) {
+          const P6P9_RETRACT_DIST = 30;
+          if (prevPoint.tcp && !stopRef.current) {
+            log_weldingExecution.info(
+              'welding.partTransition.retract',
+              `파트 전환(p6→p9): base +X +${P6P9_RETRACT_DIST}mm 후퇴 (시험 적용)`,
+            );
+            const retractResult = await moveToCartesianPosition(
+              prevPoint.tcp,
+              transitionSpeed,
+              100,
+              100,
+              -1,
+              1,
+              [P6P9_RETRACT_DIST, 0, 0, 0, 0, 0],
+              undefined,
+              prevPoint.toolNum ?? 3,
+              prevPoint.userNum ?? 0,
+              0,
+            );
+            if (retractResult?.status_code !== 200) throw new Error('파트 전환(p6→p9) 후퇴 이동 실패');
+          }
+          if (point.tcp && !stopRef.current) {
+            log_weldingExecution.info(
+              'welding.partTransition.lin',
+              `파트 전환(p6→p9): 후퇴 후 직선(MoveL)으로 ${point.name} 이동 (시험 적용)`,
+            );
+            const linResult = await moveToCartesianPosition(
+              point.tcp,
+              transitionSpeed,
+              100,
+              100,
+              -1,
+              0,
+              [0, 0, 0, 0, 0, 0],
+              undefined,
+              point.toolNum ?? 3,
+              point.userNum ?? 0,
+              0,
+            );
+            if (linResult?.status_code !== 200) throw new Error('파트 전환(p6→p9) 직선 이동 실패');
+          }
+          if (!stopRef.current) {
+            await startPartWelding(
+              point,
+              firstWeldPoint,
+              hasWeaving,
+              hasWelding,
+              simMode && !isWeldingTest,
+              safetySettings.gasPreFlowTime,
+              weaveTypeCode,
+            );
+            setArcActive?.(true);
+          }
+          const ptSegIdx = i - 1;
+          if (ptSegIdx >= 0 && ptSegIdx < segments.length)
+            segments[ptSegIdx].actual_sec = (Date.now() - segmentStartTime) / 1000;
+          segmentStartTime = Date.now();
+          i++;
+          continue;
+        }
         const pointSide = (id: string): 'L' | 'R' => {
           const n = parseInt(id.replace(/\D/g, ''), 10);
           return n >= 1 && n <= 6 ? 'L' : 'R';

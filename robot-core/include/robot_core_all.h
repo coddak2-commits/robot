@@ -43,6 +43,18 @@ public:
                        float vel, float acc, float ovl, float blendT = -1.0f);
     int relativeMoveL(const double descPosDeltas[6], int tool, int user,
                        float vel, float acc, float ovl, float blendR = -1.0f);
+    int getCurToolCoord(double coord[6]);
+    int getCurWObjCoord(double coord[6]);
+    int getToolCoordWithID(int id, double coord[6], int& type, int& install, int& toolID, int& loadNo);
+    int getWObjCoordWithID(int id, double coord[6], int& refFrame);
+    int setToolCoord(int id, const double coord[6], int type, int install, int toolID, int loadNum);
+    int setWObjCoord(int id, const double coord[6], int refFrame);
+    int getTargetPayloadWithID(int id, double& weight, double cog[3]);
+    int setLoadWeight(int loadNum, float weight);
+    int setLoadCoord(int loadNum, const double coord[3]);
+    int getSafetyStopState(uint8_t& si0State, uint8_t& si1State);
+    int getDOState(uint8_t& doStateH, uint8_t& doStateL);
+    int getToolDOState(uint8_t& doState);
     int stopMotion();
     int emergencyStop();
     int startJog(int ref, int nb, int dir, float vel, float acc, float maxDis);

@@ -9,8 +9,11 @@ import { RobotPosition } from '../components/index';
 import { getBlockPointIds, getBlockName } from '..';
 import { TouchSensingOptions, TouchSensingResult, WeldingStartOptions, WeldingResult, ClosestCenterlineResult, UseWeldingOperationsReturn, findClosestCenterlinePoint as findClosestCenterlinePointFn, executeTouchSensing, TouchSensingContext, executeArcTest, ArcTestContext, executeWelding, WeldingExecutionContext } from './weldingCore';
 
-const WIRE_FORWARD_DURATION_MS = 200;
-const WIRE_REVERSE_DURATION_MS = 400;
+// 실제 속도 1.75mm/s로 1mm가 나오도록 계산한 값 (wire-inching.tsx와 동일 기준)
+const WIRE_FEED_SPEED_MM_PER_SEC = 1.75;
+const WIRE_TARGET_MM = 1.0;
+const WIRE_FORWARD_DURATION_MS = Math.round((WIRE_TARGET_MM / WIRE_FEED_SPEED_MM_PER_SEC) * 1000);
+const WIRE_REVERSE_DURATION_MS = Math.round((WIRE_TARGET_MM / WIRE_FEED_SPEED_MM_PER_SEC) * 1000);
 export interface UseWireControlReturn {
   wireContinuous: boolean;
   setWireContinuous: (v: boolean) => void;

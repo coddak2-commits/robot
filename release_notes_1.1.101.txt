@@ -1,0 +1,1 @@
+﻿터치센싱 탐색 거리(LUA_SEARCH_DIS) 30mm -> 90mm 확대

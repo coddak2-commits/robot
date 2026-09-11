@@ -29,7 +29,13 @@ interface UseCellSelectionHandlersProps {
     width: number,
     jobName?: string,
   ) => Promise<boolean>;
-  loadJob: (jobId: number) => Promise<TeachingPoint[] | null>;
+  loadJob: (jobId: number) => Promise<{
+    points: TeachingPoint[];
+    cellType?: string;
+    cellId?: number;
+    height?: number;
+    width?: number;
+  } | null>;
   requestDeleteJob: (jobId: number, jobName: string) => void;
   updateJobName: (jobId: number, name: string) => Promise<boolean>;
   loadPointsFromJob: (points: TeachingPoint[]) => void;
@@ -168,10 +174,24 @@ export function useCellSelectionHandlers({
   ]);
   const handleLoadJob = useCallback(
     async (jobId: number) => {
-      const points = await loadJob(jobId);
-      if (points) loadPointsFromJob(points);
+      const result = await loadJob(jobId);
+      if (!result) return;
+      loadPointsFromJob(result.points);
+      const allCells = [...NORMAL_CELLS, ...COLLAR_PLATE_CELLS];
+      const cell = result.cellId != null ? allCells.find(c => c.id === result.cellId) ?? null : null;
+      const type = (result.cellType as 'normal' | 'collar_plate' | undefined) ?? undefined;
+      if (type) setSelectedType(type);
+      if (cell) setSelectedCell(cell);
+      if (result.height != null) setSelectedHeight(result.height);
+      if (result.width != null) setSelectedWidth(result.width);
+      onStateChange({
+        height: result.height ?? selectedHeight ?? undefined,
+        type: type ?? selectedType ?? undefined,
+        width: result.width ?? selectedWidth,
+        selectedCell: cell ?? selectedCell,
+      });
     },
-    [loadJob, loadPointsFromJob],
+    [loadJob, loadPointsFromJob, selectedHeight, selectedType, selectedWidth, selectedCell, onStateChange],
   );
   const handleDeleteJob = useCallback(
     (jobId: number, jobName: string) => {
