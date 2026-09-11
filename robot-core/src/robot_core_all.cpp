@@ -4527,7 +4527,17 @@ void registerWeldingBatchRoutes(
             }
             float speedRaw = firstPt.value("speed", 15.0f);
             int velModeIn = firstPt.value("vel_mode", 1);
-            float speed = (velModeIn == 1) ? speedRaw / 15.0f : speedRaw;
+            // 배치 이동(WeldBatch) 전용 속도 보정 계수. CPM->% 변환(speedRaw/15.0f)만으로는
+            // 실제 이동속도가 수직 용접 약 3.3배, 수평 용접 약 5.7배 빠르게 나옴(실측 튜닝값).
+            // 이 계수가 빠지면 와이어 송급 속도 대비 이동속도가 과도하게 빨라져 스패터/미용착 발생.
+            static constexpr float WELD_BATCH_SPEED_SCALE_VERTICAL = 0.30f;
+            static constexpr float WELD_BATCH_SPEED_SCALE_HORIZONTAL = 0.175f;
+            std::string weavingTypeIn = firstPt.value("weaving_type", std::string(""));
+            bool isVerticalWeave = weavingTypeIn.rfind("vertical", 0) == 0;
+            float WELD_BATCH_SPEED_SCALE = isVerticalWeave
+                ? WELD_BATCH_SPEED_SCALE_VERTICAL
+                : WELD_BATCH_SPEED_SCALE_HORIZONTAL;
+            float speed = (velModeIn == 1) ? (speedRaw / 15.0f) * WELD_BATCH_SPEED_SCALE : speedRaw;
             speed = clampMotionPercent(speed);
             if (dbService && dbService->isConnected()) {
                 RobotSettings ovlSettings = dbService->getRobotSettings();
@@ -6582,7 +6592,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.116"
+#define APP_VERSION_STRING "1.1.117"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

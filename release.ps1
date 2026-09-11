@@ -2,7 +2,7 @@
 FR3-WMS Robot Welding Control - build + hash + GitHub Release automation script
 
 Usage (run from repo root):
-  .\release.ps1 -Version 1.1.77 -Notes "summary of changes"
+  .\release.ps1 -Version 1.1.117 -NotesFile release_notes_1.1.117.txt
 
 Steps:
   1. Build robot-core (build_unity.bat)
@@ -18,7 +18,7 @@ param(
     [string]$Version,
 
     [Parameter(Mandatory = $false)]
-    [string]$Notes = "Release $Version"
+    [string]$NotesFile = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -60,7 +60,15 @@ try {
 
     Step "[5/5] Creating GitHub Release"
     Set-Location (Join-Path $repoRoot "dist")
-    gh release create "v$Version" $exeName $shaName --title "v$Version" --notes $Notes
+    # 주의: --notes 뒤에 변수를 직접 넣으면 텍스트에 큰따옴표(")가 있을 때
+    # PowerShell -> gh 인자 전달이 깨진다 (v1.1.116 릴리즈 때 실제로 발생한 문제).
+    # 반드시 --notes-file로 파일에서 읽게 한다.
+    if ($NotesFile -eq "") {
+        throw "NotesFile을 지정하세요: .\release.ps1 -Version $Version -NotesFile release_notes_$Version.txt"
+    }
+    $notesPath = Join-Path $repoRoot $NotesFile
+    if (-not (Test-Path $notesPath)) { throw "Notes file not found: $notesPath" }
+    gh release create "v$Version" $exeName $shaName --title "v$Version" --notes-file $notesPath
     if ($LASTEXITCODE -ne 0) { throw "gh release create failed (exit $LASTEXITCODE) - tag may already exist, or gh is not logged in" }
 
     Write-Host ""

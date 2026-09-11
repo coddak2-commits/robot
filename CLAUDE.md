@@ -1,5 +1,14 @@
 # FR3-WMS 갭 기반 용접 파라미터 시스템
 
+## ⚠️ 세션 시작 시 필수 확인 (2026-09-11 사고 이후)
+
+- **빌드/릴리즈 전에 반드시 확인**: `git status`, `git rev-parse HEAD`, `git rev-parse origin/main`. HEAD가 origin/main과 다르면 원인 파악 전까지 릴리즈 금지.
+- **코드 수정 후에는 반드시 `git add` + `git commit`.** 디스크만 고치고 커밋 안 하는 것 절대 금지.
+- **사고 경위**: v1.1.96→v1.1.34 롤백을 git 명령이 아니라 파일 직접 덮어쓰기로 처리한 뒤, 그 이후로 `main`에 `git commit`을 한 번도 하지 않음. 그런데도 릴리즈 스크립트는 계속 버전 태그만 새로 만들어서(v1.1.75~v1.1.116) 전부 실제로는 같은 옛날 커밋(`16db3dd`, v1.1.74)에 태그만 붙은 상태였음. 즉 디스크 코드와 git 히스토리/배포 버전이 수개월간 분리되어 있었음.
+- **실제 피해**: 이 분리 때문에 `WELD_BATCH_SPEED_SCALE_VERTICAL/HORIZONTAL`(배치 용접 이동속도 보정 계수, v1.1.45~71에서 추가된 안전장치)이 실제 실행 코드에서 빠진 채 배포됐고, 2026-09-11 실제 용접 중 이동 속도가 의도보다 3~6배 빨라져 비상정지 3회 + 용접 불량(스패터/미용착) 발생.
+- **복구 방식**: 2026-09-11, `main`을 디스크에 남아있던 실제 작업 내용(96번 롤백 이후~오늘까지, backup-diverged-2026-09-11 브랜치와 동일)으로 유지하고, 여기에 빠져있던 `WELD_BATCH_SPEED_SCALE_VERTICAL/HORIZONTAL`만 되찾아 추가하는 방식으로 복구함(`robot_core_all.cpp`의 `/welding/batch-move` 핸들러, `firstPt.value("speed", ...)` 직후). git에 실제로 기록된 마지막 지점(v1.1.74, 커밋 `16db3dd`)은 태그로 안전하게 남아있으므로, 문제가 생기면 언제든 `git reset --hard v1.1.74`로 되돌릴 수 있음.
+- 터치센싱 동일좌표 스킵 로직(`touchSensing.ts`의 `isSameTcpPosition`/`samePositionAsPrev`)은 실제 로봇 충돌 원인이었고, 2026-09-11 세션에서 "접근 오프셋 이동만 생략, 정확 위치 이동은 항상 실행"하도록 수정됨. 이 스킵 로직 자체를 없애는 방향으로 더 손대지 말 것.
+
 ## 프로젝트 경로 / 저장소
 - 로컬: `C:\Users\D113964\Desktop\git\robot`
 - GitHub: https://github.com/coddak2-commits/robot (private)

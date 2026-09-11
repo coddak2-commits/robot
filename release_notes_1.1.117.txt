@@ -1,0 +1,5 @@
+﻿v1.1.117
+
+- git/디스크 불일치 복구: main을 origin/main(16db3dd, 실제 커밋 히스토리 기준)으로 재설정. 이전 v1.1.75~v1.1.116 릴리즈는 실제로는 커밋되지 않은 상태였음.
+- WELD_BATCH_SPEED_SCALE_VERTICAL/HORIZONTAL 배치 용접 이동속도 보정 계수 복원 (실제 용접 중 이동속도 과다 및 용접 불량 원인)
+- 와이어 송급 속도 상수(FEED_SPEED_MM_PER_SEC, WIRE_FEED_SPEED_MM_PER_SEC) 1.75mm/s로 재조정
