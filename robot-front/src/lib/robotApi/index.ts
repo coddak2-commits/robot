@@ -1474,7 +1474,9 @@ export const batchMoveL = async (
       if (options.blendR !== undefined) body.blend_r = options.blendR;
     }
     const response = await api.post('/welding/batch-move', body, {
-      timeout: 300000,
+      // WELD_BATCH_SPEED_SCALE 복원으로 이동속도가 정상 속도(느림)로 돌아오면서
+      // 긴 용접 패스는 5분을 넘길 수 있음 -> 30분으로 여유있게 설정.
+      timeout: 1800000,
     });
     return response.data;
   } catch (error) {
