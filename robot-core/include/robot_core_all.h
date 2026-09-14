@@ -43,6 +43,8 @@ public:
                        float vel, float acc, float ovl, float blendT = -1.0f);
     int relativeMoveL(const double descPosDeltas[6], int tool, int user,
                        float vel, float acc, float ovl, float blendR = -1.0f);
+    int pointsOffsetEnable(int flag, const double offsetPos[6]);
+    int pointsOffsetDisable();
     int getCurToolCoord(double coord[6]);
     int getCurWObjCoord(double coord[6]);
     int getToolCoordWithID(int id, double coord[6], int& type, int& install, int& toolID, int& loadNo);

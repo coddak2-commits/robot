@@ -759,6 +759,22 @@ int RobotService::relativeMoveL(const double descPosDeltas[6], int tool, int use
               << "] vel=" << vel << std::endl;
     return moveL(targetPos, tool, user, vel, acc, ovl, blendR);
 }
+int RobotService::pointsOffsetEnable(int flag, const double offsetPos[6]) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose offset(offsetPos[0], offsetPos[1], offsetPos[2],
+                    offsetPos[3], offsetPos[4], offsetPos[5]);
+    std::cout << "[RobotService] PointsOffsetEnable: flag=" << flag << " offset=["
+              << offsetPos[0] << ", " << offsetPos[1] << ", " << offsetPos[2] << ", "
+              << offsetPos[3] << ", " << offsetPos[4] << ", " << offsetPos[5] << "]" << std::endl;
+    return m_robot.PointsOffsetEnable(flag, &offset);
+}
+int RobotService::pointsOffsetDisable() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    std::cout << "[RobotService] PointsOffsetDisable" << std::endl;
+    return m_robot.PointsOffsetDisable();
+}
 int RobotService::getCurToolCoord(double coord[6]) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_connected) return -1;
@@ -5307,8 +5323,13 @@ AxisTouchSearchResult performAxisTouchSearch(
         " (LUA_SEARCH_DIS=" + std::to_string(LUA_SEARCH_DIS) + "mm)");
 
     int wsStart = robotService.wireSearchStart(0, r.searchVel, LUA_SEARCH_DIS, 0, 10, 10, 0);
-    if (wsStart != 0) {
-        FLOG_SDK_ERROR("wireSearchStart", wsStart, tag + " WireSearchStart failed");
+    const bool wireSearchArmed = (wsStart == 0);
+    if (!wireSearchArmed) {
+        // WireSearchStart 실패 시 접촉 감지가 무장되지 않은 상태이므로,
+        // 아래 searchTarget으로의 이동을 그대로 진행하면 접촉을 감지하지 못한 채
+        // 목표 지점까지 그대로 이동해 주변 지그/고정물과 충돌할 수 있음 (2026-09-14 실제 발생).
+        // 따라서 탐색 이동 자체를 중단한다.
+        FLOG_SDK_ERROR("wireSearchStart", wsStart, tag + " WireSearchStart failed - aborting search move to prevent collision");
     }
 
     robotService.moveL(curPos, r.toolNum, r.userNum, r.searchVel, 3.0f, 100, -1.0f, 0, 0, nullptr, 0);
@@ -5323,29 +5344,34 @@ AxisTouchSearchResult performAxisTouchSearch(
         }
     }
 
-    r.result = robotService.moveL(searchTarget, r.toolNum, r.userNum, r.searchVel, 3.0f, 100, -1.0f, 1, 0, nullptr, 0);
+    if (wireSearchArmed) {
+        r.result = robotService.moveL(searchTarget, r.toolNum, r.userNum, r.searchVel, 3.0f, 100, -1.0f, 1, 0, nullptr, 0);
 
-    int motionDone = 0;
-    int waitCount = 0;
-    const int MAX_WAIT = 300;
-    while (waitCount < MAX_WAIT) {
-        robotService.getMotionDone(&motionDone);
-        if (motionDone == 1) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        waitCount++;
-    }
-    if (waitCount >= MAX_WAIT) {
-        FLOG_WARN("TouchSensing", tag + " motion wait timeout after 30s");
-    }
+        int motionDone = 0;
+        int waitCount = 0;
+        const int MAX_WAIT = 300;
+        while (waitCount < MAX_WAIT) {
+            robotService.getMotionDone(&motionDone);
+            if (motionDone == 1) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            waitCount++;
+        }
+        if (waitCount >= MAX_WAIT) {
+            FLOG_WARN("TouchSensing", tag + " motion wait timeout after 30s");
+        }
 
-    int wsEnd = robotService.wireSearchEnd(0, 10, 10, 0, 10, 10, 0);
-    if (wsEnd != 0) {
-        FLOG_SDK_ERROR("wireSearchEnd", wsEnd, tag + " WireSearchEnd failed");
+        int wsEnd = robotService.wireSearchEnd(0, 10, 10, 0, 10, 10, 0);
+        if (wsEnd != 0) {
+            FLOG_SDK_ERROR("wireSearchEnd", wsEnd, tag + " WireSearchEnd failed");
+        }
+        if (r.result != 0) {
+            FLOG_WARN("TouchSensing", tag + " MoveL returned error code " + std::to_string(r.result));
+        }
+        r.searchFailed = (r.result != 0) || (waitCount >= MAX_WAIT);
+    } else {
+        r.result = wsStart;
+        r.searchFailed = true;
     }
-    if (r.result != 0) {
-        FLOG_WARN("TouchSensing", tag + " MoveL returned error code " + std::to_string(r.result));
-    }
-    r.searchFailed = (r.result != 0) || (waitCount >= MAX_WAIT);
 
     state = robotService.getState();
     r.end = state.tl_cur_pos[axis];
@@ -5469,6 +5495,11 @@ void registerSdkRoutes(
             robotService.setToolPoint(toolNum);
             robotService.setUserPoint(userNum);
             robotService.setCollisionDetection(settings.collision_detection_enabled);
+            // 전체 경로 오프셋(PointsOffsetEnable)은 SDK에 조회 기능이 없어 상태를 추적할 수
+            // 없다. 이전 세션에서 켜둔 채 종료/재시작했을 가능성에 대비해, 매 연결 시작 시
+            // 항상 꺼진 상태로 되돌린다. (이 리셋이 빠지면 이전에 켜진 오프셋이 남아있는 채로
+            // 모든 이동 좌표가 알 수 없는 만큼 밀려서 실행되어 충돌 위험이 있음)
+            robotService.pointsOffsetDisable();
         }
         json response;
         response["status_code"] = (result == 0) ? 200 : 500;
@@ -6366,6 +6397,56 @@ void registerSdkMotionRoutes(
             FLOG_ERROR("SdkMotion", std::string("RelativeMoveL exception: ") + e.what());
             res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
         }
+    });
+    // 전체 경로(잔여) 오프셋. 이후 실행하는 모든 이동 명령의 목표 위치를 좌표계/벡터 기준으로
+    // 일괄 이동시킴. 실제 현재 위치가 프로그램과 어긋났을 때 이 오프셋을 다시 이동하지 않고
+    // 전체 경로를 한번에 보정하는 용도. 사용 후 반드시 disable로 꺼야 하며, 연결 시작 시에도
+    // 안전하게 자동으로 꺼짐(위 "PointsOffsetDisable" 관련 connect 처리 참고).
+    server.Post("/robot_sdk/move/points-offset/enable", [&robotService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            double offsetPos[6] = {0};
+            if (body.contains("offset")) {
+                auto off = body["offset"];
+                offsetPos[0] = off.value("x", 0.0);
+                offsetPos[1] = off.value("y", 0.0);
+                offsetPos[2] = off.value("z", 0.0);
+                offsetPos[3] = off.value("rx", 0.0);
+                offsetPos[4] = off.value("ry", 0.0);
+                offsetPos[5] = off.value("rz", 0.0);
+            }
+            // flag: 0 - 워크(job)/베이스 좌표계 기준 오프셋, 2 - 툴 좌표계 기준 오프셋
+            int flag = body.value("flag", 0);
+            FLOG_INFO("SdkMotion", "PointsOffsetEnable: flag=" + std::to_string(flag));
+            int result = robotService.pointsOffsetEnable(flag, offsetPos);
+            if (result != 0) {
+                FLOG_SDK_ERROR("pointsOffsetEnable", result, "flag=" + std::to_string(flag));
+            }
+            json response;
+            response["status_code"] = (result == 0) ? 200 : 500;
+            response["result"] = result;
+            res.set_content(response.dump(), "application/json");
+        } catch (const std::exception& e) {
+            FLOG_ERROR("SdkMotion", std::string("PointsOffsetEnable exception: ") + e.what());
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
+        }
+    });
+    server.Post("/robot_sdk/move/points-offset/disable", [&robotService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        FLOG_INFO("SdkMotion", "PointsOffsetDisable");
+        int result = robotService.pointsOffsetDisable();
+        if (result != 0) {
+            FLOG_SDK_ERROR("pointsOffsetDisable", result, "disable failed");
+        }
+        json response;
+        response["status_code"] = (result == 0) ? 200 : 500;
+        response["result"] = result;
+        res.set_content(response.dump(), "application/json");
     });
     server.Post("/robot_sdk/wire/forward", [&robotService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
