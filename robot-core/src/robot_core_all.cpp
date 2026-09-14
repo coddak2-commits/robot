@@ -4572,7 +4572,7 @@ void registerWeldingBatchRoutes(
             bool perPoint = body.value("per_point", false);
             if (perPoint) {
                 float blendRMid = body.value("blend_r", 10.0f);
-                const int OVERSPEED_ADAPTIVE = 3;
+                const int OVERSPEED_ADAPTIVE = 0;  // v1.1.54에서 0으로 확정했던 값. 리팩토링 중 3(적응형 감속)으로 되돌아가 속도 저하 유발 (v1.1.125 복원)
                 int overSpeedPct = body.value("over_speed_pct", 10);
                 const float accPP = 100.0f, ovlPP = 100.0f, oaccPP = 100.0f;
                 FLOG_INFO("WeldBatch", "[per_point] queue preload: " + std::to_string(total) +
@@ -6673,7 +6673,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.124"
+#define APP_VERSION_STRING "1.1.125"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
