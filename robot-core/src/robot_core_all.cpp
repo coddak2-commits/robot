@@ -4597,16 +4597,13 @@ void registerWeldingBatchRoutes(
                             ptOffset[k] = pt["offset"][k].get<double>();
                     }
                     float blendR = (idx == total - 1) ? -1.0f : blendRMid;
-                    int ret;
-                    if (ptHasJoints) {
-                        ret = robotService.moveLWithJoints(ptJoints, ptTcp, tool, user, speed,
-                            accPP, ovlPP, blendR, 0, static_cast<uint8_t>(ptOffsetFlag), ptOffset, velMode, oaccPP,
-                            OVERSPEED_ADAPTIVE, overSpeedPct);
-                    } else {
-                        ret = robotService.moveL(ptTcp, tool, user, speed,
-                            accPP, ovlPP, blendR, 0, static_cast<uint8_t>(ptOffsetFlag), ptOffset, velMode,
-                            OVERSPEED_ADAPTIVE, overSpeedPct);
-                    }
+                    // v1.1.56에서 joints를 일부러 버리고 tcp만 사용하도록 고쳤던 부분(SDK가 joint_pos/desc_pos
+                    // 불일치 시 code=74 ERR_LINE_POINT를 내던 문제 회피). 이후 리팩토링으로 moveLWithJoints
+                    // 분기가 재도입되어 v96/v112 대비 용접 속도가 크게 느려짐 (v1.1.127 재복원, 테스트 중)
+                    (void)ptHasJoints; (void)ptJoints;
+                    int ret = robotService.moveL(ptTcp, tool, user, speed,
+                        accPP, ovlPP, blendR, 0, static_cast<uint8_t>(ptOffsetFlag), ptOffset, velMode,
+                        OVERSPEED_ADAPTIVE, overSpeedPct);
                     results.push_back(ret);
                     FLOG_INFO("WeldBatch", "[per_point] move " + std::to_string(idx + 1) + "/" +
                         std::to_string(total) + " blendR=" + std::to_string(blendR) + " ret=" + std::to_string(ret));
@@ -6675,7 +6672,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.126"
+#define APP_VERSION_STRING "1.1.127"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
