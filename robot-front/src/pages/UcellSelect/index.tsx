@@ -342,8 +342,13 @@ export function CellSelectionCore({
             'autoLoad',
             `마지막 작업 자동 로드: ${jobWithPoints.name} (포인트 ${jobWithPoints.total_points}개)`,
           );
+        } else {
+          log.warn('autoLoad.empty', '자동 로드할 작업이 없음 (jobs 목록이 비어있거나 포인트 있는 작업 없음)', {
+            jobCount: jobs.length,
+          });
         }
-      } catch {
+      } catch (err) {
+        log.error('autoLoad.error', '마지막 작업 자동 로드 실패', { error: String(err) });
       }
     };
     loadLastJob();
