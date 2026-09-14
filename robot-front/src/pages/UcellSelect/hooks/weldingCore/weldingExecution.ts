@@ -236,9 +236,12 @@ export async function executeWelding(
           startPoint.tcp.ry,
           startPoint.tcp.rz,
         ];
-        const startOffsetLabel = NEAR_UCELL_CORNER.includes(startPoint.id.toLowerCase()) ? '-Y' : '+X';
+        const isNearUcellCorner = NEAR_UCELL_CORNER.includes(startPoint.id.toLowerCase());
+        const startOffsetLabel = isNearUcellCorner ? '-Y' : '+X';
         let startApproachJoints: number[] | null = null;
-        if (startPoint.joints && startPoint.joints.length === 6) {
+        // p9/p10은 U셀 구조물과 가까워 MoveJ의 곡선 경로가 U셀에 닿을 수 있음 (2026-09-14 실제 발생).
+        // 따라서 이 두 포인트는 IK 관절 이동을 쓰지 않고 항상 직선(MoveL)으로 접근한다.
+        if (!isNearUcellCorner && startPoint.joints && startPoint.joints.length === 6) {
           startApproachJoints = await getInverseKin(startOffsetPose, startPoint.joints);
         }
         if (startApproachJoints) {
@@ -256,7 +259,10 @@ export async function executeWelding(
           if (jointResult.stopped) stopRef.current = true;
           else if (!jointResult.success) throw new Error('시작점 접근 이동 실패');
         } else {
-          log_weldingExecution.info('welding.start.approach', `시작점 ${startOffsetLabel} ${approachOffset}mm 접근`);
+          log_weldingExecution.info(
+            'welding.start.approach',
+            `시작점 ${startOffsetLabel} ${approachOffset}mm 접근${isNearUcellCorner ? ' (U셀 간섭 회피, 직선 이동)' : ''}`,
+          );
           const approachResult = await moveToCartesianPosition(
             startPoint.tcp,
             30,
