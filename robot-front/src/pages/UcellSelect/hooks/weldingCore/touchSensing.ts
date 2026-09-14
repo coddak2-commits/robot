@@ -379,10 +379,11 @@ export async function executeTouchSensing(
         }
       }
     }
-    totalTimer.end('touchSensing.complete', `${modeLabel} 완료`);
+    const elapsedMs = totalTimer.end('touchSensing.complete', `${modeLabel} 완료`);
+    const elapsedText = `소요 시간: ${(elapsedMs / 1000).toFixed(1)}초`;
     if (!suppressAlerts) {
       if (isDryRun) {
-        showAlert(`${touchResults.length}개 포인트 터치 테스트 완료`, {
+        showAlert(`${touchResults.length}개 포인트 터치 테스트 완료\n${elapsedText}`, {
           type: 'success',
           title: '터치 테스트 완료',
         });
@@ -394,7 +395,7 @@ export async function executeTouchSensing(
             return `${r.pointId.toUpperCase()}: dx=${r.dx.toFixed(1)}, dy=${r.dy.toFixed(1)}${showZ ? `, dz=${r.dz.toFixed(1)}` : ''}`;
           })
           .join('\n');
-        showAlert(summary, { type: 'success', title: '터치 센싱 완료' });
+        showAlert(`${summary}\n\n${elapsedText}`, { type: 'success', title: '터치 센싱 완료' });
       }
     }
     return touchResults;
