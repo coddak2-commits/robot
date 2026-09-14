@@ -1023,13 +1023,15 @@ int RobotService::setAspirated(int ioType, int airControl) {
     return m_robot.SetAspirated(ioType, airControl);
 }
 int RobotService::forwardWireFeed(int ioType, int wireFeed) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    // emergencyStop()/stopMotion()과 동일하게 mutex 없이 호출 (v1.1.126, 용접 중 MoveL 블로킹 중에도 와이어 조정 가능하도록 테스트)
     if (!m_connected) return -1;
+    std::cout << "[RobotService] ForwardWireFeed (no mutex): " << wireFeed << std::endl;
     return m_robot.SetForwardWireFeed(ioType, wireFeed);
 }
 int RobotService::reverseWireFeed(int ioType, int wireFeed) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    // emergencyStop()/stopMotion()과 동일하게 mutex 없이 호출 (v1.1.126, 용접 중 MoveL 블로킹 중에도 와이어 조정 가능하도록 테스트)
     if (!m_connected) return -1;
+    std::cout << "[RobotService] ReverseWireFeed (no mutex): " << wireFeed << std::endl;
     return m_robot.SetReverseWireFeed(ioType, wireFeed);
 }
 #include "robot_core_all.h"
@@ -6673,7 +6675,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.125"
+#define APP_VERSION_STRING "1.1.126"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

@@ -1,0 +1,3 @@
+﻿v1.1.126
+
+- 용접 중 와이어 조정 테스트: forwardWireFeed/reverseWireFeed를 emergencyStop과 동일하게 mutex 없이 호출하도록 변경. 실제 용접(MoveL 블로킹) 도중에도 Wire In/Out 버튼이 즉시 반응하는지 테스트 필요. SDK/컨트롤러 단에서 안전한지 검증되지 않았으므로 실전 적용 전 테스트 필수.
