@@ -1,0 +1,6 @@
+﻿v1.1.129
+
+- 용접 배치 이동 속도: 프론트가 robot-core로 weaving_type을 보내지 않아, core의 WELD_BATCH_SPEED_SCALE 판정이 항상 수평(0.175)으로 떨어지던 문제 수정.
+- 영향: 수직 위빙 용접이 의도한 계수(0.30) 대신 0.175를 받아 약 1.71배 느리게 이동했음. DryRun 실측 기준 26cpm/521.9mm에서 294.9초 -> 약 172초로 개선 예상.
+- 변경 파일: robot-front/src/lib/robotApi/index.ts (BatchMovePoint에 weaving_type 추가), robot-front/src/pages/UcellSelect/hooks/weldingCore/weldingExecution.ts (배치 포인트에 weaving_type 전달).
+- 계수 값 자체(0.30 / 0.175)는 변경하지 않음. 수직/수평이 같은 방향으로 모인 뒤 별도 조정 예정.

@@ -1453,6 +1453,9 @@ export interface BatchMovePoint {
   vel_mode: number;
   offset_flag: number;
   offset: number[];
+  // robot-core의 WELD_BATCH_SPEED_SCALE 수직/수평 분기 판정에 사용됨.
+  // 이 값이 없으면 core가 항상 수평 계수(0.175)를 적용해 수직 용접이 느려짐 (v1.1.129 수정).
+  weaving_type?: string;
 }
 export interface BatchMoveResult {
   status_code: number;

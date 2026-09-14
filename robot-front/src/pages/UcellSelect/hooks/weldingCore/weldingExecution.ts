@@ -622,6 +622,12 @@ export async function executeWelding(
           weldingPoints,
           hasStoredTouchOffsets,
         );
+        // robot-core는 배치 첫 포인트의 weaving_type만 읽어 WELD_BATCH_SPEED_SCALE의
+        // 수직(0.30)/수평(0.175)을 결정한다. 지금까지 이 필드를 보내지 않아 core가
+        // 항상 "" → 수평 계수로 판정, 수직 용접이 의도 대비 1.71배 느렸음 (v1.1.129 수정).
+        // 실제 위빙은 startPartWelding이 point.weavingType || firstWeldPoint.weavingType
+        // 순서로 거는 것과 동일하게 맞춘다.
+        const ptWeavingType = pt.weavingType || firstWeldPoint.weavingType || undefined;
         batchPoints.push({
           joints: pt.joints && pt.joints.length === 6 ? pt.joints : undefined,
           tcp: [pt.tcp.x, pt.tcp.y, pt.tcp.z, pt.tcp.rx, pt.tcp.ry, pt.tcp.rz],
@@ -631,6 +637,7 @@ export async function executeWelding(
           vel_mode: pt.velMode ?? 1,
           offset_flag: useOffset ? 1 : 0,
           offset,
+          weaving_type: ptWeavingType,
         });
         batchIndices.push(j);
       }
