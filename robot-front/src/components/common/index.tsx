@@ -31,9 +31,9 @@ const AlertModal: React.FC = () => {
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
       <div
-        className={`bg-gray-800 rounded-2xl w-full max-w-md border-2 ${colorMap[type || 'info']} shadow-2xl`}
+        className={`bg-gray-800 rounded-2xl w-full max-w-md border-2 ${colorMap[type || 'info']} shadow-2xl max-h-[85vh] flex flex-col`}
       >
-        <div className="flex items-center justify-between p-5 border-b border-gray-700">
+        <div className="flex items-center justify-between p-5 border-b border-gray-700 shrink-0">
           <div className="flex items-center gap-3">
             {iconMap[type || 'info']}
             <h2 className="text-lg font-semibold text-white">{title}</h2>
@@ -45,10 +45,10 @@ const AlertModal: React.FC = () => {
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto">
           <p className="text-gray-200 whitespace-pre-wrap text-base leading-relaxed">{message}</p>
         </div>
-        <div className="flex justify-end gap-3 p-5 border-t border-gray-700">
+        <div className="flex justify-end gap-3 p-5 border-t border-gray-700 shrink-0">
           <button
             onClick={handleConfirm}
             className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition"
