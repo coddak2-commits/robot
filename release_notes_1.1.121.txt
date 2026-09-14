@@ -1,0 +1,6 @@
+﻿v1.1.121 진단 빌드
+
+- installer.iss에 SetupLogging=yes 추가: 설치 중 실제로 무슨 일이 있었는지 로그 파일(%TEMP%\Setup Log*.txt)로 남도록 함
+  (robot_core.exe 파일이 설치 시 왜 교체되지 않는지 원인 확인용, 동작 변경 없음)
+- robot_core_all.cpp의 APP_VERSION_STRING이 1.1.120 릴리즈 때 실제로는 1.1.119로 남아있던 것을 1.1.121로 정정
+- robot-front APP_VERSION 상수 1.1.121로 동기화 (버전 표기 불일치 방지)
