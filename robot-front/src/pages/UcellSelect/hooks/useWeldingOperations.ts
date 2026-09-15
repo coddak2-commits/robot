@@ -113,7 +113,6 @@ export function useWeldingOperations(): UseWeldingOperationsReturn {
       setCurrentPointIndex,
       showAlert,
       setLastWeldingResult,
-      currentPointIndex,
       setArcActive,
     };
     try {
@@ -126,7 +125,7 @@ export function useWeldingOperations(): UseWeldingOperationsReturn {
       setArcActive(false);
       setCurrentPointIndex(-1);
     }
-  }, [isArcTesting, isWelding, currentPointIndex, showAlert]);
+  }, [isArcTesting, isWelding, showAlert]);
   const stopWelding = useCallback(async () => {
     log_useWeldingOperations.warn('welding.stop', '용접 긴급 정지');
     stopRef.current = true;

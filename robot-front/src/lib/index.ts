@@ -14,7 +14,7 @@ export {
   updateTouchSensingConfig,
 } from './api/index';
 export { Axios, emergencyApi, initializeApi, getApiBaseUrl } from './http';
-export const APP_VERSION = '1.1.133';
+export const APP_VERSION = '1.1.134';
 export const AuthKey = {
   ACCESS_TOKEN: '@access',
   REFRESH_TOKEN: '@refresh',
@@ -153,7 +153,9 @@ if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
     if (logBuffer.length > 0) {
       const data = JSON.stringify({ logs: logBuffer });
-      navigator.sendBeacon('/api/logs/batch', data);
+      // core 등록 경로는 '/logs/batch'다. 다만 sendBeacon은 Authorization 헤더를 실을 수 없어
+      // robot-core 인증 필터에서 401로 막힌다 — 경로만 맞춰두고 동작은 기대하지 말 것.
+      navigator.sendBeacon('/logs/batch', data);
     }
   });
 }

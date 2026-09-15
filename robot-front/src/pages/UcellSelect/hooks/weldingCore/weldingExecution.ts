@@ -20,7 +20,6 @@ export interface WeldingExecutionContext {
     options?: { type?: 'error' | 'warning' | 'info' | 'success'; title?: string },
   ) => void;
   setLastWeldingResult: (result: WeldingResult | null) => void;
-  currentPointIndex: number;
   setArcActive?: (active: boolean) => void;
 }
 export async function executeWelding(
@@ -33,6 +32,15 @@ export async function executeWelding(
   options?: WeldingStartOptions,
 ): Promise<WeldingResult | null> {
   const { stopRef, setCurrentPointIndex, showAlert, setLastWeldingResult, setArcActive } = context;
+  // setCurrentPointIndex는 React state 갱신이라 이 함수 안에서 즉시 읽을 수 없다.
+  // v1.1.133까지는 context.currentPointIndex(호출 시점에 복사된 숫자)를 읽어서,
+  // 중단/실패 로그의 completedPoints가 항상 '용접 시작 직전 값'으로 기록됐다.
+  // 로컬 변수로 직접 추적한다 (v1.1.134 수정).
+  let lastPointIndex = -1;
+  const markPointIndex = (index: number) => {
+    lastPointIndex = index;
+    setCurrentPointIndex(index);
+  };
   const startFromClosest = options?.startFromClosest ?? false;
   const currentTcp = options?.currentTcp;
   const isDryRun = options?.isDryRun ?? false;
@@ -88,7 +96,7 @@ export async function executeWelding(
       paramPointIndex = closestCenterlineResult.closestTeachingPointIndex;
     }
   }
-  setCurrentPointIndex(startPointIndex);
+  markPointIndex(startPointIndex);
   let totalPathDistance = 0;
   let representativeCpm = 0;
   let totalExpectedDurationSec = 0;
@@ -196,7 +204,7 @@ export async function executeWelding(
     const NEAR_UCELL_CORNER = ['p9', 'p10'];
     const getStartApproachOffsetPos = (pointId: string, offset: number): number[] =>
       NEAR_UCELL_CORNER.includes(pointId.toLowerCase()) ? [0, -offset, 0, 0, 0, 0] : [offset, 0, 0, 0, 0, 0];
-    setCurrentPointIndex(startPointIndex);
+    markPointIndex(startPointIndex);
     const startPoint = weldingPoints[startPointIndex];
     const paramPoint = weldingPoints[paramPointIndex];
     if (startFromClosest && closestCenterlineResult) {
@@ -212,7 +220,7 @@ export async function executeWelding(
       if (distToTeachingPoint < 5) {
         startPointIndex = closestCenterlineResult.closestTeachingPointIndex;
         paramPointIndex = closestCenterlineResult.closestTeachingPointIndex;
-        setCurrentPointIndex(startPointIndex);
+        markPointIndex(startPointIndex);
         firstWeldPoint = weldingPoints[startPointIndex];
       } else {
         const approachSpeed = options?.manualMoveSpeed || 10;
@@ -350,7 +358,7 @@ export async function executeWelding(
     while (i < weldingPoints.length) {
       if (stopRef.current) break;
       const point = weldingPoints[i];
-      setCurrentPointIndex(i);
+      markPointIndex(i);
       const isPartStart = partBoundaryInfo.partStartIndices.includes(i);
       const currentPartIndex = partBoundaryInfo.pointPartIndices[i];
       const prevPartIndex = partBoundaryInfo.pointPartIndices[i - 1];
@@ -661,14 +669,23 @@ export async function executeWelding(
       );
       try {
         const batchResult = await batchMoveL(batchPoints, { perPoint: isDryRun });
-        for (const idx of batchIndices) {
-          const segIdx = idx - 1;
-          if (segIdx >= 0 && segIdx < segments.length) {
-            segments[segIdx].actual_sec = (Date.now() - segmentStartTime) / 1000;
-            segmentStartTime = Date.now();
-          }
-          setCurrentPointIndex(idx);
+        // 배치는 블로킹 호출 1번이라 구간별 실측이 불가능하다. v1.1.133까지는 반환 후
+        // 루프를 돌며 경과시간을 넣어, 첫 구간이 배치 전체 시간을 먹고 나머지는 0이 됐다.
+        // 배치 안에서는 명령 속도가 동일하므로 거리 비율로 배분한다 (v1.1.134 수정).
+        // 실측이 아니라 배분값이므로 구간 단위 정밀 비교에는 쓰지 말 것.
+        const batchElapsedSec = (Date.now() - segmentStartTime) / 1000;
+        const batchSegIdxs = batchIndices
+          .map(idx => idx - 1)
+          .filter(segIdx => segIdx >= 0 && segIdx < segments.length);
+        const batchDistance = batchSegIdxs.reduce(
+          (sum, segIdx) => sum + (segments[segIdx].distance_mm || 0), 0);
+        for (const segIdx of batchSegIdxs) {
+          segments[segIdx].actual_sec = batchDistance > 0
+            ? batchElapsedSec * ((segments[segIdx].distance_mm || 0) / batchDistance)
+            : batchElapsedSec / batchSegIdxs.length;
         }
+        segmentStartTime = Date.now();
+        for (const idx of batchIndices) markPointIndex(idx);
         if (batchResult.data?.stopped || batchResult.status_code !== 200) {
           log_weldingExecution.warn('welding.batch.stopped', 'Batch 중단', batchResult.data);
           stopRef.current = true;
@@ -681,7 +698,7 @@ export async function executeWelding(
       i += batchPoints.length;
     }
     if (stopRef.current) {
-      const stoppedResult = await handleStopped(context.currentPointIndex);
+      const stoppedResult = await handleStopped(lastPointIndex);
       const opName = simMode ? (isDryRun ? 'DryRun' : '시뮬레이션') : '용접';
       showAlert(`${opName}이(가) 중단되었습니다.`, { type: 'warning', title: `${opName} 중단` });
       return stoppedResult;
@@ -812,7 +829,7 @@ export async function executeWelding(
       actualDurationSec: failedDuration,
       segments: segments || [],
       totalPoints: weldingPoints?.length || 0,
-      completedPoints: context.currentPointIndex >= 0 ? context.currentPointIndex : 0,
+      completedPoints: lastPointIndex >= 0 ? lastPointIndex : 0,
       weldingPoints: weldingPoints || [],
       firstWeldPoint,
       resultStatus: 'failed',
@@ -833,7 +850,7 @@ export async function executeWelding(
         sendDiagnosticLogsEmail(
           recipient,
           1,
-          `자동발송 — 용접 오류: ${String(error).slice(0, 200)} | 단계: ${context.currentPointIndex}`,
+          `자동발송 — 용접 오류: ${String(error).slice(0, 200)} | 단계: ${lastPointIndex}`,
           1,
         )
           .then(r => log_weldingExecution.info('welding.autoLogSend', '진단 로그 자동 발송', { ok: r.ok }))

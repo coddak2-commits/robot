@@ -1233,7 +1233,7 @@ export const endWeave = async (weaveNum = 0) => {
 };
 export const startArc = async (ioType = 0, arcNum = 0, timeout = 10000) => {
   try {
-    const response = await api.post('/welding/arc/start', {
+    const response = await api.post('/api/arc/start', {  // core 등록 경로. v1.1.134까지 '/welding/arc/start'로 불러 404였음
       io_type: ioType,
       arc_num: arcNum,
       timeout: timeout,
@@ -1246,7 +1246,7 @@ export const startArc = async (ioType = 0, arcNum = 0, timeout = 10000) => {
 };
 export const endArc = async (ioType = 0, arcNum = 0, timeout = 10000) => {
   try {
-    const response = await api.post('/welding/arc/end', {
+    const response = await api.post('/api/arc/end', {  // core 등록 경로. v1.1.134까지 '/welding/arc/end'로 불러 404였음
       io_type: ioType,
       arc_num: arcNum,
       timeout: timeout,
@@ -1308,7 +1308,7 @@ export const arcOff = async (ioType = 0, arcNum = 0, timeout = 1000, gasPostFlow
 };
 export const setWeldingCurrent = async (current: number, ioType = 0, aoIndex = 0, blend = 0) => {
   try {
-    const response = await api.post('/welding/current/set', {
+    const response = await api.post('/api/welding/current', {  // core 등록 경로. v1.1.134까지 '/welding/current/set'으로 불러 404였음
       current,
       io_type: ioType,
       ao_index: aoIndex,
@@ -1322,7 +1322,7 @@ export const setWeldingCurrent = async (current: number, ioType = 0, aoIndex = 0
 };
 export const setWeldingVoltage = async (voltage: number, ioType = 0, aoIndex = 0, blend = 0) => {
   try {
-    const response = await api.post('/welding/voltage/set', {
+    const response = await api.post('/api/welding/voltage', {  // core 등록 경로. v1.1.134까지 '/welding/voltage/set'으로 불러 404였음
       voltage,
       io_type: ioType,
       ao_index: aoIndex,

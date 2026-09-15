@@ -1,0 +1,16 @@
+﻿v1.1.134
+
+[진단 로그 정확도] 로봇 동작 영향 없음.
+- 구간별 소요시간(segments[].actual_sec)이 전부 틀려 있었음. 배치 이동은 블로킹 호출 1번인데 반환 후 루프를 돌며 경과시간을 넣어, 배치의 첫 구간이 전체 시간을 먹고 나머지는 0에 가깝게 기록됐음. 배치 안에서는 명령 속도가 동일하므로 거리 비율로 배분하도록 변경. 실측이 아니라 배분값이므로 구간 단위 정밀 비교에는 쓰지 말 것.
+- 중단/실패 로그의 completedPoints가 항상 "용접 시작 직전 값"이었음. context.currentPointIndex가 ref가 아니라 executeWelding 호출 시점에 복사된 숫자라, 실행 중 갱신해도 이미 돌고 있는 함수에는 반영되지 않았기 때문. 로컬 변수(lastPointIndex)로 직접 추적하도록 변경하고 쓰이지 않게 된 context 필드는 제거.
+
+[엔드포인트 경로 불일치 수정] 프론트가 robot-core에 등록되지 않은 경로로 호출해 404가 나고 있던 것들. 전부 catch로 삼켜져 조용히 실패 중이었음.
+- startArc: /welding/arc/start -> /api/arc/start
+- endArc: /welding/arc/end -> /api/arc/end
+- setWeldingCurrent: /welding/current/set -> /api/welding/current
+- setWeldingVoltage: /welding/voltage/set -> /api/welding/voltage
+- 로그 sendBeacon: /api/logs/batch -> /logs/batch (단, sendBeacon은 Authorization 헤더를 못 실어 인증 필터에서 401로 막힘. 경로만 정정)
+
+[남은 불일치 — robot-core에 라우트 자체가 없어 프론트만으로는 못 고침]
+- /welding/wire-search/start|wait|end|offset: v1.1.133의 미사용 import 정리로 호출부가 0이 되어 당장은 무해.
+- /welding/params/set, /welding-config/presets*: 호출부 0. 코어 구현 없음.
