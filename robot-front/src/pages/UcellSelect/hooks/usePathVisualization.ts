@@ -1,13 +1,5 @@
-import { TeachingPoint, WeaveParams, createInitialTeachingPoints, UCELL_POINT_DEFINITIONS, UCellData, NORMAL_CELLS, COLLAR_PLATE_CELLS, PartWeldEnabled, DEFAULT_PART_WELD_ENABLED, DEFAULT_WEAVE_PARAMS, WELDING_PARTS } from '..';
-import { moveToJointPositionNonBlocking, moveToCartesianPositionNonBlocking, checkMotionDone, getWeldingConfig, updateTeachingJob, TeachingPointData, RealtimeRobotStatus, enableRobot, createTeachingJob, getTeachingJobs, getTeachingJob, deleteTeachingJob, updateTeachingJobName, TeachingJob, getRealtimeRobotStatus, stopRobotSDK, emergencyStop, endArc, endWeave, arcOff, arcTraceControl, wireSearchEnd, forwardWireFeed, reverseWireFeed, stopForwardWireFeed, stopReverseWireFeed } from '../../../lib';
-import { getErrorMessage, extractResultCode } from '../../../lib/api';
-import { createLogger } from '../../../lib';
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { useAlert } from '../../../contexts';
-import { playSaveOkBeep, playErrorBeep } from '../../../lib/audio';
+import { useCallback, useEffect, useRef, useMemo } from 'react';
 import { RobotPosition } from '../components/index';
-import { getBlockPointIds, getBlockName } from '..';
-import { TouchSensingOptions, TouchSensingResult, WeldingStartOptions, WeldingResult, ClosestCenterlineResult, UseWeldingOperationsReturn, findClosestCenterlinePoint as findClosestCenterlinePointFn, executeTouchSensing, TouchSensingContext, executeArcTest, ArcTestContext, executeWelding, WeldingExecutionContext } from './weldingCore';
 import { CenterlinePoint } from './useSchematicCalculations';
 
 export interface PathPoint_usePathVisualization {

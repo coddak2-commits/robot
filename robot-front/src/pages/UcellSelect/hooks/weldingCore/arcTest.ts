@@ -1,8 +1,7 @@
-import { TeachingPoint, getExecutableParts, flattenExecutableParts, WEAVING_TYPE_OPTIONS, PartWeldEnabled, getPartBoundaryInfo } from '../..';
-import { enableRobot, RealtimeRobotStatus, startArc, endArc, endWeave, getWeldingConfig, WeldingConfigData, moveToJointPositionNonBlocking, checkMotionDone, createWeldingLog, WeldingLogData, WeldingLogSegment, wireSearchEnd, findDx, findDy, findDz, setWeaveParams, startWeave, arcOn, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, isApiSuccess } from '../../../../lib';
+import { TeachingPoint, getExecutableParts, flattenExecutableParts } from '../..';
+import { enableRobot, RealtimeRobotStatus, startArc, endArc, endWeave } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
-import { setWeldingPartOrder } from '../..';
 import { moveToJointWithStopCheck } from './moveStopCheck';
 
 const log = createLogger('weldingCore.arcTest');
