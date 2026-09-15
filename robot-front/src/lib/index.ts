@@ -1,6 +1,7 @@
 import { Axios as api } from './http';
 export * from './mockApi/index';
 export * from './robotApi/index';
+export * from './wireFeed';
 export {
   ROBOT_ERROR_CODES,
   ROBOT_ALARM_CODES,
@@ -14,7 +15,7 @@ export {
   updateTouchSensingConfig,
 } from './api/index';
 export { Axios, emergencyApi, initializeApi, getApiBaseUrl } from './http';
-export const APP_VERSION = '1.1.135';
+export const APP_VERSION = '1.1.136';
 export const AuthKey = {
   ACCESS_TOKEN: '@access',
   REFRESH_TOKEN: '@refresh',

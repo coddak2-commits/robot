@@ -3,8 +3,8 @@ import { useTeachingPoints, useRobotControl, useSchematicCalculations, useJobMan
 import { DEFAULT_PART_WELD_ENABLED } from '../UcellSelect';
 import { UnifiedWorkspaceCanvas, TorchOrientationIndicator, UCellConfig } from '../UcellSelect/components';
 import { paramApi, Posture, WeldingParam, ParamLookupResult, deviationApi, overrideApi } from '../../lib/gapApi';
-import { Axios as api } from '../../lib';
 import { isMockMode, mockCheckConnection } from '../../lib';
+import { pulseWireFeed, stopAllWireFeed, wireFeedDurationMs, WIRE_STOP_FAILED_MESSAGE } from '../../lib';
 import { getRobotError, resetRobotError, connectRobotSDK } from '../../lib/robotApi/index';
 import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
@@ -20,9 +20,7 @@ const CELL_CONFIG: UCellConfig = {
 
 const THICKNESS_OPTIONS = [18, 20, 22, 23];
 const STEP_OPTIONS = [1.0, 2.5, 5.0];
-// v1.1.135: 1.0(실측 전 placeholder) -> 1.75. wire-inching/index.tsx, useWireControl.ts와 동일 기준.
-// 1.0이면 1mm 요청 시 1000ms를 돌려 실제로는 약 1.75mm가 송급됐음.
-const FEED_SPEED_MM_PER_SEC = 1.75;
+// 송급 속도 상수는 lib/wireFeed.ts로 통합됨 (v1.1.136). 여기서 따로 정의하지 말 것.
 const LOOKUP_DEBOUNCE_MS = 400;
 
 const SEGMENTS: { key: string; startId: string; endId: string; label: string; offsetX?: number; offsetY?: number }[] = [
@@ -67,7 +65,6 @@ const getPosture = (pointId: string): Posture => {
   return 'horizontal';
 };
 
-const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 type RealAlert = { id: string; type: 'error' | 'warning' | 'info'; message: string; timestamp: string };
 
@@ -434,21 +431,20 @@ const PendantInner: React.FC = () => {
   const bumpGap = (d: number) => setGap(v => Math.min(6, Math.max(0, v + d)));
 
   const startStop = async (direction: 'forward' | 'reverse', amountMm: number) => {
+    const label = direction === 'forward' ? '밀기' : '당기기';
     setBusy(true);
-    setLastAction('');
-    const durationMs = Math.round((amountMm / FEED_SPEED_MM_PER_SEC) * 1000);
-    try {
-      await api.post(`/robot_sdk/wire/${direction}`, { ioType, wireFeed: 1 });
-      setLastAction(`${direction === 'forward' ? '▶ 밀기' : '◀ 당기기'} ${amountMm}mm 진행 중...`);
-      await sleep(durationMs);
-      await api.post(`/robot_sdk/wire/${direction}`, { ioType, wireFeed: 0 });
-      setLastAction(`✓ ${direction === 'forward' ? '밀기' : '당기기'} ${amountMm}mm 완료`);
-    } catch (e: any) {
-      try { await api.post(`/robot_sdk/wire/${direction}`, { ioType, wireFeed: 0 }); } catch {}
-      showAlert(`실패: ${e.response?.data?.detail || e.message}`, { type: 'error' });
-    } finally {
-      setBusy(false);
+    setLastAction(`${direction === 'forward' ? '▶' : '◀'} ${label} ${amountMm}mm 진행 중 (${wireFeedDurationMs(amountMm)}ms)...`);
+    const result = await pulseWireFeed(direction, amountMm, ioType);
+    if (result.ok) {
+      setLastAction(`✓ ${label} ${amountMm}mm 완료`);
+    } else if (!result.stopped) {
+      showAlert(WIRE_STOP_FAILED_MESSAGE, { type: 'error' });
+      setLastAction('✗ 정지 실패');
+    } else {
+      showAlert(`실패: ${result.error ?? '송급 시작 실패'}`, { type: 'error' });
+      setLastAction('✗ 실패');
     }
+    setBusy(false);
   };
 
   const startWithGapLookup = async () => {
@@ -516,12 +512,11 @@ const PendantInner: React.FC = () => {
   };
 
   const wireStopAll = async () => {
-    try {
-      await api.post(`/robot_sdk/wire/forward`, { ioType, wireFeed: 0 });
-      await api.post(`/robot_sdk/wire/reverse`, { ioType, wireFeed: 0 });
+    if (await stopAllWireFeed(ioType)) {
       setLastAction('■ 정지됨');
-    } catch (e: any) {
-      showAlert(`정지 실패: ${e.message}`, { type: 'error' });
+    } else {
+      showAlert(WIRE_STOP_FAILED_MESSAGE, { type: 'error' });
+      setLastAction('✗ 정지 실패');
     }
   };
 

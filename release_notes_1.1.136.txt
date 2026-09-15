@@ -1,0 +1,15 @@
+﻿v1.1.136
+
+와이어 수동 조그(인칭) 로직을 공용 모듈 하나로 통합. 화면 동작과 UI는 그대로입니다.
+
+- 배경: 같은 로직(모터 ON -> 길이/송급속도 만큼 대기 -> OFF)이 세 곳에 복사돼 있었음.
+  · UcellSelect/hooks/useWireControl.ts (작업 화면 툴바 Wire In/Out)
+  · pages/wire-inching/index.tsx ("와이어 조정" 팝업)
+  · pages/pendant/index.tsx (팬던트 "와이어 수동 제어")
+  그 결과 팬던트만 송급 속도 상수가 1.0으로 뒤처져 1.75배 과송급됐고(v1.1.135에서 수정), 정지 명령 재시도는 useWireControl에만 적용돼 있었음(v1.1.132). 한 곳을 고쳐도 나머지 둘이 그대로 남는 구조였음.
+- 신규 파일 robot-front/src/lib/wireFeed.ts 로 통합. 송급 속도 상수, 시간 계산, 모터 시작/정지, 정지 재시도(3회, 150ms 간격), 양방향 정지, 정지 실패 안내 문구를 여기서만 정의함.
+- 세 화면 모두 이 모듈을 호출하도록 변경. 이제 정지 명령 재시도가 세 화면 전부에 적용되고, 정지가 끝내 실패하면 세 화면 모두 "비상정지로 즉시 멈추라"는 안내를 띄움.
+- 세 화면이 robot-core 엔드포인트(/robot_sdk/wire/forward|reverse)를 직접 호출하던 것도 robotApi 함수 경유로 통일함.
+- 통합하며 쓰이지 않게 된 지역 상수와 헬퍼(FEED_SPEED_MM_PER_SEC, sleep, 미사용 api import)를 각 화면에서 제거.
+
+앞으로 송급 속도나 정지 동작을 바꿀 때는 lib/wireFeed.ts 한 곳만 고치면 됩니다.

@@ -1,28 +1,16 @@
 // 와이어 인칭 수동 제어 화면
-// C++ Robot Core 엔드포인트 사용:
-//   POST /robot_sdk/wire/forward  { ioType, wireFeed }
-//   POST /robot_sdk/wire/reverse  { ioType, wireFeed }
 //
-// 원리: wireFeed는 모터 on/off 스위치. 특정 길이 밀려면 시작 → 시간 대기 → 정지
-// ⚠ FEED_SPEED_MM_PER_SEC은 아직 실측되지 않은 값입니다. 실제 피더 속도와
-//   다르면 요청한 길이의 배수만큼 과송급/과소송급될 수 있으니, 실측 전에는
-//   소량(1mm)으로만 테스트하세요.
+// 송급 로직은 lib/wireFeed.ts 공용 모듈을 쓴다 (v1.1.136 통합).
+// 이 파일에는 화면 구성만 남긴다 — 송급 속도/정지 재시도를 여기서 따로 정의하지 말 것.
 
 import React, { useState } from 'react';
-import { Axios as api } from '../../lib';
+import { pulseWireFeed, stopAllWireFeed, wireFeedDurationMs, WIRE_FEED_SPEED_MM_PER_SEC, WIRE_STOP_FAILED_MESSAGE } from '../../lib';
 import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
-
-// 기본 송급 속도 (mm/s) — 기존 상수(3.5) 기준 1mm 요청 시 실제 0.5mm만 나온 실측값으로부터
-// 역산한 실제 속도: 0.5mm ÷ (1mm/3.5mm/s) = 1.75mm/s.
-// 용접 직후 과다 송급은 arc off 시 전류 리셋 누락이 원인으로 확인되어 별도 수정함(로봇 전류 리셋).
-const FEED_SPEED_MM_PER_SEC = 1.75;
 
 const TARGET_STICKOUT_MM = 25;
 
 const STEP_OPTIONS = [1.0, 2.5, 5.0];
-
-const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 const WireInchingInner: React.FC = () => {
   const { show: showAlert } = useAlert();
@@ -32,37 +20,28 @@ const WireInchingInner: React.FC = () => {
   const [lastAction, setLastAction] = useState<string>('');
 
   const startStop = async (direction: 'forward' | 'reverse', amountMm: number) => {
+    const label = direction === 'forward' ? '밀기' : '당기기';
     setBusy(true);
-    setLastAction('');
-    const durationMs = Math.round((amountMm / FEED_SPEED_MM_PER_SEC) * 1000);
-    try {
-      // 1. 모터 시작
-      await api.post(`/robot_sdk/wire/${direction}`, { ioType, wireFeed: 1 });
-      setLastAction(`${direction === 'forward' ? '▶ 밀기' : '◀ 당기기'} ${amountMm}mm 진행 중 (${durationMs}ms)...`);
-      // 2. 목표 시간만큼 대기
-      await sleep(durationMs);
-      // 3. 모터 정지
-      await api.post(`/robot_sdk/wire/${direction}`, { ioType, wireFeed: 0 });
-      setLastAction(`✓ ${direction === 'forward' ? '밀기' : '당기기'} ${amountMm}mm 완료`);
-    } catch (e: any) {
-      // 안전: 에러 나도 정지 시도
-      try {
-        await api.post(`/robot_sdk/wire/${direction}`, { ioType, wireFeed: 0 });
-      } catch {}
-      showAlert(`실패: ${e.response?.data?.detail || e.message}`, { type: 'error' });
-      setLastAction(`✗ 실패`);
-    } finally {
-      setBusy(false);
+    setLastAction(`${direction === 'forward' ? '▶' : '◀'} ${label} ${amountMm}mm 진행 중 (${wireFeedDurationMs(amountMm)}ms)...`);
+    const result = await pulseWireFeed(direction, amountMm, ioType);
+    if (result.ok) {
+      setLastAction(`✓ ${label} ${amountMm}mm 완료`);
+    } else if (!result.stopped) {
+      showAlert(WIRE_STOP_FAILED_MESSAGE, { type: 'error' });
+      setLastAction('✗ 정지 실패');
+    } else {
+      showAlert(`실패: ${result.error ?? '송급 시작 실패'}`, { type: 'error' });
+      setLastAction('✗ 실패');
     }
+    setBusy(false);
   };
 
   const emergencyStop = async () => {
-    try {
-      await api.post(`/robot_sdk/wire/forward`, { ioType, wireFeed: 0 });
-      await api.post(`/robot_sdk/wire/reverse`, { ioType, wireFeed: 0 });
+    if (await stopAllWireFeed(ioType)) {
       setLastAction('■ 정지됨');
-    } catch (e: any) {
-      showAlert(`정지 실패: ${e.message}`, { type: 'error' });
+    } else {
+      showAlert(WIRE_STOP_FAILED_MESSAGE, { type: 'error' });
+      setLastAction('✗ 정지 실패');
     }
   };
 
@@ -71,7 +50,7 @@ const WireInchingInner: React.FC = () => {
       <h2 style={{ marginBottom: 8 }}>와이어 인칭 수동 제어</h2>
       <div style={{ marginBottom: 16, fontSize: 14, color: '#aaa' }}>
         목표 스틱아웃: <strong style={{ color: '#fff' }}>{TARGET_STICKOUT_MM}mm</strong>
-        {' '} · 기본 송급 속도: {FEED_SPEED_MM_PER_SEC}mm/s
+        {' '} · 기본 송급 속도: {WIRE_FEED_SPEED_MM_PER_SEC}mm/s
       </div>
 
 <div style={{ marginBottom: 20 }}>
