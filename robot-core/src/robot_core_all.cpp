@@ -3399,6 +3399,22 @@ bool HttpServer::start(int port) {
     registerUpdaterRoutes(server, m_robotService);
     if (!m_webRoot.empty() && std::filesystem::exists(m_webRoot)) {
         std::cout << "[HttpServer] Setting up static file serving from: " << m_webRoot << std::endl;
+        // index.html은 파일명이 고정이라 브라우저가 캐시하면, 업데이트 후 재실행해도
+        // 옛 번들(옛 APP_VERSION)을 로드해 "업데이트 있음"이 한 번 더 뜰다.
+        // HTML 응답에만 no-store를 붙여 그 현상을 막는다.
+        // 해시가 붙은 JS/CSS는 파일명이 매번 바뀌므로 캐시를 그대로 둔다. (v1.1.140)
+        server.set_post_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+            const std::string contentType = res.get_header_value("Content-Type");
+            const bool isHtml =
+                contentType.rfind("text/html", 0) == 0 ||
+                req.path == "/" ||
+                (req.path.size() >= 5 && req.path.compare(req.path.size() - 5, 5, ".html") == 0);
+            if (isHtml) {
+                res.set_header("Cache-Control", "no-store, must-revalidate");
+                res.set_header("Pragma", "no-cache");
+                res.set_header("Expires", "0");
+            }
+        });
         if (!server.set_mount_point("/", m_webRoot)) {
             std::cerr << "[HttpServer] Warning: Failed to mount web root" << std::endl;
         }
@@ -6758,7 +6774,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.139"
+#define APP_VERSION_STRING "1.1.140"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
