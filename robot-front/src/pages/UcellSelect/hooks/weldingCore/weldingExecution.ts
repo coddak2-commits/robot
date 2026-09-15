@@ -138,7 +138,14 @@ export async function executeWelding(
       : !!(firstWeldPoint.weldVoltage && firstWeldPoint.weldCurrent);
     const hasWeaving = !!(firstWeldPoint.weavingType && firstWeldPoint.weavingType !== 'none');
     const weaveTypeCode = getWeaveTypeCode(firstWeldPoint.weavingType);
-    const CPM_CORRECTION_FACTOR = 0.68;
+    // v1.1.131: 1.0으로 복원(=보정 없음). 거리 x 6 / cpm 은 mm와 cm/min 사이의
+    // 물리적으로 정확한 소요시간 계산이다. 0.68은 CPM 설정값이 실제 이동속도와
+    // 어긋나 있던 시절(설정의 41~70%만 실제로 나감) 팝업 숫자를 억지로 맞추려고
+    // 넣었던 값으로, v1.1.130에서 WELD_BATCH_SPEED_SCALE을 0.431로 바로잡아
+    // CPM이 실제 cm/min과 일치하게 된 지금은 불필요하다.
+    // 실측 대조(v1.1.130 DryRun): 수직 예상 117.7초/실제 122.2초, 수평 158.2초/159.7초.
+    // 남는 2~4초 차이는 홈 복귀·접근 이동 등 고정 오버헤드.
+    const CPM_CORRECTION_FACTOR = 1.0;
     let minSegmentDistance = Infinity;
     segments = [];
     for (let i = 0; i < weldingPoints.length - 1; i++) {
