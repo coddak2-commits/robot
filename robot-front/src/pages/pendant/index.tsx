@@ -20,7 +20,9 @@ const CELL_CONFIG: UCellConfig = {
 
 const THICKNESS_OPTIONS = [18, 20, 22, 23];
 const STEP_OPTIONS = [1.0, 2.5, 5.0];
-const FEED_SPEED_MM_PER_SEC = 1.0;
+// v1.1.135: 1.0(실측 전 placeholder) -> 1.75. wire-inching/index.tsx, useWireControl.ts와 동일 기준.
+// 1.0이면 1mm 요청 시 1000ms를 돌려 실제로는 약 1.75mm가 송급됐음.
+const FEED_SPEED_MM_PER_SEC = 1.75;
 const LOOKUP_DEBOUNCE_MS = 400;
 
 const SEGMENTS: { key: string; startId: string; endId: string; label: string; offsetX?: number; offsetY?: number }[] = [

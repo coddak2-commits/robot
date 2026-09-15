@@ -1,0 +1,10 @@
+﻿v1.1.135
+
+로봇 동작 로직 변경은 팬던트 와이어 송급량 1건뿐이고, 나머지는 자원 정리와 로깅입니다.
+
+- 팬던트 와이어 송급량 과다 수정. pages/pendant/index.tsx의 FEED_SPEED_MM_PER_SEC가 실측 전 placeholder인 1.0으로 남아 있어, 1mm를 요청하면 1000ms를 돌려 실제로는 약 1.75mm가 송급됐음. wire-inching/index.tsx, useWireControl.ts와 동일한 실측값 1.75로 맞춤.
+- 폴링 인터벌이 화면을 벗어나도 멈추지 않던 문제 수정. usePathTracking.ts와 useRobotControl.ts가 setInterval을 걸어두고 언마운트 정리를 하지 않아, 작업 화면을 벗어나거나 로그아웃해도 폴링이 계속 살아 있었음(useRobotControl은 200ms 간격). 언마운트 시 인터벌을 정리하는 useEffect 추가.
+- 이동 완료 대기 루프가 상태 조회 실패를 삼키던 문제 수정. moveStopCheck.ts의 두 함수가 checkMotionDone 실패를 빈 catch로 버려서, 조회가 계속 실패하면 타임아웃(기본 300초)까지 조용히 돌다가 "이동 실패"로 끝났고 로그에 원인이 남지 않았음. 연속 실패 횟수를 세어 첫 실패는 즉시, 이후 10초마다 경고를 남기고, 타임아웃 로그에도 누적 실패 횟수와 마지막 에러를 함께 기록. 조회가 성공하면 카운터는 초기화됨.
+
+[알려진 미정리 항목]
+- 와이어 조그 구현이 아직 3벌(useWireControl / wire-inching / pendant)로 나뉘어 있음. 정지 명령 재시도는 v1.1.132에서 useWireControl에만 적용됨. 공용 훅으로 합치는 작업은 별도 진행 예정.

@@ -23,6 +23,11 @@ export const moveToJointWithStopCheck = async (
       return { success: false, stopped: false };
     }
     const startTime = Date.now();
+    // 상태 조회 실패를 삼키면 '이동이 실패한 것'과 '완료 확인이 실패한 것'을 구분할 수 없다.
+    // 기존에는 빈 catch라 checkMotionDone이 계속 실패해도 타임아웃(기본 300초)까지 조용히
+    // 돌다가 '이동 실패'로 끝났고, 로그에 원인이 남지 않았다 (v1.1.135 수정).
+    let motionCheckFailCount = 0;
+    let lastMotionCheckError = '';
     await new Promise(resolve => setTimeout(resolve, 200));
     while (Date.now() - startTime < timeout) {
       if (stopRef.current) {
@@ -34,11 +39,23 @@ export const moveToJointWithStopCheck = async (
         if (motionResult?.done) {
           return { success: true, stopped: false };
         }
-      } catch {
+        motionCheckFailCount = 0;
+      } catch (motionCheckError) {
+        motionCheckFailCount++;
+        lastMotionCheckError = String(motionCheckError);
+        // 첫 실패는 즉시, 이후에는 10초(100회)마다 남긴다.
+        if (motionCheckFailCount === 1 || motionCheckFailCount % 100 === 0) {
+          log_helpers.warn('moveToJointWithStopCheck.motionCheckFailed',
+            `이동 완료 확인 실패 (연속 ${motionCheckFailCount}회) — 이동 자체의 실패가 아닐 수 있음`,
+            { error: lastMotionCheckError });
+        }
       }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    log_helpers.warn('moveToJointWithStopCheck.timeout', '이동 타임아웃');
+    log_helpers.warn('moveToJointWithStopCheck.timeout', '이동 타임아웃', {
+      motionCheckFailCount,
+      lastMotionCheckError: lastMotionCheckError || null,
+    });
     return { success: false, stopped: false };
   } catch (error) {
     log_helpers.error('moveToJointWithStopCheck.error', '이동 오류', { error: String(error) });
@@ -74,6 +91,11 @@ export const moveToCartesianWithStopCheck = async (
       return { success: false, stopped: false };
     }
     const startTime = Date.now();
+    // 상태 조회 실패를 삼키면 '이동이 실패한 것'과 '완료 확인이 실패한 것'을 구분할 수 없다.
+    // 기존에는 빈 catch라 checkMotionDone이 계속 실패해도 타임아웃(기본 300초)까지 조용히
+    // 돌다가 '이동 실패'로 끝났고, 로그에 원인이 남지 않았다 (v1.1.135 수정).
+    let motionCheckFailCount = 0;
+    let lastMotionCheckError = '';
     await new Promise(resolve => setTimeout(resolve, 200));
     while (Date.now() - startTime < timeout) {
       if (stopRef.current) {
@@ -85,11 +107,23 @@ export const moveToCartesianWithStopCheck = async (
         if (motionResult?.done) {
           return { success: true, stopped: false };
         }
-      } catch {
+        motionCheckFailCount = 0;
+      } catch (motionCheckError) {
+        motionCheckFailCount++;
+        lastMotionCheckError = String(motionCheckError);
+        // 첫 실패는 즉시, 이후에는 10초(100회)마다 남긴다.
+        if (motionCheckFailCount === 1 || motionCheckFailCount % 100 === 0) {
+          log_helpers.warn('moveToCartesianWithStopCheck.motionCheckFailed',
+            `이동 완료 확인 실패 (연속 ${motionCheckFailCount}회) — 이동 자체의 실패가 아닐 수 있음`,
+            { error: lastMotionCheckError });
+        }
       }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    log_helpers.warn('moveToCartesianWithStopCheck.timeout', '이동 타임아웃');
+    log_helpers.warn('moveToCartesianWithStopCheck.timeout', '이동 타임아웃', {
+      motionCheckFailCount,
+      lastMotionCheckError: lastMotionCheckError || null,
+    });
     return { success: false, stopped: false };
   } catch (error) {
     log_helpers.error('moveToCartesianWithStopCheck.error', '이동 오류', { error: String(error) });

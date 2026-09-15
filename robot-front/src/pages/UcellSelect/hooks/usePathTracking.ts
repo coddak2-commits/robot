@@ -1,6 +1,6 @@
 import { getRealtimeRobotStatus } from '../../../lib';
 import { createLogger } from '../../../lib';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const log_usePathTracking = createLogger('usePathTracking');
 const POLL_INTERVAL_MS = 120;
@@ -141,6 +141,14 @@ export function usePathTracking(): UsePathTrackingReturn {
     setPathHistory([]);
     lastPositionRef.current = null;
     log_usePathTracking.info('clearPath', '경로 히스토리 초기화');
+  }, []);
+  // 화면 이동/언마운트 시 폴링 인터벌이 남아 계속 도는 것을 막는다 (v1.1.135).
+  // 기존에는 stop 함수를 명시적으로 부르지 않으면 인터벌이 영영 살아있었다.
+  useEffect(() => () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
   }, []);
   return {
     pathHistory,

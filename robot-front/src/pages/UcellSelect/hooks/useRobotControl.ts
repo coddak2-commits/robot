@@ -1,7 +1,7 @@
 import { TeachingPoint } from '..';
 import { RealtimeRobotStatus, enableRobot, getRealtimeRobotStatus, stopRobotSDK } from '../../../lib';
 import { createLogger } from '../../../lib';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { executeRetract, executeMoveJ } from './moveHelpers';
 
 const log_useRobotControl = createLogger('useRobotControl');
@@ -143,6 +143,14 @@ export function useRobotControl(): UseRobotControlReturn {
       log_useRobotControl.error('stopMove.error', '정지 오류');
     }
     setIsRobotMoving(false);
+  }, []);
+  // 화면 이동/언마운트 시 폴링 인터벌이 남아 계속 도는 것을 막는다 (v1.1.135).
+  // 기존에는 stop 함수를 명시적으로 부르지 않으면 인터벌이 영영 살아있었다.
+  useEffect(() => () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
   }, []);
   return {
     isRobotMoving,
