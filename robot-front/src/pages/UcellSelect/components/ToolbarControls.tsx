@@ -29,6 +29,8 @@ export interface ToolbarControlsProps {
   robotPathHistoryLength: number;
   wireFeeding: 'in' | 'out' | null;
   wireContinuous: boolean;
+  /** 용접/DryRun 진행 중이면 수동 송급 버튼을 막는다. 정지는 계속 가능 (v1.1.138). */
+  wireBlocked?: boolean;
   autoTouchSensing: boolean;
   selectedWidth: number;
   selectedHeight: number | null;
@@ -48,6 +50,7 @@ export function ToolbarControls({
   robotPathHistoryLength,
   wireFeeding,
   wireContinuous,
+  wireBlocked = false,
   autoTouchSensing,
   selectedWidth,
   selectedHeight,
@@ -89,23 +92,29 @@ export function ToolbarControls({
       )}
       <button
         onClick={wireFeeding === 'in' ? onWireStop : onWireIn}
+        disabled={wireBlocked && wireFeeding === null}
         className={`px-2 py-1 rounded-lg text-xs font-medium transition ${
           wireFeeding === 'in'
             ? 'bg-blue-500 text-white border border-blue-400 animate-pulse'
-            : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
+            : wireBlocked
+              ? 'bg-gray-700/40 text-gray-500 border border-gray-600/40 cursor-not-allowed'
+              : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
         }`}
-        title={wireContinuous ? '와이어 집어넣기 (연속)' : '와이어 집어넣기 (소량)'}
+        title={wireBlocked ? '용접/DryRun 진행 중에는 사용할 수 없습니다' : wireContinuous ? '와이어 집어넣기 (연속)' : '와이어 집어넣기 (소량)'}
       >
         {wireFeeding === 'in' ? '■ Stop' : 'Wire In'}
       </button>
       <button
         onClick={wireFeeding === 'out' ? onWireStop : onWireOut}
+        disabled={wireBlocked && wireFeeding === null}
         className={`px-2 py-1 rounded-lg text-xs font-medium transition ${
           wireFeeding === 'out'
             ? 'bg-orange-500 text-white border border-orange-400 animate-pulse'
-            : 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
+            : wireBlocked
+              ? 'bg-gray-700/40 text-gray-500 border border-gray-600/40 cursor-not-allowed'
+              : 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
         }`}
-        title={wireContinuous ? '와이어 내보내기 (연속)' : '와이어 내보내기 (소량)'}
+        title={wireBlocked ? '용접/DryRun 진행 중에는 사용할 수 없습니다' : wireContinuous ? '와이어 내보내기 (연속)' : '와이어 내보내기 (소량)'}
       >
         {wireFeeding === 'out' ? '■ Stop' : 'Wire Out'}
       </button>

@@ -4360,11 +4360,21 @@ void registerWeldingConfigRoutes(
             res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
         }
     });
-    server.Post("/welding/arc-trace/control", [](const httplib::Request&, httplib::Response& res) {
+    // 아크 트래킹은 robot-core에 구현돼 있지 않다. SDK의 ArcWeldTraceControl(robot.h:3082)을
+    // 호출하는 코드가 이 파일 어디에도 없다.
+    // v1.1.137까지는 본문을 읽지도 않고 200/result:0을 돌려줬다. 프론트는 성공으로 보고
+    // 로그에도 성공으로 남아서, 설정에서 아크 트래킹을 켜면 "보정되고 있다"고 오인하게 했다.
+    // 구현 전까지는 501로 명확히 실패를 알린다 (v1.1.138).
+    // 구현 시 필요한 것: RobotService에 ArcWeldTraceControl 래퍼 추가 + 아래에서 실제 호출.
+    // 프론트가 보내지 않는 인자(referenceType, referenceCurrent, axisSelect 등)를 먼저 정해야 함.
+    server.Post("/welding/arc-trace/control", [](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        res.set_content(HttpRouteHelpers::makeStatusResponse(200, {
-            {"result", 0},
-            {"message", "Arc trace control acknowledged (stub)"}
+        FLOG_WARN("ArcTrace", "Arc trace control requested but NOT IMPLEMENTED - ignoring. body=" + req.body);
+        res.status = 501;
+        res.set_content(HttpRouteHelpers::makeStatusResponse(501, {
+            {"result", -1},
+            {"implemented", false},
+            {"message", "Arc trace control is NOT implemented in robot-core (SDK ArcWeldTraceControl is never called). Torch height is not being corrected."}
         }).dump(), "application/json");
     });
     server.Post("/welding/gas/start", [&robotService, dbService](const httplib::Request& req, httplib::Response& res) {
@@ -6684,7 +6694,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.137"
+#define APP_VERSION_STRING "1.1.138"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

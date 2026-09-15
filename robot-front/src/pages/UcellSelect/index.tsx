@@ -148,7 +148,7 @@ export function CellSelectionCore({
     handleWireIn,
     handleWireOut,
     handleWireStop,
-  } = useWireControl();
+  } = useWireControl(isWelding);
   const {
     selectedHeight,
     setSelectedHeight,
@@ -440,6 +440,7 @@ export function CellSelectionCore({
                   robotPathHistoryLength={robotPathHistory.length}
                   wireFeeding={wireFeeding}
                   wireContinuous={wireContinuous}
+                  wireBlocked={isWelding}
                   autoTouchSensing={autoTouchSensing}
                   selectedWidth={selectedWidth}
                   selectedHeight={selectedHeight}

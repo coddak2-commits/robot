@@ -1,4 +1,4 @@
-import { pulseWireFeed, startWireFeed, stopWireFeed, stopAllWireFeed, WIRE_STOP_FAILED_MESSAGE } from '../../../lib';
+import { pulseWireFeed, startWireFeed, stopWireFeed, stopAllWireFeed, WIRE_STOP_FAILED_MESSAGE, WIRE_BLOCKED_WHILE_RUNNING_MESSAGE } from '../../../lib';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAlert } from '../../../contexts';
 
@@ -15,7 +15,11 @@ export interface UseWireControlReturn {
   handleWireOut: () => Promise<void>;
   handleWireStop: () => Promise<void>;
 }
-export function useWireControl(): UseWireControlReturn {
+// weldingActive: 용접/DryRun이 도는 중이면 수동 송급을 막는다 (v1.1.138).
+// 아크 중에는 용접기의 전류 연동 제어가 송급 속도를 정하므로, 이 파일의
+// "0.2mm" 계산(유휴 기준 1.75mm/s)이 성립하지 않는다. 실측 전까지 차단.
+// 정지(handleWireStop)는 막지 않는다 - 멈추는 건 언제든 가능해야 한다.
+export function useWireControl(weldingActive = false): UseWireControlReturn {
   const { show: showAlert } = useAlert();
   const [wireContinuous, setWireContinuous] = useState(false);
   const [wireFeeding, setWireFeeding] = useState<'in' | 'out' | null>(null);
@@ -29,6 +33,10 @@ export function useWireControl(): UseWireControlReturn {
     showAlert(WIRE_STOP_FAILED_MESSAGE, { type: 'error', title: '와이어 정지 실패' });
   }, [showAlert]);
   const feed = useCallback(async (side: 'in' | 'out') => {
+    if (weldingActive) {
+      showAlert(WIRE_BLOCKED_WHILE_RUNNING_MESSAGE, { type: 'warning', title: '와이어 수동 조작 차단' });
+      return;
+    }
     const direction = DIRECTION_OF[side];
     const prev = feedingRef.current;
     if (prev && prev !== side) {
@@ -56,7 +64,7 @@ export function useWireControl(): UseWireControlReturn {
     clearFeedingState();
     if (!result.stopped) warnStopFailed();
     else if (!result.ok) console.error('와이어 송급 오류:', result.error);
-  }, [wireContinuous, clearFeedingState, warnStopFailed]);
+  }, [weldingActive, wireContinuous, clearFeedingState, warnStopFailed, showAlert]);
   const handleWireIn = useCallback(() => feed('in'), [feed]);
   const handleWireOut = useCallback(() => feed('out'), [feed]);
   const handleWireStop = useCallback(async () => {

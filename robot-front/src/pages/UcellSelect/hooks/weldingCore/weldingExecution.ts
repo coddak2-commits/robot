@@ -306,17 +306,32 @@ export async function executeWelding(
     }
     if (stopRef.current) return await handleStopped(0);
     if (sequenceSettings.arcTrackingEnabled && hasWelding && !simMode) {
-      await arcTraceControl({
-        flag: 1,
-        is_left_right: sequenceSettings.arcTrackingLeftRight ? 1 : 0,
-        is_up_down: sequenceSettings.arcTrackingUpDown ? 1 : 0,
-        klr: sequenceSettings.arcTrackingKlr,
-        kud: sequenceSettings.arcTrackingKud,
-        step_max_lr: sequenceSettings.arcTrackingStepMaxLr,
-        step_max_ud: sequenceSettings.arcTrackingStepMaxUd,
-        sum_max_lr: sequenceSettings.arcTrackingSumMaxLr,
-        sum_max_ud: sequenceSettings.arcTrackingSumMaxUd,
-      });
+      // robot-core에 아크 트래킹이 구현돼 있지 않으면 501이 온다 (v1.1.138).
+      // 보정을 못 켰다고 용접을 중단시킬 이유는 없으므로, 크게 남기고 계속 진행한다.
+      // 단, 조용히 넘어가면 '켜져 있다'고 오인하므로 사용자에게도 알린다.
+      try {
+        await arcTraceControl({
+          flag: 1,
+          is_left_right: sequenceSettings.arcTrackingLeftRight ? 1 : 0,
+          is_up_down: sequenceSettings.arcTrackingUpDown ? 1 : 0,
+          klr: sequenceSettings.arcTrackingKlr,
+          kud: sequenceSettings.arcTrackingKud,
+          step_max_lr: sequenceSettings.arcTrackingStepMaxLr,
+          step_max_ud: sequenceSettings.arcTrackingStepMaxUd,
+          sum_max_lr: sequenceSettings.arcTrackingSumMaxLr,
+          sum_max_ud: sequenceSettings.arcTrackingSumMaxUd,
+        });
+      } catch (arcTraceError) {
+        log_weldingExecution.error(
+          'welding.arcTrace.failed',
+          '아크 트래킹을 켜지 못했습니다 — 토치 높이 보정 없이 용접합니다',
+          { error: String(arcTraceError) },
+        );
+        showAlert('아크 트래킹을 켜지 못했습니다. 토치 높이 보정 없이 진행합니다.', {
+          type: 'warning',
+          title: '아크 트래킹 미적용',
+        });
+      }
     }
     if (!startFromClosest && startPoint.tcp && !stopRef.current) {
       let startTouchOffset: number[] = [0, 0, 0, 0, 0, 0];
@@ -720,7 +735,7 @@ export async function executeWelding(
     if (hasWelding && !simMode && !isWeldingTest)
       await arcOff(0, 0, 1000, safetySettings.gasPostFlowTime);
     if (sequenceSettings.arcTrackingEnabled && hasWelding && !simMode && !isWeldingTest)
-      await arcTraceControl({ flag: 0 });
+      await arcTraceControl({ flag: 0 }).catch(() => {});
     if (!stopRef.current) {
       const lastWeldPoint = weldingPoints[weldingPoints.length - 1];
       if (lastWeldPoint?.tcp) {

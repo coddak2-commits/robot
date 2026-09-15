@@ -90,6 +90,12 @@ export const pulseWireFeed = async (
   return { ok: stopped, stopped, durationMs };
 };
 
+/** 로봇이 프로그램(용접/DryRun)을 돌리는 중에 수동 조작을 막을 때 띄울 문구. */
+export const WIRE_BLOCKED_WHILE_RUNNING_MESSAGE =
+  '용접/DryRun이 진행 중일 때는 와이어 수동 조작을 할 수 없습니다.\n'
+  + '아크 중 실제 송급량은 용접기의 전류 연동 제어가 정하기 때문에, 화면에 표시된 mm와 크게 달라질 수 있습니다.\n'
+  + '실측으로 확인되기 전까지 차단합니다. 정지는 언제든 가능합니다.';
+
 /** 정지 실패 시 사용자에게 띄울 공용 문구. */
 export const WIRE_STOP_FAILED_MESSAGE =
   '와이어 정지 명령이 실패했습니다. 와이어가 계속 송급될 수 있으니 비상정지로 즉시 멈추세요.';
