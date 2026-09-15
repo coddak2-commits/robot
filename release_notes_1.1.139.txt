@@ -1,0 +1,34 @@
+﻿v1.1.139
+
+아크 트래킹(아크 센싱 토치 높이 보정)을 실제로 구현했습니다. 지금까지는 설정과 UI만 있고 robot-core가 SDK를 호출하지 않는 껍데기였습니다.
+
+[robot-core 구현]
+- RobotService::arcWeldTraceControl 추가. SDK ArcWeldTraceControl(robot.h:3082, 인자 19개) 호출.
+- /welding/arc-trace/control 핸들러가 실제로 이 함수를 호출하도록 교체. 이전에는 요청 본문을 읽지도 않고 성공을 돌려주는 스텁이었음(v1.1.138에서 501로 표시만 해둔 상태였음).
+- 인자는 요청 본문을 우선 쓰고, 없으면 DB(welding_config)에서 읽음. 계수를 바꾸려고 리빌드/릴리즈를 하지 않아도 되게 하기 위함.
+
+[DB: welding_config 에 컬럼 8개 추가 — migration 007]
+- arc_tracking_delay_time, arc_tracking_t_start_lr, arc_tracking_t_start_ud
+- arc_tracking_axis_select (0-위빙 1-툴 2-베이스)
+- arc_tracking_reference_type (0-실측 피드백 1-고정값)
+- arc_tracking_reference_current (reference_type=1일 때만 사용)
+- arc_tracking_refer_sample_start_ud, arc_tracking_refer_sample_count_ud
+- 기본값은 reference_type=0(피드백), axis_select=0(위빙 좌표).
+  이 시스템은 갭에서 전류를 계산해 작업마다 다르게 쓰므로 고정 기준 전류가 성립하지 않음.
+- 마이그레이션이 step_max_ud를 1.0, sum_max_ud를 10.0으로 조여둠. 계수가 크면 토치가 발진하므로 좁게 시작해서 확인 후 늘릴 것.
+
+[파트마다 트래킹 재적용]
+- 이 작업은 파트마다 아크를 다시 켠다(startPartWelding -> arcOn). 그런데 트래킹은 용접 시작 때 한 번만 걸고 있었음.
+- 기준 전류를 아크 점화 직후 실측으로 잡는 방식(reference_type=0)에서는, 첫 파트(수직 260A)에서 잡은 기준이 다음 파트(수평 300A)에도 그대로 쓰여 "전류가 높다"고 오판하고 반대 방향으로 보정할 수 있음.
+- 파트 전환 후 arcOn 직후마다 flag=1을 다시 걸도록 변경. 실기에서 불필요하다고 확인되면 되돌리기 쉬운 형태로 분리해둠(armArcTracking).
+
+[프론트]
+- arcTraceControl이 호출자가 지정한 키만 전송하도록 변경. 기존에는 19개 인자를 전부 기본값으로 채워 보내서 DB 설정이 항상 덮여 무시됐음. 기존 기본값(refer_sample_start_ud 4.0, reference_current 10.0 등)은 SDK 예제에서 옮겨온 값으로 이 장비에서 검증된 적이 없음.
+- 용접 실행부는 flag만 넘김. 계수는 robot-core가 DB에서 읽음.
+- 트래킹을 켜지 못해도 용접은 계속 진행하되, "아크 트래킹 미적용" 경고를 한 번 표시함.
+
+[미포함 — 다음 과제]
+- 설정 화면(ArcTrackingSection)에 새 파라미터 8개 입력 필드는 아직 없음. 당분간 SQL로 조정해야 함. 실기에서 어떤 값이 실제로 쓰이는지 확인한 뒤 UI를 붙이는 편이 낫다고 판단함.
+- 현장 계수 튜닝이 남아 있음. kud 기본값 0.06은 코드에 있던 값이지 이 셀에서 검증된 값이 아님.
+
+[주의] 노트북 DB에 migration 007을 먼저 적용해야 함. 적용 전에는 robot-core가 SELECT에서 없는 컬럼을 찾아 실패함.

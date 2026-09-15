@@ -1411,27 +1411,18 @@ export const stopReverseWireFeed = async (ioType = 0) => {
 };
 export const arcTraceControl = async (params: ArcTraceParams = {}) => {
   try {
-    const response = await api.post('/welding/arc-trace/control', {
-      flag: params.flag ?? 1,
-      delay_time: params.delay_time ?? 0,
-      is_left_right: params.is_left_right ?? 1,
-      klr: params.klr ?? 0.06,
-      t_start_lr: params.t_start_lr ?? 5.0,
-      step_max_lr: params.step_max_lr ?? 5.0,
-      sum_max_lr: params.sum_max_lr ?? 30.0,
-      is_up_down: params.is_up_down ?? 1,
-      kud: params.kud ?? 0.06,
-      t_start_ud: params.t_start_ud ?? 5.0,
-      step_max_ud: params.step_max_ud ?? 5.0,
-      sum_max_ud: params.sum_max_ud ?? 30.0,
-      axis_select: params.axis_select ?? 0,
-      reference_type: params.reference_type ?? 0,
-      refer_sample_start_ud: params.refer_sample_start_ud ?? 4.0,
-      refer_sample_count_ud: params.refer_sample_count_ud ?? 1.0,
-      reference_current: params.reference_current ?? 10.0,
-      offset_type: params.offset_type ?? 0,
-      offset_parameter: params.offset_parameter ?? 0,
+    // v1.1.139: robot-core가 본문에 없는 키를 DB(welding_config)에서 채운다.
+    // 여기서 임의 기본값을 채워 보내면 DB 설정이 항상 덮여서 무시되므로,
+    // 호출자가 지정한 키만 보낸다.
+    // (예전 기본값 refer_sample_start_ud: 4.0, reference_current: 10.0 등은
+    //  SDK 예제에서 옮겨온 값으로 이 장비에서 검증된 적이 없다.)
+    const body: Record<string, number> = {};
+    (Object.keys(params) as (keyof ArcTraceParams)[]).forEach(key => {
+      const value = params[key];
+      if (typeof value === 'number') body[key] = value;
     });
+    if (body.flag === undefined) body.flag = 1;
+    const response = await api.post('/welding/arc-trace/control', body);
     return response.data;
   } catch (error) {
     console.error('아크 트래킹 제어 오류:', error);
@@ -1701,6 +1692,16 @@ export interface WeldingConfigData {
   arc_tracking_step_max_ud: number;
   arc_tracking_sum_max_lr: number;
   arc_tracking_sum_max_ud: number;
+  // v1.1.139: SDK ArcWeldTraceControl에 필요한 나머지 인자. 값은 robot-core가
+  // DB에서 읽어 쓰므로 프론트는 조회/표시용으로만 갖고 있으면 된다.
+  arc_tracking_delay_time?: number;
+  arc_tracking_t_start_lr?: number;
+  arc_tracking_t_start_ud?: number;
+  arc_tracking_axis_select?: number;
+  arc_tracking_reference_type?: number;
+  arc_tracking_reference_current?: number;
+  arc_tracking_refer_sample_start_ud?: number;
+  arc_tracking_refer_sample_count_ud?: number;
   arc_retry_count: number;
   arc_retry_delay: number;
   stickout_length: number;

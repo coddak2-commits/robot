@@ -1022,6 +1022,26 @@ int RobotService::setAspirated(int ioType, int airControl) {
     std::cout << "[RobotService] Set aspirated (gas): " << (airControl ? "ON" : "OFF") << std::endl;
     return m_robot.SetAspirated(ioType, airControl);
 }
+// 아크 트래킹(아크 센싱 보정). SDK ArcWeldTraceControl 래퍼 (v1.1.139).
+// 이전에는 HTTP 핸들러가 스텁이라 이 SDK 함수가 한 번도 호출되지 않았다.
+// offsetType/offsetParameter는 기본값(0,0 = 오프셋 추적 없음)을 쓴다.
+int RobotService::arcWeldTraceControl(int flag, double delayTime,
+                                      int isLeftRight, double klr, double tStartLr, double stepMaxLr, double sumMaxLr,
+                                      int isUpLow, double kud, double tStartUd, double stepMaxUd, double sumMaxUd,
+                                      int axisSelect, int referenceType,
+                                      double referSampleStartUd, double referSampleCountUd, double referenceCurrent) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    std::cout << "[RobotService] ArcWeldTraceControl: flag=" << flag
+              << " lr=" << isLeftRight << " ud=" << isUpLow
+              << " kud=" << kud << " stepMaxUd=" << stepMaxUd << " sumMaxUd=" << sumMaxUd
+              << " axisSelect=" << axisSelect << " refType=" << referenceType << std::endl;
+    return m_robot.ArcWeldTraceControl(flag, delayTime,
+                                       isLeftRight, klr, tStartLr, stepMaxLr, sumMaxLr,
+                                       isUpLow, kud, tStartUd, stepMaxUd, sumMaxUd,
+                                       axisSelect, referenceType,
+                                       referSampleStartUd, referSampleCountUd, referenceCurrent);
+}
 int RobotService::forwardWireFeed(int ioType, int wireFeed) {
     // emergencyStop()/stopMotion()과 동일하게 mutex 없이 호출 (v1.1.126, 용접 중 MoveL 블로킹 중에도 와이어 조정 가능하도록 테스트)
     if (!m_connected) return -1;
@@ -4360,22 +4380,58 @@ void registerWeldingConfigRoutes(
             res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
         }
     });
-    // 아크 트래킹은 robot-core에 구현돼 있지 않다. SDK의 ArcWeldTraceControl(robot.h:3082)을
-    // 호출하는 코드가 이 파일 어디에도 없다.
-    // v1.1.137까지는 본문을 읽지도 않고 200/result:0을 돌려줬다. 프론트는 성공으로 보고
-    // 로그에도 성공으로 남아서, 설정에서 아크 트래킹을 켜면 "보정되고 있다"고 오인하게 했다.
-    // 구현 전까지는 501로 명확히 실패를 알린다 (v1.1.138).
-    // 구현 시 필요한 것: RobotService에 ArcWeldTraceControl 래퍼 추가 + 아래에서 실제 호출.
-    // 프론트가 보내지 않는 인자(referenceType, referenceCurrent, axisSelect 등)를 먼저 정해야 함.
-    server.Post("/welding/arc-trace/control", [](const httplib::Request& req, httplib::Response& res) {
+    // 아크 트래킹(아크 센싱 보정). SDK ArcWeldTraceControl 호출 (v1.1.139에서 구현).
+    // v1.1.137까지는 본문을 읽지도 않고 200/result:0을 돌려주는 스텁이라 아크 트래킹이
+    // 동작하지 않는데도 성공으로 보였고, v1.1.138에서 501로 바꿔 미구현임을 드러냈다.
+    //
+    // 인자는 요청 본문을 우선 쓰고, 없으면 DB(welding_config)의 값을 쓴다. 계수는 현장에서
+    // 바꿔가며 맞춰야 하므로 하드코딩하지 않는다 - 값을 바꾸려고 릴리즈하지 않아도 되게.
+    // flag=0이면 끄기이며 나머지 인자는 의미가 없다.
+    server.Post("/welding/arc-trace/control", [&robotService, dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
-        FLOG_WARN("ArcTrace", "Arc trace control requested but NOT IMPLEMENTED - ignoring. body=" + req.body);
-        res.status = 501;
-        res.set_content(HttpRouteHelpers::makeStatusResponse(501, {
-            {"result", -1},
-            {"implemented", false},
-            {"message", "Arc trace control is NOT implemented in robot-core (SDK ArcWeldTraceControl is never called). Torch height is not being corrected."}
-        }).dump(), "application/json");
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = req.body.empty() ? json::object() : json::parse(req.body);
+            WeldingConfig cfg;
+            if (dbService && dbService->isConnected()) cfg = dbService->getWeldingConfig();
+            int    flag              = body.value("flag", 1);
+            double delayTime         = body.value("delay_time", cfg.arc_tracking_delay_time);
+            int    isLeftRight       = body.value("is_left_right", cfg.arc_tracking_left_right ? 1 : 0);
+            double klr               = body.value("klr", cfg.arc_tracking_klr);
+            double tStartLr          = body.value("t_start_lr", cfg.arc_tracking_t_start_lr);
+            double stepMaxLr         = body.value("step_max_lr", cfg.arc_tracking_step_max_lr);
+            double sumMaxLr          = body.value("sum_max_lr", cfg.arc_tracking_sum_max_lr);
+            int    isUpLow           = body.value("is_up_down", cfg.arc_tracking_up_down ? 1 : 0);
+            double kud               = body.value("kud", cfg.arc_tracking_kud);
+            double tStartUd          = body.value("t_start_ud", cfg.arc_tracking_t_start_ud);
+            double stepMaxUd         = body.value("step_max_ud", cfg.arc_tracking_step_max_ud);
+            double sumMaxUd          = body.value("sum_max_ud", cfg.arc_tracking_sum_max_ud);
+            int    axisSelect        = body.value("axis_select", cfg.arc_tracking_axis_select);
+            int    referenceType     = body.value("reference_type", cfg.arc_tracking_reference_type);
+            double referSampleStartUd = body.value("refer_sample_start_ud", cfg.arc_tracking_refer_sample_start_ud);
+            double referSampleCountUd = body.value("refer_sample_count_ud", cfg.arc_tracking_refer_sample_count_ud);
+            double referenceCurrent  = body.value("reference_current", cfg.arc_tracking_reference_current);
+            int result = robotService.arcWeldTraceControl(flag, delayTime,
+                isLeftRight, klr, tStartLr, stepMaxLr, sumMaxLr,
+                isUpLow, kud, tStartUd, stepMaxUd, sumMaxUd,
+                axisSelect, referenceType, referSampleStartUd, referSampleCountUd, referenceCurrent);
+            if (result != 0) {
+                FLOG_SDK_ERROR("ArcWeldTraceControl", result, "flag=" + std::to_string(flag));
+            } else {
+                FLOG_INFO("ArcTrace", std::string(flag ? "Arc tracking ON" : "Arc tracking OFF"));
+            }
+            res.set_content(HttpRouteHelpers::makeStatusResponse(
+                (result == 0) ? 200 : 500,
+                {{"result", result}, {"implemented", true},
+                 {"message", result == 0 ? (flag ? "Arc tracking enabled" : "Arc tracking disabled") : "ArcWeldTraceControl failed"}}
+            ).dump(), "application/json");
+        } catch (const std::exception& e) {
+            FLOG_ERROR("ArcTrace", std::string("Exception: ") + e.what());
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
+        }
     });
     server.Post("/welding/gas/start", [&robotService, dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -5775,6 +5831,14 @@ void registerSdkRoutes(
             if (body.contains("arc_tracking_step_max_ud")) config.arc_tracking_step_max_ud = body["arc_tracking_step_max_ud"].get<double>();
             if (body.contains("arc_tracking_sum_max_lr")) config.arc_tracking_sum_max_lr = body["arc_tracking_sum_max_lr"].get<double>();
             if (body.contains("arc_tracking_sum_max_ud")) config.arc_tracking_sum_max_ud = body["arc_tracking_sum_max_ud"].get<double>();
+            if (body.contains("arc_tracking_delay_time")) config.arc_tracking_delay_time = body["arc_tracking_delay_time"].get<double>();
+            if (body.contains("arc_tracking_t_start_lr")) config.arc_tracking_t_start_lr = body["arc_tracking_t_start_lr"].get<double>();
+            if (body.contains("arc_tracking_t_start_ud")) config.arc_tracking_t_start_ud = body["arc_tracking_t_start_ud"].get<double>();
+            if (body.contains("arc_tracking_axis_select")) config.arc_tracking_axis_select = body["arc_tracking_axis_select"].get<int>();
+            if (body.contains("arc_tracking_reference_type")) config.arc_tracking_reference_type = body["arc_tracking_reference_type"].get<int>();
+            if (body.contains("arc_tracking_reference_current")) config.arc_tracking_reference_current = body["arc_tracking_reference_current"].get<double>();
+            if (body.contains("arc_tracking_refer_sample_start_ud")) config.arc_tracking_refer_sample_start_ud = body["arc_tracking_refer_sample_start_ud"].get<double>();
+            if (body.contains("arc_tracking_refer_sample_count_ud")) config.arc_tracking_refer_sample_count_ud = body["arc_tracking_refer_sample_count_ud"].get<double>();
             if (dbService->updateWeldingConfig(config)) {
                 WeldingConfig updated = dbService->getWeldingConfig();
                 response["status_code"] = 200;
@@ -6694,7 +6758,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.138"
+#define APP_VERSION_STRING "1.1.139"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -8669,7 +8733,10 @@ WeldingConfig DatabaseService::getWeldingConfig() {
         "p12_touch_center, p12_touch_top, p12_touch_bottom, "
         "arc_tracking_enabled, arc_tracking_left_right, arc_tracking_up_down, "
         "arc_tracking_klr, arc_tracking_kud, arc_tracking_step_max_lr, arc_tracking_step_max_ud, "
-        "arc_tracking_sum_max_lr, arc_tracking_sum_max_ud, updated_at "
+        "arc_tracking_sum_max_lr, arc_tracking_sum_max_ud, "
+        "arc_tracking_delay_time, arc_tracking_t_start_lr, arc_tracking_t_start_ud, "
+        "arc_tracking_axis_select, arc_tracking_reference_type, arc_tracking_reference_current, "
+        "arc_tracking_refer_sample_start_ud, arc_tracking_refer_sample_count_ud, updated_at "
         "FROM welding_config WHERE id = 1"
     );
     if (!result) {
@@ -8742,6 +8809,14 @@ WeldingConfig DatabaseService::getWeldingConfig() {
         config.arc_tracking_step_max_ud = row[col] ? std::stod(row[col]) : 5.0; col++;
         config.arc_tracking_sum_max_lr = row[col] ? std::stod(row[col]) : 30.0; col++;
         config.arc_tracking_sum_max_ud = row[col] ? std::stod(row[col]) : 30.0; col++;
+        config.arc_tracking_delay_time = row[col] ? std::stod(row[col]) : 0.0; col++;
+        config.arc_tracking_t_start_lr = row[col] ? std::stod(row[col]) : 5.0; col++;
+        config.arc_tracking_t_start_ud = row[col] ? std::stod(row[col]) : 5.0; col++;
+        config.arc_tracking_axis_select = row[col] ? std::stoi(row[col]) : 0; col++;
+        config.arc_tracking_reference_type = row[col] ? std::stoi(row[col]) : 0; col++;
+        config.arc_tracking_reference_current = row[col] ? std::stod(row[col]) : 0.0; col++;
+        config.arc_tracking_refer_sample_start_ud = row[col] ? std::stod(row[col]) : 10.0; col++;
+        config.arc_tracking_refer_sample_count_ud = row[col] ? std::stod(row[col]) : 10.0; col++;
         config.updated_at = row[col] ? row[col] : ""; col++;
     }
     return config;
@@ -8812,7 +8887,15 @@ bool DatabaseService::updateWeldingConfig(const WeldingConfig& config) {
           << "arc_tracking_step_max_lr = " << config.arc_tracking_step_max_lr << ", "
           << "arc_tracking_step_max_ud = " << config.arc_tracking_step_max_ud << ", "
           << "arc_tracking_sum_max_lr = " << config.arc_tracking_sum_max_lr << ", "
-          << "arc_tracking_sum_max_ud = " << config.arc_tracking_sum_max_ud
+          << "arc_tracking_sum_max_ud = " << config.arc_tracking_sum_max_ud << ", "
+          << "arc_tracking_delay_time = " << config.arc_tracking_delay_time << ", "
+          << "arc_tracking_t_start_lr = " << config.arc_tracking_t_start_lr << ", "
+          << "arc_tracking_t_start_ud = " << config.arc_tracking_t_start_ud << ", "
+          << "arc_tracking_axis_select = " << config.arc_tracking_axis_select << ", "
+          << "arc_tracking_reference_type = " << config.arc_tracking_reference_type << ", "
+          << "arc_tracking_reference_current = " << config.arc_tracking_reference_current << ", "
+          << "arc_tracking_refer_sample_start_ud = " << config.arc_tracking_refer_sample_start_ud << ", "
+          << "arc_tracking_refer_sample_count_ud = " << config.arc_tracking_refer_sample_count_ud
           << " WHERE id = 1";
     return executeQuery(query.str());
 }
@@ -8881,6 +8964,14 @@ json DatabaseService::weldingConfigToJson(const WeldingConfig& config) {
         {"arc_tracking_step_max_ud", config.arc_tracking_step_max_ud},
         {"arc_tracking_sum_max_lr", config.arc_tracking_sum_max_lr},
         {"arc_tracking_sum_max_ud", config.arc_tracking_sum_max_ud},
+        {"arc_tracking_delay_time", config.arc_tracking_delay_time},
+        {"arc_tracking_t_start_lr", config.arc_tracking_t_start_lr},
+        {"arc_tracking_t_start_ud", config.arc_tracking_t_start_ud},
+        {"arc_tracking_axis_select", config.arc_tracking_axis_select},
+        {"arc_tracking_reference_type", config.arc_tracking_reference_type},
+        {"arc_tracking_reference_current", config.arc_tracking_reference_current},
+        {"arc_tracking_refer_sample_start_ud", config.arc_tracking_refer_sample_start_ud},
+        {"arc_tracking_refer_sample_count_ud", config.arc_tracking_refer_sample_count_ud},
         {"updated_at", config.updated_at}
     };
 }
@@ -8949,6 +9040,14 @@ WeldingConfig DatabaseService::jsonToWeldingConfig(const json& j) {
     if (j.contains("arc_tracking_step_max_ud")) config.arc_tracking_step_max_ud = j["arc_tracking_step_max_ud"].get<double>();
     if (j.contains("arc_tracking_sum_max_lr")) config.arc_tracking_sum_max_lr = j["arc_tracking_sum_max_lr"].get<double>();
     if (j.contains("arc_tracking_sum_max_ud")) config.arc_tracking_sum_max_ud = j["arc_tracking_sum_max_ud"].get<double>();
+    if (j.contains("arc_tracking_delay_time")) config.arc_tracking_delay_time = j["arc_tracking_delay_time"].get<double>();
+    if (j.contains("arc_tracking_t_start_lr")) config.arc_tracking_t_start_lr = j["arc_tracking_t_start_lr"].get<double>();
+    if (j.contains("arc_tracking_t_start_ud")) config.arc_tracking_t_start_ud = j["arc_tracking_t_start_ud"].get<double>();
+    if (j.contains("arc_tracking_axis_select")) config.arc_tracking_axis_select = j["arc_tracking_axis_select"].get<int>();
+    if (j.contains("arc_tracking_reference_type")) config.arc_tracking_reference_type = j["arc_tracking_reference_type"].get<int>();
+    if (j.contains("arc_tracking_reference_current")) config.arc_tracking_reference_current = j["arc_tracking_reference_current"].get<double>();
+    if (j.contains("arc_tracking_refer_sample_start_ud")) config.arc_tracking_refer_sample_start_ud = j["arc_tracking_refer_sample_start_ud"].get<double>();
+    if (j.contains("arc_tracking_refer_sample_count_ud")) config.arc_tracking_refer_sample_count_ud = j["arc_tracking_refer_sample_count_ud"].get<double>();
     return config;
 }
 json DatabaseService::getWeldingPartOrder() {

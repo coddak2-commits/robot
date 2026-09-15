@@ -1,5 +1,5 @@
 #define MyAppName "Robot Welding Control"
-#define MyAppVersion "1.1.138"
+#define MyAppVersion "1.1.139"
 #define MyAppPublisher "Robot Welding"
 #define MyAppExeName "robot_core.exe"
 

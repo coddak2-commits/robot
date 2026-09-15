@@ -206,6 +206,35 @@ export async function executeWelding(
       }
     }
     const { sequence: sequenceSettings, safety: safetySettings } = await loadWeldingSettings();
+    // 아크 트래킹은 파트마다 다시 걸어야 한다 (v1.1.139).
+    // 기준 전류를 아크 점화 직후 실측으로 잡는 설정(reference_type=0)에서, 파트마다
+    // arcOn을 다시 하는데 트래킹을 용접 시작 때 한 번만 켜두면 첫 파트(수직 260A)에서
+    // 잡은 기준이 다음 파트(수평 300A)에도 그대로 쓰여 반대 방향으로 보정할 수 있다.
+    // 세부 계수는 robot-core가 DB(welding_config)에서 읽으므로 여기서는 flag만 넘긴다.
+    const arcTrackingActive =
+      sequenceSettings.arcTrackingEnabled && hasWelding && !simMode && !isWeldingTest;
+    let arcTrackingWarned = false;
+    const armArcTracking = async () => {
+      if (!arcTrackingActive) return;
+      try {
+        await arcTraceControl({ flag: 1 });
+      } catch (arcTraceError) {
+        log_weldingExecution.error(
+          'welding.arcTrace.failed',
+          '아크 트래킹을 켜지 못했습니다 — 토치 높이 보정 없이 용접합니다',
+          { error: String(arcTraceError) },
+        );
+        // 보정을 못 켰다고 용접을 중단시킬 이유는 없다. 다만 조용히 넘어가면
+        // '켜져 있다'고 오인하므로 한 번은 사용자에게 알린다.
+        if (!arcTrackingWarned) {
+          arcTrackingWarned = true;
+          showAlert('아크 트래킹을 켜지 못했습니다. 토치 높이 보정 없이 진행합니다.', {
+            type: 'warning',
+            title: '아크 트래킹 미적용',
+          });
+        }
+      }
+    };
     const hasStoredTouchOffsets = weldingPoints.some(pt => pt.touchOffset !== null);
     const approachOffset = sequenceSettings.touchApproachOffset;
     // p9/p10: 같은 위치(우측 수평 코너)에 티칭되어 있고, U셀 구조물과의 간섭으로
@@ -305,34 +334,7 @@ export async function executeWelding(
       }
     }
     if (stopRef.current) return await handleStopped(0);
-    if (sequenceSettings.arcTrackingEnabled && hasWelding && !simMode) {
-      // robot-core에 아크 트래킹이 구현돼 있지 않으면 501이 온다 (v1.1.138).
-      // 보정을 못 켰다고 용접을 중단시킬 이유는 없으므로, 크게 남기고 계속 진행한다.
-      // 단, 조용히 넘어가면 '켜져 있다'고 오인하므로 사용자에게도 알린다.
-      try {
-        await arcTraceControl({
-          flag: 1,
-          is_left_right: sequenceSettings.arcTrackingLeftRight ? 1 : 0,
-          is_up_down: sequenceSettings.arcTrackingUpDown ? 1 : 0,
-          klr: sequenceSettings.arcTrackingKlr,
-          kud: sequenceSettings.arcTrackingKud,
-          step_max_lr: sequenceSettings.arcTrackingStepMaxLr,
-          step_max_ud: sequenceSettings.arcTrackingStepMaxUd,
-          sum_max_lr: sequenceSettings.arcTrackingSumMaxLr,
-          sum_max_ud: sequenceSettings.arcTrackingSumMaxUd,
-        });
-      } catch (arcTraceError) {
-        log_weldingExecution.error(
-          'welding.arcTrace.failed',
-          '아크 트래킹을 켜지 못했습니다 — 토치 높이 보정 없이 용접합니다',
-          { error: String(arcTraceError) },
-        );
-        showAlert('아크 트래킹을 켜지 못했습니다. 토치 높이 보정 없이 진행합니다.', {
-          type: 'warning',
-          title: '아크 트래킹 미적용',
-        });
-      }
-    }
+    await armArcTracking();
     if (!startFromClosest && startPoint.tcp && !stopRef.current) {
       let startTouchOffset: number[] = [0, 0, 0, 0, 0, 0];
       let useStartOffset = false;
@@ -450,6 +452,7 @@ export async function executeWelding(
               weaveTypeCode,
             );
             setArcActive?.(true);
+            await armArcTracking();
           }
           const ptSegIdx = i - 1;
           if (ptSegIdx >= 0 && ptSegIdx < segments.length)
@@ -637,6 +640,7 @@ export async function executeWelding(
           weaveTypeCode,
         );
         setArcActive?.(true);
+        await armArcTracking();
         const ptSegIdx = i - 1;
         if (ptSegIdx >= 0 && ptSegIdx < segments.length)
           segments[ptSegIdx].actual_sec = (Date.now() - segmentStartTime) / 1000;
@@ -734,8 +738,7 @@ export async function executeWelding(
     }
     if (hasWelding && !simMode && !isWeldingTest)
       await arcOff(0, 0, 1000, safetySettings.gasPostFlowTime);
-    if (sequenceSettings.arcTrackingEnabled && hasWelding && !simMode && !isWeldingTest)
-      await arcTraceControl({ flag: 0 }).catch(() => {});
+    if (arcTrackingActive) await arcTraceControl({ flag: 0 }).catch(() => {});
     if (!stopRef.current) {
       const lastWeldPoint = weldingPoints[weldingPoints.length - 1];
       if (lastWeldPoint?.tcp) {

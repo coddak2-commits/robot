@@ -92,6 +92,13 @@ public:
     int getMotionDone(int* motionDone);
     int resetError();
     int setAspirated(int ioType, int airControl);
+    // 아크 트래킹(아크 센싱 위빙 보정). SDK robot.h의 ArcWeldTraceControl 래퍼.
+    // flag=0이면 끄기이며 나머지 인자는 무시된다 (v1.1.139).
+    int arcWeldTraceControl(int flag, double delayTime,
+                            int isLeftRight, double klr, double tStartLr, double stepMaxLr, double sumMaxLr,
+                            int isUpLow, double kud, double tStartUd, double stepMaxUd, double sumMaxUd,
+                            int axisSelect, int referenceType,
+                            double referSampleStartUd, double referSampleCountUd, double referenceCurrent);
     int forwardWireFeed(int ioType, int wireFeed);
     int reverseWireFeed(int ioType, int wireFeed);
     void setStateCallback(StateCallback callback);
@@ -437,6 +444,16 @@ struct WeldingConfig {
     double arc_tracking_step_max_ud = 5.0;
     double arc_tracking_sum_max_lr = 30.0;
     double arc_tracking_sum_max_ud = 30.0;
+    // v1.1.139: SDK ArcWeldTraceControl에 필요하지만 그동안 어디에도 없던 인자들.
+    // 현장에서 계수를 바꿔가며 튜닝해야 하므로 하드코딩하지 않고 DB 설정으로 둔다.
+    double arc_tracking_delay_time = 0.0;        // 지연 시간(ms)
+    double arc_tracking_t_start_lr = 5.0;        // 좌우 보정 개시 시점(cyc)
+    double arc_tracking_t_start_ud = 5.0;        // 상하 보정 개시 시점(cyc)
+    int    arc_tracking_axis_select = 0;         // 상하 기준 좌표: 0-위빙 1-툴 2-베이스
+    int    arc_tracking_reference_type = 0;      // 기준 전류: 0-실측 피드백 1-고정값
+    double arc_tracking_reference_current = 0.0; // reference_type=1일 때만 사용(mA)
+    double arc_tracking_refer_sample_start_ud = 10.0; // 기준 전류 샘플링 시작(cyc)
+    double arc_tracking_refer_sample_count_ud = 10.0; // 기준 전류 샘플 주기 수(cyc)
     std::string updated_at;
 };
 struct WeldingLog {
