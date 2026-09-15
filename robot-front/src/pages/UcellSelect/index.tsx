@@ -800,6 +800,14 @@ export interface TeachingPoint {
     dz: number;
   } | null;
 }
+// 새 작업 생성 시 포인트에 들어가는 기본값 (createInitialTeachingPoints가 그대로 복사).
+// moveSpeed = 용접 이동 속도(cm/min). v1.1.137에서 현장 실측 기준으로 정정:
+//   수직(p1~p3, p7~p9) 27.5  — 약 55cm 용접선을 120초에
+//   수평(p4~p6, p10~p12) 16.7 — 약 44.5cm 용접선을 160초에
+// v1.1.130에서 WELD_BATCH_SPEED_SCALE을 0.431로 바로잡은 뒤로 이 숫자가 실제 cm/min과
+// 일치한다. 임의로 올리면 그대로 과속이 되므로 실측 없이 바꾸지 말 것.
+// (p12는 예전에 '종료점'으로 설계돼 혼자 50이었으나, 현장에서는 정상 용접 포인트로 쓰므로
+//  같은 파트인 p10/p11과 동일하게 맞춤.)
 export const UCELL_POINT_DEFINITIONS: Omit<
   TeachingPoint,
   'tcp' | 'joints' | 'isSaved' | 'touchOffset'
@@ -826,7 +834,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 1,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 15,
+    moveSpeed: 27.5,
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 300,
@@ -842,7 +850,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 2,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 15,
+    moveSpeed: 27.5,
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 300,
@@ -858,7 +866,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 3,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 15,
+    moveSpeed: 27.5,
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 300,
@@ -874,7 +882,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 4,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 30,
+    moveSpeed: 16.7,
     velMode: 1,
     weldVoltage: 24,
     weldCurrent: 220,
@@ -890,7 +898,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 5,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 30,
+    moveSpeed: 16.7,
     velMode: 1,
     weldVoltage: 24,
     weldCurrent: 220,
@@ -906,7 +914,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 6,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 30,
+    moveSpeed: 16.7,
     velMode: 1,
     weldVoltage: 24,
     weldCurrent: 220,
@@ -922,7 +930,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 7,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 15,
+    moveSpeed: 27.5,
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 300,
@@ -938,7 +946,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 8,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 15,
+    moveSpeed: 27.5,
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 300,
@@ -954,7 +962,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 9,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 15,
+    moveSpeed: 27.5,
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 300,
@@ -970,7 +978,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 10,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 30,
+    moveSpeed: 16.7,
     velMode: 1,
     weldVoltage: 24,
     weldCurrent: 220,
@@ -986,7 +994,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 11,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 30,
+    moveSpeed: 16.7,
     velMode: 1,
     weldVoltage: 24,
     weldCurrent: 220,
@@ -1002,7 +1010,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     order: 12,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 50,
+    moveSpeed: 16.7,
     velMode: 1,
     weldVoltage: null,
     weldCurrent: null,

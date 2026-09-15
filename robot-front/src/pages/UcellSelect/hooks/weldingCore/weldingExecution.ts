@@ -98,6 +98,8 @@ export async function executeWelding(
   }
   markPointIndex(startPointIndex);
   let totalPathDistance = 0;
+  // 용접 구간만의 거리(파트 전환 이동 제외).
+  let weldPathDistance = 0;
   let representativeCpm = 0;
   let totalExpectedDurationSec = 0;
   let segments: WeldingLogSegment[] = [];
@@ -156,12 +158,18 @@ export async function executeWelding(
     const CPM_CORRECTION_FACTOR = 1.0;
     let minSegmentDistance = Infinity;
     segments = [];
+    // v1.1.137: 파트 전환 구간(다른 파트로 건너가는 이동)은 용접이 아니라 30% 속도로
+    // 몇 초 만에 지나가는데, 예전에는 이 구간까지 용접 속도(cpm)로 환산해 예상 시간에
+    // 더하고 있었다. 실측 예: 전환 1506.6mm가 예상에 479초를 얹어 1026.5초로 부풀려짐
+    // (실제 546.5초). isSamePart은 이미 계산해두고 최소 위빙 거리 판정에만 쓰고 있었음.
+    // 전환 구간은 expected_sec=0으로 두고 is_transition으로 표시한다.
     for (let i = 0; i < weldingPoints.length - 1; i++) {
       const dist = calculateDistance(weldingPoints[i].tcp, weldingPoints[i + 1].tcp);
       totalPathDistance += dist;
       const isSamePart =
         partBoundaryInfo.pointPartIndices[i] === partBoundaryInfo.pointPartIndices[i + 1];
       if (isSamePart && dist < minSegmentDistance) minSegmentDistance = dist;
+      if (isSamePart) weldPathDistance += dist;
       const segmentCpm = weldingPoints[i + 1].moveSpeed || 50;
       const toPoint = weldingPoints[i + 1];
       segments.push({
@@ -169,7 +177,8 @@ export async function executeWelding(
         to: toPoint.id,
         distance_mm: dist,
         cpm: segmentCpm,
-        expected_sec: ((dist * 6) / segmentCpm) * CPM_CORRECTION_FACTOR,
+        is_transition: !isSamePart,
+        expected_sec: isSamePart ? ((dist * 6) / segmentCpm) * CPM_CORRECTION_FACTOR : 0,
         gap: toPoint.gap,
         weld_voltage: toPoint.weldVoltage,
         weld_current: toPoint.weldCurrent,
@@ -799,7 +808,7 @@ export async function executeWelding(
       [
         `${operationName} 완료`,
         ``,
-        `총 이동거리: ${totalPathDistance.toFixed(1)} mm`,
+        `용접 거리: ${weldPathDistance.toFixed(1)} mm (전환 이동 ${(totalPathDistance - weldPathDistance).toFixed(1)} mm 별도)`,
         `속도(CPM): ${representativeCpm} cm/min`,
         `예상: ${totalExpectedDurationSec.toFixed(1)}초 / 실제: ${actualDurationSec.toFixed(1)}초`,
         `차이: ${timeDifferenceSec >= 0 ? '+' : ''}${timeDifferenceSec.toFixed(1)}초 (${timeDifferencePercent >= 0 ? '+' : ''}${timeDifferencePercent.toFixed(1)}%)`,

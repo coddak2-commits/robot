@@ -1744,6 +1744,8 @@ export interface WeldingLogSegment {
   cpm: number;
   expected_sec: number;
   actual_sec?: number;
+  /** 파트와 파트 사이를 건너가는 구간(용접 아님). expected_sec는 0으로 둔다 (v1.1.137). */
+  is_transition?: boolean;
   gap?: number;
   weld_voltage?: number | null;
   weld_current?: number | null;
