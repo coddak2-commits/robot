@@ -4545,11 +4545,23 @@ void registerWeldingBatchRoutes(
             }
             float speedRaw = firstPt.value("speed", 15.0f);
             int velModeIn = firstPt.value("vel_mode", 1);
-            // 배치 이동(WeldBatch) 전용 속도 보정 계수. CPM->% 변환(speedRaw/15.0f)만으로는
-            // 실제 이동속도가 수직 용접 약 3.3배, 수평 용접 약 5.7배 빠르게 나옴(실측 튜닝값).
-            // 이 계수가 빠지면 와이어 송급 속도 대비 이동속도가 과도하게 빨라져 스패터/미용착 발생.
-            static constexpr float WELD_BATCH_SPEED_SCALE_VERTICAL = 0.30f;
-            static constexpr float WELD_BATCH_SPEED_SCALE_HORIZONTAL = 0.175f;
+            // 배치 이동(WeldBatch) 속도 계수. v1.1.130에서 실측 기반으로 재산출.
+            //
+            // 실측(DryRun 4회, 오차 0.3% 이내): 실제 이동속도 = 5.795 mm/s x 명령%
+            //   -> 명령 100% = 약 580 mm/s. 위 setSpeed(60) 전역 60%를 역산하면
+            //      원래 최대 약 966 mm/s 로 FR3 사양(1 m/s급)과 일치.
+            // cm/min -> mm/s 의 물리적 정확한 변환은 cpm/6 이므로, 필요한 명령%는
+            //   cpm / (6 x 5.795) = cpm / 34.77
+            // 코드의 변환은 (cpm/15) x SCALE 이므로 SCALE = 15/34.77 = 0.431.
+            // 이 값을 쓰면 작업에 입력한 CPM이 실제 cm/min과 일치한다.
+            //
+            // 이전 값(수직 0.30 / 수평 0.175)은 speedRaw/15.0f 자체가 틀린(2.3배 과속)
+            // 상태에서 그 위에 덧씌운 보정이라, 결과적으로 설정 CPM의 41~70%만 나갔음.
+            // 2026-09-11 과속 사고(스패터/미용착/비상정지)는 이 계수가 아예 빠져
+            // speedRaw/15.0f 가 그대로 나갔을 때 발생한 것이므로, 계수 제거는 여전히 금지.
+            // 수직/수평 분기는 지금은 같은 값이지만 개별 조정 여지를 위해 구조만 유지한다.
+            static constexpr float WELD_BATCH_SPEED_SCALE_VERTICAL = 0.431f;
+            static constexpr float WELD_BATCH_SPEED_SCALE_HORIZONTAL = 0.431f;
             std::string weavingTypeIn = firstPt.value("weaving_type", std::string(""));
             bool isVerticalWeave = weavingTypeIn.rfind("vertical", 0) == 0;
             float WELD_BATCH_SPEED_SCALE = isVerticalWeave
@@ -6672,7 +6684,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.129"
+#define APP_VERSION_STRING "1.1.130"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
