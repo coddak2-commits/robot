@@ -5794,6 +5794,7 @@ void registerSdkRoutes(
             if (body.contains("touch_sensing_step_size")) config.touch_sensing_step_size = body["touch_sensing_step_size"].get<double>();
             if (body.contains("touch_sensing_retract_distance")) config.touch_sensing_retract_distance = body["touch_sensing_retract_distance"].get<double>();
             if (body.contains("touch_sensing_approach_offset")) config.touch_sensing_approach_offset = body["touch_sensing_approach_offset"].get<double>();
+            if (body.contains("touch_sensing_home_retract_offset")) config.touch_sensing_home_retract_offset = body["touch_sensing_home_retract_offset"].get<double>();
             if (body.contains("touch_sensing_move_distance")) config.touch_sensing_move_distance = body["touch_sensing_move_distance"].get<double>();
             if (body.contains("touch_sensing_point_speed")) config.touch_sensing_point_speed = body["touch_sensing_point_speed"].get<double>();
             if (body.contains("touch_sensing_search_speed")) config.touch_sensing_search_speed = body["touch_sensing_search_speed"].get<double>();
@@ -6774,7 +6775,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.140"
+#define APP_VERSION_STRING "1.1.141"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -8733,7 +8734,7 @@ WeldingConfig DatabaseService::getWeldingConfig() {
     MYSQL_RES* result = executeSelect(
         "SELECT touch_sensing_enabled, touch_speed, touch_distance, touch_offset_depth, "
         "touch_approach_angle, touch_sensing_velocity, touch_sensing_acceleration, touch_sensing_step_size, "
-        "touch_sensing_retract_distance, touch_sensing_approach_offset, touch_sensing_move_distance, "
+        "touch_sensing_retract_distance, touch_sensing_approach_offset, touch_sensing_home_retract_offset, touch_sensing_move_distance, "
         "touch_sensing_point_speed, touch_sensing_search_speed, "
         "p1_touch_center, p1_touch_left, p1_touch_right, p1_touch_bottom, "
         "p2_touch_center, p2_touch_left, p2_touch_right, "
@@ -8772,6 +8773,7 @@ WeldingConfig DatabaseService::getWeldingConfig() {
         config.touch_sensing_step_size = row[col] ? std::stod(row[col]) : 5.0; col++;
         config.touch_sensing_retract_distance = row[col] ? std::stod(row[col]) : 10.0; col++;
         config.touch_sensing_approach_offset = row[col] ? std::stod(row[col]) : 100.0; col++;
+        config.touch_sensing_home_retract_offset = row[col] ? std::stod(row[col]) : 100.0; col++;
         config.touch_sensing_move_distance = row[col] ? std::stod(row[col]) : 0.5; col++;
         config.touch_sensing_point_speed = row[col] ? std::stod(row[col]) : 50.0; col++;
         config.touch_sensing_search_speed = row[col] ? std::stod(row[col]) : 3.0; col++;
@@ -8851,6 +8853,7 @@ bool DatabaseService::updateWeldingConfig(const WeldingConfig& config) {
           << "touch_sensing_step_size = " << config.touch_sensing_step_size << ", "
           << "touch_sensing_retract_distance = " << config.touch_sensing_retract_distance << ", "
           << "touch_sensing_approach_offset = " << config.touch_sensing_approach_offset << ", "
+          << "touch_sensing_home_retract_offset = " << config.touch_sensing_home_retract_offset << ", "
           << "touch_sensing_move_distance = " << config.touch_sensing_move_distance << ", "
           << "touch_sensing_point_speed = " << config.touch_sensing_point_speed << ", "
           << "touch_sensing_search_speed = " << config.touch_sensing_search_speed << ", "
@@ -8927,6 +8930,7 @@ json DatabaseService::weldingConfigToJson(const WeldingConfig& config) {
         {"touch_sensing_step_size", config.touch_sensing_step_size},
         {"touch_sensing_retract_distance", config.touch_sensing_retract_distance},
         {"touch_sensing_approach_offset", config.touch_sensing_approach_offset},
+        {"touch_sensing_home_retract_offset", config.touch_sensing_home_retract_offset},
         {"touch_sensing_move_distance", config.touch_sensing_move_distance},
         {"touch_sensing_point_speed", config.touch_sensing_point_speed},
         {"touch_sensing_search_speed", config.touch_sensing_search_speed},
@@ -9003,6 +9007,7 @@ WeldingConfig DatabaseService::jsonToWeldingConfig(const json& j) {
     if (j.contains("touch_sensing_step_size")) config.touch_sensing_step_size = j["touch_sensing_step_size"].get<double>();
     if (j.contains("touch_sensing_retract_distance")) config.touch_sensing_retract_distance = j["touch_sensing_retract_distance"].get<double>();
     if (j.contains("touch_sensing_approach_offset")) config.touch_sensing_approach_offset = j["touch_sensing_approach_offset"].get<double>();
+    if (j.contains("touch_sensing_home_retract_offset")) config.touch_sensing_home_retract_offset = j["touch_sensing_home_retract_offset"].get<double>();
     if (j.contains("touch_sensing_move_distance")) config.touch_sensing_move_distance = j["touch_sensing_move_distance"].get<double>();
     if (j.contains("touch_sensing_point_speed")) config.touch_sensing_point_speed = j["touch_sensing_point_speed"].get<double>();
     if (j.contains("touch_sensing_search_speed")) config.touch_sensing_search_speed = j["touch_sensing_search_speed"].get<double>();

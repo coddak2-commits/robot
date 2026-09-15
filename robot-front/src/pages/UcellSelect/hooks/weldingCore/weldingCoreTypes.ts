@@ -8,6 +8,7 @@ export interface WeldingSequenceSettings {
   touchDistance: number;
   touchOffsetDepth: number;
   touchApproachOffset: number;
+  touchHomeRetractOffset: number;
   touchSensingPointSpeed: number;
   p1TouchCenter: boolean;
   p1TouchLeft: boolean;

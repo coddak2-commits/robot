@@ -202,6 +202,10 @@ export async function executeTouchSensing(
   const NEAR_UCELL_CORNER = ['p9', 'p10'];
   const getApproachOffsetPos = (pointId: string, offset: number): number[] =>
     NEAR_UCELL_CORNER.includes(pointId.toLowerCase()) ? [0, -offset, 0, 0, 0, 0] : [offset, 0, 0, 0, 0, 0];
+  // 접근 오프셋은 탐색 거리(touch_distance) 안에 들어와야 하므로 짧다.
+  // 반면 홈 복귀 직전 후퇴는 U셀과의 간섭을 피해야 해서 길어야 한다.
+  // 두 값을 한 설정으로 묶으면 한쪽이 반드시 망가지므로 분리한다. (v1.1.141)
+  const HOME_RETRACT_OFFSET = sequenceSettings.touchHomeRetractOffset;
   try {
     if (!robotState?.servo_enabled) {
       log_touchSensing.info('touchSensing.setup', '서보 활성화 중...');
@@ -350,7 +354,11 @@ export async function executeTouchSensing(
         try {
           if (lastPoint?.tcp) {
             const { x: lx, y: ly, z: lz, rx: lrx, ry: lry, rz: lrz } = lastPoint.tcp;
-            log_touchSensing.info('touchSensing.homeReturn.retract', `${lastPoint.name} +X 오프셋으로 후퇴`);
+            const retractOffsetPos = getApproachOffsetPos(lastPoint.id, HOME_RETRACT_OFFSET);
+            log_touchSensing.info(
+              'touchSensing.homeReturn.retract',
+              `${lastPoint.name} ${NEAR_UCELL_CORNER.includes(lastPoint.id.toLowerCase()) ? '-Y' : '+X'} ${HOME_RETRACT_OFFSET}mm 후퇴`,
+            );
             await moveToCartesianWithStopCheck(
               { x: lx, y: ly, z: lz, rx: lrx, ry: lry, rz: lrz },
               sequenceSettings.touchSensingPointSpeed,
@@ -358,7 +366,7 @@ export async function executeTouchSensing(
               100,
               -1,
               1,
-              [Z_APPROACH_OFFSET, 0, 0, 0, 0, 0],
+              retractOffsetPos,
               undefined,
               lastPoint.toolNum ?? 0,
               lastPoint.userNum ?? 0,
