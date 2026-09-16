@@ -1,7 +1,8 @@
-import { TeachingPoint, getExecutableParts, flattenExecutableParts } from '../..';
-import { enableRobot, RealtimeRobotStatus, startArc, endArc, endWeave } from '../../../../lib';
+import { TeachingPoint, getExecutableParts, flattenExecutableParts, WEAVING_TYPE_OPTIONS, PartWeldEnabled, getPartBoundaryInfo } from '../..';
+import { enableRobot, RealtimeRobotStatus, startArc, endArc, endWeave, getWeldingConfig, WeldingConfigData, moveToJointPositionNonBlocking, checkMotionDone, createWeldingLog, WeldingLogData, WeldingLogSegment, wireSearchEnd, findDx, findDy, findDz, setWeaveParams, startWeave, arcOn, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, isApiSuccess, clearStopLatch } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
+import { setWeldingPartOrder } from '../..';
 import { moveToJointWithStopCheck } from './moveStopCheck';
 
 const log = createLogger('weldingCore.arcTest');
@@ -21,6 +22,8 @@ export async function executeArcTest(
   const totalTimer = log.startTimer();
   const testType = isSimulation ? '포인트 테스트' : '아크 테스트';
   log.info('arcTest.start', `${testType} 시작`, { manualSpeed, isSimulation });
+  // 이전 정지 래치 해제 (v1.1.145)
+  await clearStopLatch().catch(() => {});
   const executableParts = getExecutableParts(teachingPoints);
   log.info('arcTest.parts', '파트별 실행 정보', {
     parts: executableParts.map(p => ({

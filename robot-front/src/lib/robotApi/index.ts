@@ -244,6 +244,17 @@ export const stopRobotSDK = async () => {
     throw error;
   }
 };
+// 정지 래치 해제. 비상정지/정지 이후에는 robot-core가 아크 ON을 거부하므로,
+// 새 용접·테스트를 시작하기 전에 반드시 한 번 호출해야 한다. (v1.1.145)
+export const clearStopLatch = async () => {
+  try {
+    const response = await api.post('/robot_sdk/robot/clear_stop');
+    return response.data;
+  } catch (error) {
+    console.error('정지 래치 해제 오류:', error);
+    throw error;
+  }
+};
 export const emergencyStop = async () => {
   console.log('[EMERGENCY STOP] 비상 정지 요청 시작');
   const baseUrl = api.defaults.baseURL || 'http://localhost:8000';

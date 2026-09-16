@@ -3604,6 +3604,15 @@ nlohmann::json makeStatusResponse(int statusCode, const nlohmann::json& data) {
 #include "robot_core_all.h"
 #include <iostream>
 using json = nlohmann::json;
+// 정지 래치와 아크 시퀀스 직렬화. (v1.1.145)
+// 2026-09-15 현장 로그 근거:
+//  - 비상정지를 누른 뒤에도 진행 중이던 Arc ON 시퀀스가 그대로 완료돼 아크가 켜졌다.
+//    (16:43:18 EMERGENCY STOP -> 16:43:19 Arc ON completed -> Weave START)
+//    그래서 정지 요청을 래치로 남기고, 새 용접을 시작할 때만 해제한다.
+//  - Arc ON과 Arc OFF가 3ms 차이로 동시에 실행돼 OFF가 먼저 끝나고 아크가 켜진 채
+//    남은 사례가 있다. (16:43:29) 두 시퀀스를 하나의 뮤텍스로 직렬화한다.
+std::atomic<bool> g_stopLatched{false};
+std::mutex g_arcMutex;
 void registerRobotRoutes(
     httplib::Server& server,
     RobotService& robotService,
@@ -3853,6 +3862,12 @@ void registerWeldingRoutes(
             int arcNum = body.value("arc_num", 0);
             int timeout = body.value("timeout", 5000);
             FLOG_INFO("WeldingRoute", "Arc START request: ioType=" + std::to_string(ioType) + " arcNum=" + std::to_string(arcNum) + " timeout=" + std::to_string(timeout));
+            std::lock_guard<std::mutex> arcLock(g_arcMutex);
+            if (g_stopLatched.load()) {
+                FLOG_WARN("WeldingRoute", "Arc START rejected - stop latched");
+                res.set_content(HttpRouteHelpers::makeErrorResponse(409, "Stop requested - arc start refused"), "application/json");
+                return;
+            }
             int result = robotService.arcStart(ioType, arcNum, timeout);
             if (result != 0) {
                 FLOG_SDK_ERROR("arcStart", result, "ioType=" + std::to_string(ioType) + " arcNum=" + std::to_string(arcNum));
@@ -4274,6 +4289,12 @@ void registerWeldingConfigRoutes(
             float voltage = body.value("voltage", 0.0f);
             int gasPreFlowMs = body.value("gas_pre_flow_ms", 500);
             FLOG_INFO("WeldingConfig", "Arc ON sequence: current=" + std::to_string(current) + "A voltage=" + std::to_string(voltage) + "V gasPreFlow=" + std::to_string(gasPreFlowMs) + "ms");
+            std::lock_guard<std::mutex> arcLock(g_arcMutex);
+            if (g_stopLatched.load()) {
+                FLOG_WARN("WeldingConfig", "Arc ON sequence rejected - stop latched");
+                res.set_content(HttpRouteHelpers::makeStatusResponse(409, {{"message", "Stop requested - arc on refused"}}).dump(), "application/json");
+                return;
+            }
             if (dbService && dbService->isConnected()) {
                 std::ostringstream oss;
                 oss << "ioType=" << ioType << " arcNum=" << arcNum
@@ -4308,6 +4329,15 @@ void registerWeldingConfigRoutes(
             }
             if (gasPreFlowMs > 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(gasPreFlowMs));
+            }
+            // 가스 프리플로우 대기 중에 정지가 들어왔을 수 있으므로 점화 직전에 다시 확인한다.
+            if (g_stopLatched.load()) {
+                FLOG_WARN("WeldingConfig", "Arc ON aborted before ignition - stop latched");
+                robotService.setWeldingCurrent(ioType, 0.0f, 1, 0);
+                robotService.setWeldingVoltage(ioType, 0.0f, 0, 0);
+                robotService.setAspirated(ioType, 0);
+                res.set_content(HttpRouteHelpers::makeStatusResponse(409, {{"message", "Stop requested - arc on aborted"}}).dump(), "application/json");
+                return;
             }
             int resultArc = robotService.arcStart(ioType, arcNum, timeout);
             if (dbService && dbService->isConnected()) {
@@ -4351,6 +4381,7 @@ void registerWeldingConfigRoutes(
             int timeout = body.value("timeout", 1000);
             int gasPostFlowMs = body.value("gas_post_flow_ms", 500);
             FLOG_INFO("WeldingConfig", "Arc OFF sequence: ioType=" + std::to_string(ioType) + " arcNum=" + std::to_string(arcNum) + " gasPostFlow=" + std::to_string(gasPostFlowMs) + "ms");
+            std::lock_guard<std::mutex> arcLock(g_arcMutex);
             if (dbService && dbService->isConnected()) {
                 std::ostringstream oss;
                 oss << "ioType=" << ioType << " arcNum=" << arcNum
@@ -4784,7 +4815,13 @@ void registerWeldingBatchRoutes(
                         speed, acc, ovl, blendR, 0, offsetFlag, offset, velMode);
                 }
                 results.push_back(ret);
-                if (ret == 0) {
+                // 비상정지로 끊긴 MoveL도 SDK는 0을 돌려준다. 2026-09-15 로그에서
+                // EMERGENCY STOP 직후 "Batch complete: 2/2"로 기록돼 중단된 용접이
+                // 완료로 남았다. 정지 플래그를 먼저 본다. (v1.1.145)
+                if (g_batchStopFlag.load()) {
+                    stopped = true;
+                    FLOG_WARN("WeldBatch", "MoveL returned but stop was requested - treated as stopped");
+                } else if (ret == 0) {
                     completed = total;
                     FLOG_INFO("WeldBatch", "Single MoveL completed (all " + std::to_string(total) + " points)");
                 } else {
@@ -5913,6 +5950,8 @@ void registerSdkMotionRoutes(
     server.Post("/robot_sdk/robot/stop", [&robotService](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         FLOG_INFO("SdkMotion", "Stop motion request");
+        g_batchStopFlag = true;
+        g_stopLatched = true;
         int result = robotService.stopMotion();
         if (result != 0) {
             FLOG_SDK_ERROR("stopMotion", result, "Stop motion failed");
@@ -5922,9 +5961,24 @@ void registerSdkMotionRoutes(
         response["result"] = result;
         res.set_content(response.dump(), "application/json");
     });
+    // 정지 래치 해제. 새 용접/테스트를 시작할 때 프론트가 명시적으로 호출한다.
+    // 자동 해제를 두지 않는 이유: 정지 후 아무도 의도하지 않은 시점에 아크가
+    // 다시 켜지는 경로를 만들지 않기 위해서다. (v1.1.145)
+    server.Post("/robot_sdk/robot/clear_stop", [](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        g_stopLatched = false;
+        g_batchStopFlag = false;
+        FLOG_INFO("SdkMotion", "Stop latch cleared");
+        json response;
+        response["status_code"] = 200;
+        response["result"] = 0;
+        res.set_content(response.dump(), "application/json");
+    });
     server.Post("/robot_sdk/robot/emergency_stop", [&robotService](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         FLOG_FATAL("SdkMotion", "EMERGENCY STOP request");
+        g_batchStopFlag = true;
+        g_stopLatched = true;
         int result = robotService.emergencyStop();
         if (result != 0) {
             FLOG_SDK_ERROR("emergencyStop", result, "Emergency stop failed");
@@ -6793,7 +6847,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.144"
+#define APP_VERSION_STRING "1.1.145"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

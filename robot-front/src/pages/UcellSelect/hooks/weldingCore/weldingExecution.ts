@@ -1,5 +1,5 @@
 import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo } from '../..';
-import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder } from '../../../../lib';
+import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { setWeldingPartOrder } from '../..';
@@ -140,6 +140,9 @@ export async function executeWelding(
     return result;
   };
   try {
+    // 이전 비상정지/정지의 래치를 해제한다. 해제하지 않으면 robot-core가
+    // 아크 ON을 거부한다. (v1.1.145)
+    await clearStopLatch().catch(() => {});
     if (!robotState?.servo_enabled) await enableRobot();
     await endWeave().catch(() => {});
     if (!startFromClosest && !simMode) {
