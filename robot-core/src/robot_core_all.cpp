@@ -4769,29 +4769,31 @@ void registerWeldingBatchRoutes(
                     stopped ? 499 : 200, resultData).dump(), "application/json");
                 return;
             }
+            // 끝점에는 끝점 자신의 보정값을 쓴다 (v1.1.149).
+            // v1.1.148까지는 배치 포인트 보정값의 평균을 끝점에 적용했다. 중간 포인트와
+            // 끝점의 실측이 다르면(U셀 휨/갭) 끝점이 그 차이의 절반만큼 어긋났다.
+            // 2026-09-16 좌측 수직 상단 불량: P1 실측 (2.10,-7.38) vs 적용 평균 (-3.91,-3.26).
+            // 경유점은 여전히 건너뛴다(용접 중 정지 방지). 시작점 보정은 앱의 최종 하강에서 적용되므로
+            // 단일 MoveL은 시작점 보정 -> 끝점 보정으로 선형 이동한다.
             int offsetFlag = 0;
             double offset[6] = {0};
-            int offsetCount = 0;
-            double avgOffset[6] = {0};
-            for (int i = 0; i < total; i++) {
-                auto& pt = points[i];
-                int ptOffsetFlag = pt.value("offset_flag", 0);
-                if (ptOffsetFlag > 0 && pt.contains("offset") && pt["offset"].is_array()) {
-                    for (int k = 0; k < 6 && k < (int)pt["offset"].size(); k++) {
-                        avgOffset[k] += pt["offset"][k].get<double>();
+            {
+                auto& endPt = points[total - 1];
+                int endOffsetFlag = endPt.value("offset_flag", 0);
+                if (endOffsetFlag > 0 && endPt.contains("offset") && endPt["offset"].is_array()) {
+                    offsetFlag = 1;
+                    for (int k = 0; k < 6 && k < (int)endPt["offset"].size(); k++) {
+                        offset[k] = endPt["offset"][k].get<double>();
                     }
-                    offsetCount++;
+                    FLOG_INFO("WeldBatch", "Endpoint offset (own): [" + std::to_string(offset[0]) + "," +
+                        std::to_string(offset[1]) + "," + std::to_string(offset[2]) + "]");
+                } else {
+                    FLOG_WARN("WeldBatch", "Endpoint has no touch offset - moving to taught position");
                 }
-            }
-            if (offsetCount > 0) {
-                offsetFlag = 1;
-                for (int k = 0; k < 6; k++) offset[k] = avgOffset[k] / offsetCount;
-                FLOG_INFO("WeldBatch", "Interpolated offset from " + std::to_string(offsetCount) +
-                    " points: [" + std::to_string(offset[0]) + "," + std::to_string(offset[1]) + "," + std::to_string(offset[2]) + "]");
             }
             if (total > 1) {
                 FLOG_INFO("WeldBatch", "Skipping " + std::to_string(total - 1) +
-                    " waypoint(s), single MoveL to endpoint with interpolated offset");
+                    " waypoint(s), single MoveL to endpoint with endpoint offset");
             }
             FLOG_DEBUG("WeldBatch", "MoveL to endpoint: tcp=[" +
                 std::to_string(tcp[0]) + "," + std::to_string(tcp[1]) + "," + std::to_string(tcp[2]) +
@@ -6858,7 +6860,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.148"
+#define APP_VERSION_STRING "1.1.149"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
