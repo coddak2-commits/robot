@@ -231,8 +231,25 @@ export async function executeWelding(
     // arcOn을 다시 하는데 트래킹을 용접 시작 때 한 번만 켜두면 첫 파트(수직 260A)에서
     // 잡은 기준이 다음 파트(수평 300A)에도 그대로 쓰여 반대 방향으로 보정할 수 있다.
     // 세부 계수는 robot-core가 DB(welding_config)에서 읽으므로 여기서는 flag만 넘긴다.
+    // 매뉴얼(FAIRINO 사용설명서 5.7.8.6, p.218)의 아크 추적 파라미터는 보상 시간 단위가
+    // cyc(위빙 주기)이고 상하 좌표계 선택지에 '스윙'이 있다. 위빙을 전제로 한 기능으로
+    // 보이므로 위빙이 없는 구간에는 걸지 않는다. (v1.1.148)
+    // 위빙 없이도 동작하는지는 아직 실측으로 확인되지 않았다. 확인되면 이 조건을 완화할 것.
     const arcTrackingActive =
-      sequenceSettings.arcTrackingEnabled && hasWelding && !simMode && !isWeldingTest;
+      sequenceSettings.arcTrackingEnabled && hasWelding && hasWeaving && weaveTypeCode >= 0 &&
+      !simMode && !isWeldingTest;
+    if (sequenceSettings.arcTrackingEnabled && hasWelding && !simMode && !isWeldingTest &&
+        !(hasWeaving && weaveTypeCode >= 0)) {
+      log_weldingExecution.warn(
+        'welding.arcTrace.skipped',
+        '아크 트래킹이 켜져 있지만 위빙이 없어 적용하지 않습니다',
+        { hasWeaving, weaveTypeCode },
+      );
+      showAlert('위빙이 없어 아크 트래킹을 적용하지 않습니다.', {
+        type: 'warning',
+        title: '아크 트래킹 미적용',
+      });
+    }
     let arcTrackingWarned = false;
     const armArcTracking = async () => {
       if (!arcTrackingActive) return;
