@@ -44,11 +44,25 @@ async function performRealTouchSensing(
   let dx = 0,
     dy = 0,
     dz = 0;
+  // v1.1.150: 탐색이 실패(미접촉 포함)하면 이 포인트 결과를 쓰지 않고 실패로 돌려준다.
+  // 이전에는 실패한 방향만 0으로 두고 다음으로 넘어갔다.
+  const searchFailure = (
+    label: string,
+    res: { status_code?: number; message?: string } | null | undefined,
+  ): PointTouchResult => {
+    const reason = res?.message ?? `status=${res?.status_code ?? 'none'}`;
+    log_touchSensing.error('touchSensing.search.failed', `${point.name} ${label} 탐색 실패`, {
+      status: res?.status_code,
+      reason,
+    });
+    return { dx, dy, dz, stopped: false, error: `${point.name} ${label} 탐색 실패: ${reason}` };
+  };
   try {
     if (hasCenter && !stopRef.current) {
       if (isHorizontal) {
         log_touchSensing.info('touchSensing.findDx.center', `${point.name} 중앙 터치 시작 (가로용접 Base -X)`);
         const dxResult = await findDx(-1);
+        if (!(dxResult?.status_code === 200 && dxResult.data?.delta_x !== undefined)) return searchFailure('중앙(X)', dxResult);
         if (dxResult?.status_code === 200 && dxResult.data?.delta_x !== undefined) {
           dx = dxResult.data.delta_x;
           log_touchSensing.info(
@@ -60,6 +74,7 @@ async function performRealTouchSensing(
       } else {
         log_touchSensing.info('touchSensing.findDx', `${point.name} 중앙 터치 시작 (세로용접 -X방향)`);
         const dxResult = await findDx(-1);
+        if (!(dxResult?.status_code === 200 && dxResult.data?.delta_x !== undefined)) return searchFailure('중앙(X)', dxResult);
         if (dxResult?.status_code === 200 && dxResult.data?.delta_x !== undefined) {
           dx = dxResult.data.delta_x + depthOffset;
           log_touchSensing.info('touchSensing.findDx.result', `중앙 터치 완료`, {
@@ -75,6 +90,7 @@ async function performRealTouchSensing(
       if (hasLeft && !stopRef.current) {
         log_touchSensing.info('touchSensing.findDy.left', `${point.name} 좌측 터치 시작 (-Y방향)`);
         const dyLeftResult = await findDy(-1);
+        if (!(dyLeftResult?.status_code === 200 && dyLeftResult.data?.delta_y !== undefined)) return searchFailure('좌측(Y)', dyLeftResult);
         if (dyLeftResult?.status_code === 200 && dyLeftResult.data?.delta_y !== undefined) {
           dy = dyLeftResult.data.delta_y + depthOffset;
           log_touchSensing.info('touchSensing.findDy.left.result', `좌측 터치 완료`, {
@@ -88,6 +104,7 @@ async function performRealTouchSensing(
       if (hasRight && !stopRef.current) {
         log_touchSensing.info('touchSensing.findDy.right', `${point.name} 우측 터치 시작 (+Y방향)`);
         const dyRightResult = await findDy(1);
+        if (!(dyRightResult?.status_code === 200 && dyRightResult.data?.delta_y !== undefined)) return searchFailure('우측(Y)', dyRightResult);
         if (dyRightResult?.status_code === 200 && dyRightResult.data?.delta_y !== undefined) {
           const rightDy = dyRightResult.data.delta_y - depthOffset;
           dy = hasLeft ? (dy + rightDy) / 2 : rightDy;
@@ -104,6 +121,7 @@ async function performRealTouchSensing(
       if (!stopRef.current) {
         log_touchSensing.info('touchSensing.findDy.side', `${point.name} ${sideLabel} 터치 시작`);
         const dyResult = await findDy(sideDirection);
+        if (!(dyResult?.status_code === 200 && dyResult.data?.delta_y !== undefined)) return searchFailure('측면(Y)', dyResult);
         if (dyResult?.status_code === 200 && dyResult.data?.delta_y !== undefined) {
           dy = dyResult.data.delta_y;
           log_touchSensing.info(
@@ -118,6 +136,7 @@ async function performRealTouchSensing(
     if (hasTop && !stopRef.current) {
       log_touchSensing.info('touchSensing.findDz.top', `${point.name} 상단 터치 시작 (Base +Z)`);
       const dzResult = await findDz(1);
+      if (!(dzResult?.status_code === 200 && dzResult.data?.delta_z !== undefined)) return searchFailure('상단(Z)', dzResult);
       if (dzResult?.status_code === 200 && dzResult.data?.delta_z !== undefined) {
         dz = dzResult.data.delta_z;
         log_touchSensing.info('touchSensing.findDz.top.result', `상단 터치 완료`, { dz });
@@ -127,6 +146,7 @@ async function performRealTouchSensing(
     if (hasBottomDir && !stopRef.current) {
       log_touchSensing.info('touchSensing.findDz.bottom', `${point.name} 하단 터치 시작 (Base -Z)`);
       const dzResult = await findDz(-1);
+      if (!(dzResult?.status_code === 200 && dzResult.data?.delta_z !== undefined)) return searchFailure('하단(Z)', dzResult);
       if (dzResult?.status_code === 200 && dzResult.data?.delta_z !== undefined) {
         dz = hasTop ? (dz + dzResult.data.delta_z) / 2 : dzResult.data.delta_z;
         log_touchSensing.info('touchSensing.findDz.bottom.result', `하단 터치 완료`, { dz, averaged: hasTop });
@@ -212,6 +232,12 @@ export async function executeTouchSensing(
       await enableRobot();
     }
     let lastPoint: TeachingPoint | null = null;
+    // 실패 사유. 하나라도 실패하면 즉시 중단한다 (v1.1.150).
+    // 실패 후에는 로봇이 에러 상태라 이후 명령이 전부 거부되고, 건너뛰고 진행하면
+    // 측정값이 없는 포인트가 보간값으로 용접되기 때문이다.
+    let failure: string | null = null;
+    // 보정값은 전체가 끝난 뒤 한꺼번에 저장한다. 실패하면 저장하지 않는다.
+    const pendingUpdates: TouchSensingResult[] = [];
     const isSameTcpPosition = (a: TeachingPoint | null, b: TeachingPoint): boolean => {
       if (!a?.tcp || !b.tcp) return false;
       return (
@@ -283,7 +309,8 @@ export async function executeTouchSensing(
           }
           if (!approachResult.success) {
             log_touchSensing.error('touchSensing.approach.failed', `${point.name} 접근 실패`);
-            continue;
+            failure = `${point.name} 접근 이동 실패 (로봇 에러 상태일 수 있음)`;
+            break;
           }
         } else {
           // 이전 포인트와 같은 좌표라도, 터치센싱 탐색+후퇴로 실제 위치가 티칭 좌표에서
@@ -313,7 +340,8 @@ export async function executeTouchSensing(
         }
         if (!moveResult.success) {
           log_touchSensing.error('touchSensing.move.failed', `${point.name} 이동 실패`);
-          continue;
+          failure = `${point.name} 티칭 위치 이동 실패 (로봇 에러 상태일 수 있음)`;
+          break;
         }
       }
       let touchResult: PointTouchResult;
@@ -332,6 +360,10 @@ export async function executeTouchSensing(
         log_touchSensing.info('touchSensing.stopped', '터치 센싱 정지됨');
         break;
       }
+      if (touchResult.error) {
+        failure = touchResult.error;
+        break;
+      }
       const result: TouchSensingResult = {
         pointId: point.id,
         dx: touchResult.dx,
@@ -339,9 +371,25 @@ export async function executeTouchSensing(
         dz: touchResult.dz,
       };
       touchResults.push(result);
-      if (onUpdatePoint) {
-        onUpdatePoint(point.id, { dx: touchResult.dx, dy: touchResult.dy, dz: touchResult.dz });
-        log_touchSensing.info('touchSensing.updatePoint', `${point.name} 터치 오프셋 저장`, result);
+      pendingUpdates.push(result);
+    }
+    if (failure) {
+      totalTimer.end('touchSensing.failed', `${modeLabel} 실패`);
+      log_touchSensing.error('touchSensing.failed', `${modeLabel} 중단`, {
+        failure,
+        measured: touchResults.length,
+      });
+      showAlert(
+        `${failure}\n\n터치센싱을 중단했습니다. 이번 측정값은 저장하지 않았습니다.\n` +
+          '로봇 에러가 표시되면 [에러 초기화] 후 토치 위치와 와이어를 확인하고 다시 실행하십시오.',
+        { type: 'error', title: '터치 센싱 실패' },
+      );
+      return [];
+    }
+    if (onUpdatePoint) {
+      for (const r of pendingUpdates) {
+        onUpdatePoint(r.pointId, { dx: r.dx, dy: r.dy, dz: r.dz });
+        log_touchSensing.info('touchSensing.updatePoint', `${r.pointId} 터치 오프셋 저장`, r);
       }
     }
     log_touchSensing.info('touchSensing.complete', `${modeLabel} 완료`, { results: touchResults, isDryRun });

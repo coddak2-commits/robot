@@ -5521,13 +5521,16 @@ AxisTouchSearchResult performAxisTouchSearch(
         }
 
         int wsEnd = robotService.wireSearchEnd(0, 10, 10, 0, 10, 10, 0);
+        // 접촉 없이 탐색 거리 끝까지 가면 컨트롤러가 7-14(와이어 탐색 시간 초과) 에러를 내고
+        // WireSearchEnd가 code=14를 돌려준다. 탐색 MoveL 자체는 0을 돌려주므로 이것으로 판정해야 한다.
+        // v1.1.149까지는 로그만 남겨 끝까지 간 거리(-50mm)가 정상 보정값으로 쓰였다 (2026-09-17 공중 테스트).
         if (wsEnd != 0) {
-            FLOG_SDK_ERROR("wireSearchEnd", wsEnd, tag + " WireSearchEnd failed");
+            FLOG_SDK_ERROR("wireSearchEnd", wsEnd, tag + " WireSearchEnd failed - treated as search failure");
         }
         if (r.result != 0) {
             FLOG_WARN("TouchSensing", tag + " MoveL returned error code " + std::to_string(r.result));
         }
-        r.searchFailed = (r.result != 0) || (waitCount >= MAX_WAIT);
+        r.searchFailed = (r.result != 0) || (waitCount >= MAX_WAIT) || (wsEnd != 0);
     } else {
         r.result = wsStart;
         r.searchFailed = true;
@@ -5536,7 +5539,15 @@ AxisTouchSearchResult performAxisTouchSearch(
     state = robotService.getState();
     r.end = state.tl_cur_pos[axis];
     r.delta = r.end - r.start;
-    FLOG_INFO("TouchSensing", tag + " COMPLETE: delta=" + std::to_string(r.delta) + " contact=" + std::to_string(r.end));
+    // 미접촉 판정: 탐색 거리 끝까지 갔으면 접촉하지 못한 것이다 (v1.1.150).
+    const double NO_CONTACT_MARGIN = 1.0;
+    if (!r.searchFailed && std::fabs(r.delta) >= searchDis - NO_CONTACT_MARGIN) {
+        FLOG_ERROR("TouchSensing", tag + " no contact: moved " + std::to_string(std::fabs(r.delta)) +
+            "mm of " + std::to_string(searchDis) + "mm - treated as search failure");
+        r.searchFailed = true;
+    }
+    FLOG_INFO("TouchSensing", tag + " COMPLETE: delta=" + std::to_string(r.delta) + " contact=" + std::to_string(r.end) +
+        (r.searchFailed ? " (FAILED)" : ""));
 
     double retractPos[6];
     for (int i = 0; i < 6; ++i) retractPos[i] = state.tl_cur_pos[i];
@@ -6860,7 +6871,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.149"
+#define APP_VERSION_STRING "1.1.150"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
