@@ -5464,12 +5464,23 @@ AxisTouchSearchResult performAxisTouchSearch(
     searchTarget[axis] += r.direction * SEARCH_MOVE_DIST;
 
     const std::string tag = std::string("find-d") + axisChar;
-    const float LUA_SEARCH_DIS = 30.0f;
+    // 탐색 거리는 touch_distance 설정을 그대로 쓴다. (v1.1.147)
+    // v1.1.146까지는 30mm로 하드코딩돼 있었고 touch_distance는 로그에만 찍혔다.
+    // 그래서 어프로치 오프셋을 30mm 이상으로 올리면 모재에 닿기 전에 탐색이 끝나
+    // 실패했다(80mm로 올렸다가 실패한 사례).
+    // 상한을 두는 이유: 접촉이 감지되지 않으면 로봇이 이 거리만큼 그대로 밀고 들어간다.
+    // 어프로치 오프셋보다 충분히 커야 하고, 지그·U셀 구조물까지의 여유보다는 작아야 한다.
+    const float SEARCH_DIS_MIN = 10.0f;
+    const float SEARCH_DIS_MAX = 100.0f;
+    float searchDis = r.searchDis;
+    if (searchDis < SEARCH_DIS_MIN) searchDis = SEARCH_DIS_MIN;
+    if (searchDis > SEARCH_DIS_MAX) searchDis = SEARCH_DIS_MAX;
     FLOG_INFO("TouchSensing", tag + " START: dir=" + std::to_string(r.direction) +
-        " searchDis=" + std::to_string(r.searchDis) + "mm vel=" + std::to_string(r.searchVel) +
-        " (LUA_SEARCH_DIS=" + std::to_string(LUA_SEARCH_DIS) + "mm)");
+        " searchDis=" + std::to_string(searchDis) + "mm vel=" + std::to_string(r.searchVel) +
+        " (config=" + std::to_string(r.searchDis) + "mm, clamp " +
+        std::to_string(SEARCH_DIS_MIN) + "~" + std::to_string(SEARCH_DIS_MAX) + ")");
 
-    int wsStart = robotService.wireSearchStart(0, r.searchVel, LUA_SEARCH_DIS, 0, 10, 10, 0);
+    int wsStart = robotService.wireSearchStart(0, r.searchVel, static_cast<int>(searchDis), 0, 10, 10, 0);
     const bool wireSearchArmed = (wsStart == 0);
     if (!wireSearchArmed) {
         // WireSearchStart 실패 시 접촉 감지가 무장되지 않은 상태이므로,
@@ -6847,7 +6858,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.146"
+#define APP_VERSION_STRING "1.1.147"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
