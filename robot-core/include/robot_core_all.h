@@ -392,6 +392,7 @@ struct WeldingConfig {
     double touch_sensing_retract_distance = 10.0;
     double touch_sensing_approach_offset = 100.0;
     double touch_sensing_home_retract_offset = 100.0;
+    int arc_end_burnback_ms = 500;
     double touch_sensing_move_distance = 0.5;
     double touch_sensing_point_speed = 50.0;
     double touch_sensing_search_speed = 3.0;

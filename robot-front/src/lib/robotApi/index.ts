@@ -1640,6 +1640,7 @@ export interface WeldingConfigData {
   touch_sensing_retract_distance: number;
   touch_sensing_approach_offset: number;
   touch_sensing_home_retract_offset?: number;
+  arc_end_burnback_ms?: number;
   touch_sensing_move_distance: number;
   touch_sensing_point_speed: number;
   touch_sensing_search_speed: number;

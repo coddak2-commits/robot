@@ -4362,6 +4362,23 @@ void registerWeldingConfigRoutes(
             if (dbService && dbService->isConnected()) {
                 dbService->logDebug("ArcOff", "ARC_END", "result=" + std::to_string(resultArc));
             }
+            // 용접기는 ArcEnd 이후에도 전류 지령이 살아 있어야 번백(와이어 끝 태우기)과
+            // 역송급(F13/F14)을 한다. AO를 곧바로 0으로 내리면 와이어가 안 타고 남아서
+            // 다음 파트 재점화 때 스틱아웃이 길어진다. 2026-09-15 p9에서 확인.
+            // 이전 코드는 ArcEnd 후 19ms 만에 리셋했다. (v1.1.142)
+            int burnbackMs = body.value("arc_end_burnback_ms", -1);
+            if (burnbackMs < 0) {
+                burnbackMs = 500;
+                if (dbService && dbService->isConnected()) {
+                    burnbackMs = dbService->getWeldingConfig().arc_end_burnback_ms;
+                }
+            }
+            if (burnbackMs > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(burnbackMs));
+            }
+            if (dbService && dbService->isConnected()) {
+                dbService->logDebug("ArcOff", "BURNBACK_WAIT", "ms=" + std::to_string(burnbackMs));
+            }
             int resultCurrentReset = robotService.setWeldingCurrent(ioType, 0.0f, 1, 0);
             int resultVoltageReset = robotService.setWeldingVoltage(ioType, 0.0f, 0, 0);
             FLOG_INFO("WeldingConfig", "ArcOff current/voltage reset: current_result=" + std::to_string(resultCurrentReset) + " voltage_result=" + std::to_string(resultVoltageReset));
@@ -5795,6 +5812,7 @@ void registerSdkRoutes(
             if (body.contains("touch_sensing_retract_distance")) config.touch_sensing_retract_distance = body["touch_sensing_retract_distance"].get<double>();
             if (body.contains("touch_sensing_approach_offset")) config.touch_sensing_approach_offset = body["touch_sensing_approach_offset"].get<double>();
             if (body.contains("touch_sensing_home_retract_offset")) config.touch_sensing_home_retract_offset = body["touch_sensing_home_retract_offset"].get<double>();
+            if (body.contains("arc_end_burnback_ms")) config.arc_end_burnback_ms = body["arc_end_burnback_ms"].get<int>();
             if (body.contains("touch_sensing_move_distance")) config.touch_sensing_move_distance = body["touch_sensing_move_distance"].get<double>();
             if (body.contains("touch_sensing_point_speed")) config.touch_sensing_point_speed = body["touch_sensing_point_speed"].get<double>();
             if (body.contains("touch_sensing_search_speed")) config.touch_sensing_search_speed = body["touch_sensing_search_speed"].get<double>();
@@ -6775,7 +6793,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.141"
+#define APP_VERSION_STRING "1.1.142"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -8734,7 +8752,7 @@ WeldingConfig DatabaseService::getWeldingConfig() {
     MYSQL_RES* result = executeSelect(
         "SELECT touch_sensing_enabled, touch_speed, touch_distance, touch_offset_depth, "
         "touch_approach_angle, touch_sensing_velocity, touch_sensing_acceleration, touch_sensing_step_size, "
-        "touch_sensing_retract_distance, touch_sensing_approach_offset, touch_sensing_home_retract_offset, touch_sensing_move_distance, "
+        "touch_sensing_retract_distance, touch_sensing_approach_offset, touch_sensing_home_retract_offset, arc_end_burnback_ms, touch_sensing_move_distance, "
         "touch_sensing_point_speed, touch_sensing_search_speed, "
         "p1_touch_center, p1_touch_left, p1_touch_right, p1_touch_bottom, "
         "p2_touch_center, p2_touch_left, p2_touch_right, "
@@ -8774,6 +8792,7 @@ WeldingConfig DatabaseService::getWeldingConfig() {
         config.touch_sensing_retract_distance = row[col] ? std::stod(row[col]) : 10.0; col++;
         config.touch_sensing_approach_offset = row[col] ? std::stod(row[col]) : 100.0; col++;
         config.touch_sensing_home_retract_offset = row[col] ? std::stod(row[col]) : 100.0; col++;
+        config.arc_end_burnback_ms = row[col] ? std::stoi(row[col]) : 500; col++;
         config.touch_sensing_move_distance = row[col] ? std::stod(row[col]) : 0.5; col++;
         config.touch_sensing_point_speed = row[col] ? std::stod(row[col]) : 50.0; col++;
         config.touch_sensing_search_speed = row[col] ? std::stod(row[col]) : 3.0; col++;
@@ -8854,6 +8873,7 @@ bool DatabaseService::updateWeldingConfig(const WeldingConfig& config) {
           << "touch_sensing_retract_distance = " << config.touch_sensing_retract_distance << ", "
           << "touch_sensing_approach_offset = " << config.touch_sensing_approach_offset << ", "
           << "touch_sensing_home_retract_offset = " << config.touch_sensing_home_retract_offset << ", "
+          << "arc_end_burnback_ms = " << config.arc_end_burnback_ms << ", "
           << "touch_sensing_move_distance = " << config.touch_sensing_move_distance << ", "
           << "touch_sensing_point_speed = " << config.touch_sensing_point_speed << ", "
           << "touch_sensing_search_speed = " << config.touch_sensing_search_speed << ", "
@@ -8931,6 +8951,7 @@ json DatabaseService::weldingConfigToJson(const WeldingConfig& config) {
         {"touch_sensing_retract_distance", config.touch_sensing_retract_distance},
         {"touch_sensing_approach_offset", config.touch_sensing_approach_offset},
         {"touch_sensing_home_retract_offset", config.touch_sensing_home_retract_offset},
+        {"arc_end_burnback_ms", config.arc_end_burnback_ms},
         {"touch_sensing_move_distance", config.touch_sensing_move_distance},
         {"touch_sensing_point_speed", config.touch_sensing_point_speed},
         {"touch_sensing_search_speed", config.touch_sensing_search_speed},
@@ -9008,6 +9029,7 @@ WeldingConfig DatabaseService::jsonToWeldingConfig(const json& j) {
     if (j.contains("touch_sensing_retract_distance")) config.touch_sensing_retract_distance = j["touch_sensing_retract_distance"].get<double>();
     if (j.contains("touch_sensing_approach_offset")) config.touch_sensing_approach_offset = j["touch_sensing_approach_offset"].get<double>();
     if (j.contains("touch_sensing_home_retract_offset")) config.touch_sensing_home_retract_offset = j["touch_sensing_home_retract_offset"].get<double>();
+    if (j.contains("arc_end_burnback_ms")) config.arc_end_burnback_ms = j["arc_end_burnback_ms"].get<int>();
     if (j.contains("touch_sensing_move_distance")) config.touch_sensing_move_distance = j["touch_sensing_move_distance"].get<double>();
     if (j.contains("touch_sensing_point_speed")) config.touch_sensing_point_speed = j["touch_sensing_point_speed"].get<double>();
     if (j.contains("touch_sensing_search_speed")) config.touch_sensing_search_speed = j["touch_sensing_search_speed"].get<double>();
