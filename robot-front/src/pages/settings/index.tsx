@@ -237,6 +237,14 @@ export interface TouchSensingSettings {
   arc_tracking_step_max_ud: number;
   arc_tracking_sum_max_lr: number;
   arc_tracking_sum_max_ud: number;
+  arc_tracking_delay_time: number;
+  arc_tracking_t_start_lr: number;
+  arc_tracking_t_start_ud: number;
+  arc_tracking_axis_select: number;
+  arc_tracking_reference_type: number;
+  arc_tracking_reference_current: number;
+  arc_tracking_refer_sample_start_ud: number;
+  arc_tracking_refer_sample_count_ud: number;
 }
 export interface UserFormData {
   username: string;

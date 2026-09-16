@@ -1,0 +1,18 @@
+﻿v1.1.146
+
+[정리]
+- 용접 프리셋(presets) 코드 제거
+  백엔드 라우트도 DB 테이블도 없이 프론트 UI와 API 함수만 남아 있어
+  화면 진입 때마다 404가 발생했습니다. 기능적으로 빠지는 것은 없습니다.
+  제거 대상: /welding-config/presets API 함수 5개, WeldingPresetData 타입,
+  PresetCard / PresetEditForm / PresetTab 컴포넌트, 용접 설정 화면의 프리셋 탭.
+
+[추가]
+- 아크 트래킹 신규 파라미터 8개를 설정 화면에 노출
+  보정 시작 지연(ms), 보정 시작 시점(좌우/상하), 보정 축, 기준 전류 방식,
+  기준 전류(mA), 샘플링 시작/횟수.
+  지금까지 SQL로만 수정할 수 있던 값들입니다.
+
+[개발 환경]
+- @types/jest 추가 (tsc --noEmit 에서 __tests__ 관련 532개 에러 해소)
+  빌드에는 영향이 없던 항목입니다. 적용하려면 npm install 필요.

@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Save,
   RotateCcw,
-  Zap,
   Clock,
   AlertTriangle,
   Loader2,
@@ -13,31 +12,24 @@ import { useAlert } from '../../contexts';
 import {
   getWeldingConfig,
   updateWeldingConfig,
-  getWeldingPresets,
 } from '../../lib';
 import {
-  WeldingPreset,
   WeldingSequence,
   SafetySettings,
   defaultSequence,
   defaultSafety,
-  mapPresetFromApi,
   mapConfigToSequence,
   mapConfigToSafety,
   mapSequenceAndSafetyToConfig,
 } from './components';
-import { PresetTab_PresetTab as PresetTab } from './components';
 import { SequenceTab_SequenceTab as SequenceTab } from './components';
 import { SafetyTab_SafetyTab as SafetyTab } from './components';
 const Welding: React.FC = () => {
   const navigate = useNavigate();
   const { show: showAlert } = useAlert();
-  const [activeTab, setActiveTab] = useState<'presets' | 'sequence' | 'safety'>('sequence');
-  const [presets, setPresets] = useState<WeldingPreset[]>([]);
+  const [activeTab, setActiveTab] = useState<'sequence' | 'safety'>('sequence');
   const [sequence, setSequence] = useState<WeldingSequence>(defaultSequence);
   const [safety, setSafety] = useState<SafetySettings>(defaultSafety);
-  const [editingPreset, setEditingPreset] = useState<WeldingPreset | null>(null);
-  const [expandedPreset, setExpandedPreset] = useState<number | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -47,12 +39,6 @@ const Welding: React.FC = () => {
       const configData = await getWeldingConfig();
       setSequence(mapConfigToSequence(configData));
       setSafety(mapConfigToSafety(configData));
-      try {
-        const presetsData = await getWeldingPresets();
-        setPresets(presetsData.map(mapPresetFromApi));
-      } catch {
-        setPresets([]);
-      }
     } catch (error) {
       console.error('용접 설정 로드 오류:', error);
       showAlert('설정을 불러오는데 실패했습니다.', { type: 'error' });
@@ -97,17 +83,6 @@ const Welding: React.FC = () => {
       <div className="p-4 md:p-6">
         {}
         <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => setActiveTab('presets')}
-            className={`px-6 py-3 rounded-xl font-medium transition ${
-              activeTab === 'presets'
-                ? 'bg-cyan-600 text-white'
-                : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            <Zap className="w-5 h-5 inline mr-2" />
-            용접 프리셋
-          </button>
           <button
             onClick={() => setActiveTab('sequence')}
             className={`px-6 py-3 rounded-xl font-medium transition ${
@@ -165,16 +140,6 @@ const Welding: React.FC = () => {
         </div>
         {}
         <div className="mb-6">
-          {activeTab === 'presets' && (
-            <PresetTab
-              presets={presets}
-              setPresets={setPresets}
-              editingPreset={editingPreset}
-              setEditingPreset={setEditingPreset}
-              expandedPreset={expandedPreset}
-              setExpandedPreset={setExpandedPreset}
-            />
-          )}
           {activeTab === 'sequence' && (
             <SequenceTab
               sequence={sequence}

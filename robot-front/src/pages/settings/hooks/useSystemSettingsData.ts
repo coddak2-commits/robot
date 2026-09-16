@@ -64,6 +64,12 @@ const TOUCH_SENSING_DEFAULTS: TouchSensingSettings = {
   arc_tracking_klr: 0.06, arc_tracking_kud: 0.06,
   arc_tracking_step_max_lr: 5.0, arc_tracking_step_max_ud: 5.0,
   arc_tracking_sum_max_lr: 30.0, arc_tracking_sum_max_ud: 30.0,
+  arc_tracking_delay_time: 0,
+  arc_tracking_t_start_lr: 5, arc_tracking_t_start_ud: 5,
+  arc_tracking_axis_select: 1,
+  arc_tracking_reference_type: 0,
+  arc_tracking_reference_current: 0,
+  arc_tracking_refer_sample_start_ud: 10, arc_tracking_refer_sample_count_ud: 10,
 };
 export function useSystemSettingsData() {
   const navigate = useNavigate();

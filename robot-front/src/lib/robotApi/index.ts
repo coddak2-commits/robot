@@ -1517,50 +1517,6 @@ export const updateWeldingConfig = async (config: Partial<WeldingConfigData>): P
     }
   }
 };
-export const getWeldingPresets = async (): Promise<WeldingPresetData[]> => {
-  try {
-    const response = await api.get('/welding-config/presets');
-    return response.data.data;
-  } catch (error) {
-    console.error('용접 프리셋 조회 오류:', error);
-    throw error;
-  }
-};
-export const createWeldingPreset = async (preset: Omit<WeldingPresetData, 'id' | 'is_default' | 'created_at' | 'updated_at'>): Promise<WeldingPresetData> => {
-  try {
-    const response = await api.post('/welding-config/presets', preset);
-    return response.data.data;
-  } catch (error) {
-    console.error('용접 프리셋 생성 오류:', error);
-    throw error;
-  }
-};
-export const updateWeldingPreset = async (presetId: number, preset: Partial<WeldingPresetData>): Promise<WeldingPresetData> => {
-  try {
-    const response = await api.put(`/welding-config/presets/${presetId}`, preset);
-    return response.data.data;
-  } catch (error) {
-    console.error('용접 프리셋 수정 오류:', error);
-    throw error;
-  }
-};
-export const deleteWeldingPreset = async (presetId: number): Promise<void> => {
-  try {
-    await api.delete(`/welding-config/presets/${presetId}`);
-  } catch (error) {
-    console.error('용접 프리셋 삭제 오류:', error);
-    throw error;
-  }
-};
-export const duplicateWeldingPreset = async (presetId: number): Promise<WeldingPresetData> => {
-  try {
-    const response = await api.post(`/welding-config/presets/${presetId}/duplicate`);
-    return response.data.data;
-  } catch (error) {
-    console.error('용접 프리셋 복제 오류:', error);
-    throw error;
-  }
-};
 export interface WeldingPartOrderItem {
   part_index: number;
   execution_order: number;
@@ -1727,28 +1683,6 @@ export interface WeldingConfigData {
   arc_time_limit: number;
   gas_pre_flow_time: number;
   gas_post_flow_time: number;
-  updated_at?: string;
-}
-export interface WeldingPresetData {
-  id: number;
-  name: string;
-  cell_type: string;
-  height_min: number;
-  height_max: number;
-  current: number;
-  voltage: number;
-  speed: number;
-  wire_speed: number;
-  gas_flow: number;
-  arc_start_time: number;
-  crater_time: number;
-  pre_heat_time: number;
-  post_heat_time: number;
-  weaving_enabled: boolean;
-  weaving_width?: number;
-  weaving_frequency?: number;
-  is_default: boolean;
-  created_at?: string;
   updated_at?: string;
 }
 export interface WeldingLogSegment {

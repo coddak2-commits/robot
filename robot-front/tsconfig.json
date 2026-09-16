@@ -21,7 +21,7 @@
     // See also https://aka.ms/tsconfig/module
     // "module": "nodenext",
     // "target": "esnext",
-    "types": ["react", "react-dom"],
+    "types": ["react", "react-dom", "jest"],
     // For nodejs:
     // "lib": ["esnext"],
     // "types": ["node"],
