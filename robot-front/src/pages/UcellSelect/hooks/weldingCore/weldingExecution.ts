@@ -104,7 +104,24 @@ export async function executeWelding(
   let totalExpectedDurationSec = 0;
   let segments: WeldingLogSegment[] = [];
   let firstWeldPoint = weldingPoints[paramPointIndex] || weldingPoints[0];
+  // 아크가 켜져 있을 가능성. 중단/실패 경로에서 아크를 끄기 위한 플래그다.
+  // v1.1.143까지 handleStopped()는 로그만 저장했다. 2026-09-15에 용접 중 MoveL이
+  // code=-4로 실패했을 때 아크가 66초 동안 켜진 채 남아 모재가 손상됐다. (v1.1.144)
+  let arcMayBeOn = false;
   const handleStopped = async (completedPtIdx: number) => {
+    if (arcMayBeOn) {
+      arcMayBeOn = false;
+      log_weldingExecution.warn('welding.stopped.shutdown', '중단 감지 — 아크/위빙 즉시 종료');
+      try {
+        const { emergencyWeldingShutdown } = await import('../../../../utils');
+        await emergencyWeldingShutdown();
+      } catch {
+        await safeEndWeave();
+        await safeArcOff(500);
+        await arcTraceControl({ flag: 0 }).catch(() => {});
+      }
+      setArcActive?.(false);
+    }
     const result = await saveStoppedLog({
       startedAt,
       segments,
@@ -374,6 +391,7 @@ export async function executeWelding(
         safetySettings.gasPreFlowTime,
       );
       if (!arcOnOk) throw new Error('아크 ON 실패로 용접을 중단합니다');
+      arcMayBeOn = true;
     }
     if (hasWeaving && weaveTypeCode >= 0 && !isStartAtPartEnd)
       await setupAndStartWeave(firstWeldPoint, firstWeldPoint);
@@ -397,6 +415,7 @@ export async function executeWelding(
           safetySettings.gasPostFlowTime,
           weaveTypeCode,
         );
+        arcMayBeOn = false;
         const prevPoint = weldingPoints[i - 1];
         const transitionSpeed = 30;
         if (prevPoint?.id === 'p6' && point?.id === 'p9' && point.joints && point.joints.length === 6) {
@@ -452,6 +471,7 @@ export async function executeWelding(
               weaveTypeCode,
             );
             setArcActive?.(true);
+            if (hasWelding && !(simMode && !isWeldingTest)) arcMayBeOn = true;
             await armArcTracking();
           }
           const ptSegIdx = i - 1;
@@ -640,6 +660,7 @@ export async function executeWelding(
           weaveTypeCode,
         );
         setArcActive?.(true);
+        if (hasWelding && !(simMode && !isWeldingTest)) arcMayBeOn = true;
         await armArcTracking();
         const ptSegIdx = i - 1;
         if (ptSegIdx >= 0 && ptSegIdx < segments.length)
@@ -738,6 +759,7 @@ export async function executeWelding(
     }
     if (hasWelding && !simMode && !isWeldingTest)
       await arcOff(0, 0, 1000, safetySettings.gasPostFlowTime);
+    arcMayBeOn = false;
     if (arcTrackingActive) await arcTraceControl({ flag: 0 }).catch(() => {});
     if (!stopRef.current) {
       const lastWeldPoint = weldingPoints[weldingPoints.length - 1];
