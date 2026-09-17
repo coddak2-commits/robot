@@ -99,6 +99,9 @@ void stopFrontendDevServer() {
 #endif
 std::atomic<bool> g_running{true};
 std::atomic<bool> g_restart{false};
+// v1.1.155: 아크 트래킹용 전류 피드백 배선 확인. 아크가 켜져 있는 동안만
+// 컨트롤 박스 아날로그 입력/출력 값을 1초 간격으로 로그에 남긴다 (동작에는 영향 없음).
+std::atomic<bool> g_arcActive{false};
 RobotService* g_robotService = nullptr;
 ZmqServer* g_zmqServer = nullptr;
 HttpServer* g_httpServer = nullptr;
@@ -315,6 +318,20 @@ int runService() {
             {"rz", state.tl_cur_pos[5]}
         };
         zmqServer.publishState(stateJson.dump());
+        // 아크 ON 구간의 아날로그 입력(AI0/AI1) 기록. 이 콜백은 모니터 스레드
+        // 하나에서만 불리므로 static 지역변수로 마지막 기록 시각을 들고 있는다.
+        if (g_arcActive.load()) {
+            static std::chrono::steady_clock::time_point lastAiLog{};
+            auto now = std::chrono::steady_clock::now();
+            if (now - lastAiLog >= std::chrono::milliseconds(1000)) {
+                lastAiLog = now;
+                FLOG_INFO("AnalogIn",
+                    "AI0=" + std::to_string(state.cl_analog_input[0]) +
+                    " AI1=" + std::to_string(state.cl_analog_input[1]) +
+                    " AO0=" + std::to_string(state.cl_analog_output[0]) +
+                    " AO1=" + std::to_string(state.cl_analog_output[1]) + " (raw)");
+            }
+        }
     });
     robotService.setErrorCallback([&dbService](int mainCode, int subCode, const std::string& message, bool resolved) {
         // monitorLoop는 전용 스레드 하나에서만 이 콜백을 호출하므로 static 지역변수로
@@ -4097,6 +4114,7 @@ void registerWeldingRoutes(
         }
         try {
             int r = robotService.arcEnd(0, 0, 1000);
+            g_arcActive.store(false);
             FLOG_INFO("WeldingRoute", "Emergency step 2/5 Arc OFF: result=" + std::to_string(r));
             results["steps"].push_back({{"step", "arc_off"}, {"result", r}});
         } catch (...) {
@@ -4344,6 +4362,7 @@ void registerWeldingConfigRoutes(
                 dbService->logDebug("ArcOn", "ARC_START", "result=" + std::to_string(resultArc));
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            g_arcActive.store(resultArc == 0);
             if (resultArc != 0) {
                 FLOG_SDK_ERROR("arcStart", resultArc, "Arc ON sequence arc start failed");
             } else {
@@ -4390,6 +4409,7 @@ void registerWeldingConfigRoutes(
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             int resultArc = robotService.arcEnd(ioType, arcNum, timeout);
+            g_arcActive.store(false);
             if (dbService && dbService->isConnected()) {
                 dbService->logDebug("ArcOff", "ARC_END", "result=" + std::to_string(resultArc));
             }
@@ -6871,7 +6891,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.154"
+#define APP_VERSION_STRING "1.1.155"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -9836,6 +9856,7 @@ void SafeShutdownManager::emergencyWeldingShutdown() {
     }
     try {
         int arcResult = m_robotService.arcEnd(0, 0, 1000);
+        g_arcActive.store(false);
         FLOG_INFO("SafeShutdown", "Step 2/4 Arc OFF: result=" + std::to_string(arcResult));
         std::cout << "[SafeShutdown] Step 2/4: Arc OFF -> " << (arcResult == 0 ? "OK" : "WARN") << std::endl;
     } catch (...) {
