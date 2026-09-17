@@ -1,5 +1,5 @@
 import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo } from '../..';
-import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch } from '../../../../lib';
+import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, pulseWireFeedMs, WireDirection } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { setWeldingPartOrder } from '../..';
@@ -12,6 +12,31 @@ import { safeArcOn, setupAndStartWeave, endPartWelding, startPartWelding, safeEn
 import { determinePointTouchOffset } from './weldingPointLoop';
 
 const log_weldingExecution = createLogger('weldingCore.weldingExecution');
+
+// 파트 전환 시 다음 파트 시작 스틱아웃 보정 (v1.1.153, 목표 25mm).
+// 실측(9/17): 수직 종료 후 수평 시작 15mm, 수평 종료 후 수직(P9) 시작 50mm.
+// 인칭 실측: 밀기 약 10.3mm/s, 당기기 약 27.5mm/s, 모터 지연 약 210ms.
+// 아크 OFF 후 후퇴 위치에서만 실행한다. 0으로 두면 보정 안 함.
+const PART_START_WIRE_ADJUST: Record<'vertical' | 'horizontal', { direction: WireDirection; ms: number }> = {
+  vertical: { direction: 'reverse', ms: 1120 },
+  horizontal: { direction: 'forward', ms: 1180 },
+};
+const VERTICAL_POINT_NUMBERS = [1, 2, 3, 7, 8, 9];
+async function adjustWireForPartStart(point: TeachingPoint): Promise<void> {
+  const n = parseInt((point.id ?? '').replace(/\D/g, ''), 10);
+  if (!Number.isFinite(n)) return;
+  const kind = VERTICAL_POINT_NUMBERS.includes(n) ? 'vertical' : 'horizontal';
+  const { direction, ms } = PART_START_WIRE_ADJUST[kind];
+  if (ms <= 0) return;
+  log_weldingExecution.info(
+    'welding.partTransition.wireAdjust',
+    `파트 전환 와이어 보정: ${point.name} (${kind}) ${direction} ${ms}ms`,
+  );
+  const result = await pulseWireFeedMs(direction, ms);
+  if (!result.stopped) throw new Error('와이어 송급 정지 실패 - 비상정지로 즉시 멈추세요');
+  if (!result.ok)
+    log_weldingExecution.warn('welding.partTransition.wireAdjust.fail', `와이어 보정 실패: ${result.error ?? ''}`);
+}
 export interface WeldingExecutionContext {
   stopRef: React.MutableRefObject<boolean>;
   setCurrentPointIndex: (index: number) => void;
@@ -460,6 +485,8 @@ export async function executeWelding(
             );
             if (retractResult?.status_code !== 200) throw new Error('파트 전환(p6→p9) 후퇴 이동 실패');
           }
+          if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
+            await adjustWireForPartStart(point);
           if (point.tcp && !stopRef.current) {
             log_weldingExecution.info(
               'welding.partTransition.lin',
@@ -534,6 +561,8 @@ export async function executeWelding(
           );
           if (retractResult?.status_code !== 200) throw new Error('파트 전환 후퇴 이동 실패');
         }
+        if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
+          await adjustWireForPartStart(point);
         if (!stopRef.current) {
           if (isSameSide && point.tcp) {
             log_weldingExecution.info(

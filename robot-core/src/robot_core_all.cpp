@@ -6871,7 +6871,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.152"
+#define APP_VERSION_STRING "1.1.153"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -7877,9 +7877,8 @@ void FileLogger::log(LogLevel level, const std::string& component,
            << "[" << levelToString(level) << "] "
            << "[" << component << "] "
            << message << "\n";
-    if (level >= LogLevel::LOG_ERROR) {
-        m_file.flush();
-    }
+    // 비정상 종료 시 버퍼에 남은 로그가 사라지지 않도록 매번 기록한다.
+    m_file.flush();
 }
 void FileLogger::debug(const std::string& component, const std::string& message) {
     log(LogLevel::LOG_DEBUG, component, message);

@@ -77,8 +77,14 @@ export const pulseWireFeed = async (
   direction: WireDirection,
   amountMm: number,
   ioType = 0,
+): Promise<WirePulseResult> => pulseWireFeedMs(direction, wireFeedDurationMs(amountMm), ioType);
+
+/** 시간(ms) 기준 송급. 파트 전환 스틱아웃 보정처럼 실측 시간으로 돌릴 때 쓴다. */
+export const pulseWireFeedMs = async (
+  direction: WireDirection,
+  durationMs: number,
+  ioType = 0,
 ): Promise<WirePulseResult> => {
-  const durationMs = wireFeedDurationMs(amountMm);
   try {
     await startWireFeed(direction, ioType);
   } catch (error) {
