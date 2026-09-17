@@ -17,8 +17,10 @@ const log_weldingExecution = createLogger('weldingCore.weldingExecution');
 // 실측(9/17): 수직 종료 후 수평 시작 15mm, 수평 종료 후 수직(P9) 시작 50mm.
 // 인칭 실측: 밀기 약 10.3mm/s, 당기기 약 27.5mm/s, 모터 지연 약 210ms.
 // 아크 OFF 후 후퇴 위치에서만 실행한다. 0으로 두면 보정 안 함.
+// v1.1.154: 수직(P9) 당기기 끔. P9 와이어가 길어진 원인은 남은 와이어가 아니라
+// p6→p9 이동에 터치 보정이 빠져 토치가 접합부에서 25~28mm 떨어져 점화가 늦어진 것.
 const PART_START_WIRE_ADJUST: Record<'vertical' | 'horizontal', { direction: WireDirection; ms: number }> = {
-  vertical: { direction: 'reverse', ms: 1120 },
+  vertical: { direction: 'reverse', ms: 0 },
   horizontal: { direction: 'forward', ms: 1180 },
 };
 const VERTICAL_POINT_NUMBERS = [1, 2, 3, 7, 8, 9];
@@ -488,9 +490,14 @@ export async function executeWelding(
           if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
             await adjustWireForPartStart(point);
           if (point.tcp && !stopRef.current) {
+            // v1.1.154: 다른 파트 전환 ③과 같이 P9 터치 보정값을 적용한다.
+            const p9Offset = point.touchOffset
+              ? [point.touchOffset.dx, point.touchOffset.dy, point.touchOffset.dz, 0, 0, 0]
+              : [0, 0, 0, 0, 0, 0];
+            const useP9Offset = !!point.touchOffset;
             log_weldingExecution.info(
               'welding.partTransition.lin',
-              `파트 전환(p6→p9): 후퇴 후 직선(MoveL)으로 ${point.name} 이동 (시험 적용)`,
+              `파트 전환(p6→p9): 후퇴 후 직선(MoveL)으로 ${point.name} 이동${useP9Offset ? ` (touchOffset 적용 ${p9Offset.slice(0, 3).map(v => v.toFixed(1)).join(',')})` : ''}`,
             );
             const linResult = await moveToCartesianPosition(
               point.tcp,
@@ -498,8 +505,8 @@ export async function executeWelding(
               100,
               100,
               -1,
-              0,
-              [0, 0, 0, 0, 0, 0],
+              useP9Offset ? 1 : 0,
+              p9Offset,
               undefined,
               point.toolNum ?? 3,
               point.userNum ?? 0,
