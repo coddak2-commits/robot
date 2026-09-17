@@ -232,6 +232,24 @@ export async function executeTouchSensing(
       await enableRobot();
     }
     let lastPoint: TeachingPoint | null = null;
+    // 같은 용접선의 연속 포인트는 어프로치 경유점 없이 바로 이동한다 (v1.1.152, 시험 적용).
+    // 탐색 후 각 축에서 10mm 후퇴해 있으므로 벽에서 떨어진 채 용접선과 나란히 이동한다.
+    // 이전 Lua 프로그램도 그룹 첫 포인트만 떨어져서 접근하고 나머지는 바로 Lin으로 이동했다.
+    // P9/P10(우측 코너)은 +X 접근 충돌(code=185) 이력이 있어 도착점일 때는 기존 어프로치를 유지한다.
+    // 문제가 생기면 이 조건(sameSeamAsPrev)만 빼면 이전 동작으로 돌아간다.
+    const TOUCH_SEAM_GROUPS: string[][] = [
+      ['p1', 'p2', 'p3'],
+      ['p4', 'p5', 'p6'],
+      ['p12', 'p11', 'p10'],
+      ['p9', 'p8', 'p7'],
+    ];
+    const isSameSeam = (prev: TeachingPoint | null, cur: TeachingPoint): boolean => {
+      if (!prev) return false;
+      const a = prev.id.toLowerCase();
+      const b = cur.id.toLowerCase();
+      if (NEAR_UCELL_CORNER.includes(b)) return false;
+      return TOUCH_SEAM_GROUPS.some(g => g.includes(a) && g.includes(b));
+    };
     // 실패 사유. 하나라도 실패하면 즉시 중단한다 (v1.1.150).
     // 실패 후에는 로봇이 에러 상태라 이후 명령이 전부 거부되고, 건너뛰고 진행하면
     // 측정값이 없는 포인트가 보간값으로 용접되기 때문이다.
@@ -279,12 +297,13 @@ export async function executeTouchSensing(
         continue;
       }
       const samePositionAsPrev = isSameTcpPosition(lastPoint, point);
+      const sameSeamAsPrev = isSameSeam(lastPoint, point);
       lastPoint = point;
       if (point.tcp) {
         const { x: px, y: py, z: pz, rx: prx, ry: pry, rz: prz } = point.tcp;
         const toolNum = point.toolNum ?? 0;
         const userNum = point.userNum ?? 0;
-        if (!samePositionAsPrev) {
+        if (!samePositionAsPrev && !sameSeamAsPrev) {
           const approachOffsetPos = getApproachOffsetPos(point.id, Z_APPROACH_OFFSET);
           log_touchSensing.info(
             'touchSensing.approach',
@@ -312,6 +331,11 @@ export async function executeTouchSensing(
             failure = `${point.name} 접근 이동 실패 (로봇 에러 상태일 수 있음)`;
             break;
           }
+        } else if (sameSeamAsPrev && !samePositionAsPrev) {
+          log_touchSensing.info(
+            'touchSensing.sameSeam',
+            `${point.name} 이전 포인트와 같은 용접선 - 오프셋 접근 생략, 바로 이동`,
+          );
         } else {
           // 이전 포인트와 같은 좌표라도, 터치센싱 탐색+후퇴로 실제 위치가 티칭 좌표에서
           // 미세하게 벗어나 있을 수 있으므로 오프셋 접근(왕복)만 생략하고 정확 위치 이동은 항상 실행한다.
