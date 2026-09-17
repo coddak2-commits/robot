@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin, History } from 'lucide-react';
 import { useTeachingPoints, useRobotControl, useJobManagement, useWeldingOperations, usePathTracking, useSchematicCalculations, usePathVisualization, useCenterlineNavigation, useWeldingHandlers, useWireControl, useCellSelectionHandlers, useAutoSavePoints } from './hooks';
@@ -29,6 +29,25 @@ interface CellSelectionCoreProps {
     width?: number;
     selectedCell?: UCellData | null;
   }) => void;
+}
+const LAST_JOB_ID_KEY = 'vot.lastJobId';
+// 브라우저 저장소를 쓸 수 없는 환경(차단/시크릿 등)에서도 화면이 동작하도록 실패는 무시한다.
+function readLastJobId(): number | null {
+  try {
+    const v = localStorage.getItem(LAST_JOB_ID_KEY);
+    if (v === null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+function writeLastJobId(id: number): void {
+  try {
+    localStorage.setItem(LAST_JOB_ID_KEY, String(id));
+  } catch {
+    // 무시
+  }
 }
 export function CellSelectionCore({
   selectedHeight: propSelectedHeight,
@@ -327,20 +346,33 @@ export function CellSelectionCore({
     const timer = setTimeout(checkToolCoord, 1000);
     return () => clearTimeout(timer);
   }, [showAlert]);
+  // 마지막으로 연 작업 자동 로드 (v1.1.151)
+  // v1.1.150까지의 문제 두 가지:
+  // 1) 목록(생성일 최신순)의 첫 작업을 불러와서, 마지막으로 연 작업이 아니라 가장 최근에 만든 작업이 열렸다.
+  // 2) handleLoadJob이 셀/높이/폭 선택과 onStateChange에 따라 새로 만들어지는데 이 effect가 그걸
+  //    의존성으로 가져서, 사용 중에도 다시 실행돼 최신 작업으로 되돌아가고 터치센싱 보정값도 지워졌다.
+  // 이제 연 작업 번호를 저장해 두고, 화면이 열릴 때 한 번만 불러온다.
+  const autoLoadDoneRef = useRef(false);
   useEffect(() => {
+    if (autoLoadDoneRef.current) return;
+    autoLoadDoneRef.current = true;
     const loadLastJob = async () => {
       try {
         await fetchJobList();
         const response = await getTeachingJobs();
         const jobs = response?.data?.jobs ?? [];
-        const jobWithPoints = jobs.find(
-          (job: { total_points?: number }) => (job.total_points ?? 0) > 0,
-        );
-        if (jobWithPoints) {
-          await handleLoadJob(jobWithPoints.id);
+        const hasPoints = (job: { total_points?: number }) => (job.total_points ?? 0) > 0;
+        const savedId = readLastJobId();
+        const savedJob =
+          savedId !== null
+            ? jobs.find((job: { id: number; total_points?: number }) => job.id === savedId && hasPoints(job))
+            : undefined;
+        const target = savedJob ?? jobs.find(hasPoints);
+        if (target) {
+          await handleLoadJob(target.id);
           log.info(
             'autoLoad',
-            `마지막 작업 자동 로드: ${jobWithPoints.name} (포인트 ${jobWithPoints.total_points}개)`,
+            `마지막 작업 자동 로드: ${target.name} (포인트 ${target.total_points}개, ${savedJob ? '마지막으로 연 작업' : '저장된 작업 없음 → 최신 작업'})`,
           );
         } else {
           log.warn('autoLoad.empty', '자동 로드할 작업이 없음 (jobs 목록이 비어있거나 포인트 있는 작업 없음)', {
@@ -353,6 +385,10 @@ export function CellSelectionCore({
     };
     loadLastJob();
   }, [handleLoadJob, fetchJobList]);
+  // 현재 작업이 바뀔 때마다 번호를 저장한다 (불러오기, 새로 저장 모두 포함).
+  useEffect(() => {
+    if (currentJobId != null) writeLastJobId(currentJobId);
+  }, [currentJobId]);
   useEffect(() => {
     if (propSelectedHeight !== undefined) setSelectedHeight(propSelectedHeight);
     if (propSelectedType !== undefined) {
