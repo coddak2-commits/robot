@@ -22,16 +22,29 @@ import {
 /** forward = 밀기(내보내기), reverse = 당기기(집어넣기) */
 export type WireDirection = 'forward' | 'reverse';
 
-// 실측값. 구 상수 3.5 기준으로 1mm를 요청했을 때 실제 0.5mm가 나온 결과에서
-// 역산: 0.5mm / (1mm / 3.5mm/s) = 1.75mm/s.
-export const WIRE_FEED_SPEED_MM_PER_SEC = 1.75;
+// 실측 프로파일 (2026-09-18, v1.1.159).
+// 모터 ON 후 와이어가 실제로 움직이기까지 지연이 있어서 (길이/속도)만으로는
+// 짧은 시간에서 크게 틀린다. 두 점 실측으로 지연과 속도를 같이 구했다.
+//   밀기   571ms → +2mm,  2857ms → +20mm  => 지연 320ms, 7.9mm/s
+//   당기기 571ms → -10mm, 2857ms → -73mm  => 지연 210ms, 27.5mm/s (2026-09-17 실측)
+// 이전 상수 1.75mm/s는 0.5mm 한 번 측정에서 역산한 값이라 실제와 4~15배 차이가 났다.
+export const WIRE_FEED_PROFILE: Record<WireDirection, { deadTimeMs: number; speedMmPerSec: number }> = {
+  forward: { deadTimeMs: 320, speedMmPerSec: 7.9 },
+  reverse: { deadTimeMs: 210, speedMmPerSec: 27.5 },
+};
 
 // 정지 명령이 실패하면 와이어가 계속 송급된다. 반드시 재시도한다.
 export const WIRE_STOP_RETRY_COUNT = 3;
 export const WIRE_STOP_RETRY_DELAY_MS = 150;
 
-export const wireFeedDurationMs = (amountMm: number): number =>
-  Math.max(0, Math.round((amountMm / WIRE_FEED_SPEED_MM_PER_SEC) * 1000));
+export const wireFeedDurationMs = (
+  amountMm: number,
+  direction: WireDirection = 'forward',
+): number => {
+  if (amountMm <= 0) return 0;
+  const { deadTimeMs, speedMmPerSec } = WIRE_FEED_PROFILE[direction];
+  return Math.round(deadTimeMs + (amountMm / speedMmPerSec) * 1000);
+};
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
@@ -77,7 +90,7 @@ export const pulseWireFeed = async (
   direction: WireDirection,
   amountMm: number,
   ioType = 0,
-): Promise<WirePulseResult> => pulseWireFeedMs(direction, wireFeedDurationMs(amountMm), ioType);
+): Promise<WirePulseResult> => pulseWireFeedMs(direction, wireFeedDurationMs(amountMm, direction), ioType);
 
 /** 시간(ms) 기준 송급. 파트 전환 스틱아웃 보정처럼 실측 시간으로 돌릴 때 쓴다. */
 export const pulseWireFeedMs = async (

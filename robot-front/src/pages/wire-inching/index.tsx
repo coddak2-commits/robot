@@ -4,13 +4,13 @@
 // 이 파일에는 화면 구성만 남긴다 — 송급 속도/정지 재시도를 여기서 따로 정의하지 말 것.
 
 import React, { useState } from 'react';
-import { pulseWireFeed, stopAllWireFeed, wireFeedDurationMs, WIRE_FEED_SPEED_MM_PER_SEC, WIRE_STOP_FAILED_MESSAGE } from '../../lib';
+import { pulseWireFeed, stopAllWireFeed, wireFeedDurationMs, WIRE_FEED_PROFILE, WIRE_STOP_FAILED_MESSAGE } from '../../lib';
 import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 
 const TARGET_STICKOUT_MM = 25;
 
-const STEP_OPTIONS = [1.0, 2.5, 5.0];
+const STEP_OPTIONS = [1.0, 5.0, 25.0];
 
 const WireInchingInner: React.FC = () => {
   const { show: showAlert } = useAlert();
@@ -22,7 +22,7 @@ const WireInchingInner: React.FC = () => {
   const startStop = async (direction: 'forward' | 'reverse', amountMm: number) => {
     const label = direction === 'forward' ? '밀기' : '당기기';
     setBusy(true);
-    setLastAction(`${direction === 'forward' ? '▶' : '◀'} ${label} ${amountMm}mm 진행 중 (${wireFeedDurationMs(amountMm)}ms)...`);
+    setLastAction(`${direction === 'forward' ? '▶' : '◀'} ${label} ${amountMm}mm 진행 중 (${wireFeedDurationMs(amountMm, direction)}ms)...`);
     const result = await pulseWireFeed(direction, amountMm, ioType);
     if (result.ok) {
       setLastAction(`✓ ${label} ${amountMm}mm 완료`);
@@ -50,7 +50,7 @@ const WireInchingInner: React.FC = () => {
       <h2 style={{ marginBottom: 8 }}>와이어 인칭 수동 제어</h2>
       <div style={{ marginBottom: 16, fontSize: 14, color: '#aaa' }}>
         목표 스틱아웃: <strong style={{ color: '#fff' }}>{TARGET_STICKOUT_MM}mm</strong>
-        {' '} · 기본 송급 속도: {WIRE_FEED_SPEED_MM_PER_SEC}mm/s
+        {' '} · 실측 속도: 밀기 {WIRE_FEED_PROFILE.forward.speedMmPerSec}mm/s · 당기기 {WIRE_FEED_PROFILE.reverse.speedMmPerSec}mm/s
       </div>
 
 <div style={{ marginBottom: 20 }}>
@@ -130,8 +130,8 @@ const WireInchingInner: React.FC = () => {
       <div style={{ marginTop: 30, padding: 16, background: '#1a1a1a', borderRadius: 6, fontSize: 13, color: '#aaa' }}>
         <strong style={{ color: '#fff' }}>동작 방식:</strong>
         <ul style={{ marginTop: 8, paddingLeft: 20 }}>
-          <li>모터 시작 → 목표 시간만큼 대기 → 모터 정지 (시간 = 길이 ÷ 송급 속도)</li>
-          <li>실제 밀린/당겨진 길이는 피더 성능에 따라 오차 있음</li>
+          <li>모터 시작 → 목표 시간만큼 대기 → 모터 정지 (시간 = 모터 지연 + 길이 ÷ 실측 속도)</li>
+          <li>2026-09-18 실측 기준으로 계산합니다. 1mm처럼 짧은 값은 ±1mm 정도 오차가 있습니다</li>
           <li>정확한 스틱아웃은 자로 측정하며 조정 권장</li>
           <li>자동 25mm 세팅은 LiDAR 도입 후 가능 (향후)</li>
         </ul>
