@@ -153,8 +153,10 @@ export function TeachingTabContent({
           <button onClick={onSaveJob} disabled={savedPointsCount === 0 || isSavingJob} className="p-1.5 flex items-center justify-center bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 disabled:opacity-50" title="저장">
             <Save className="w-4 h-4" />
           </button>
-          <button onClick={handleClearAllPoints} disabled={savedPointsCount === 0} className="p-1.5 flex items-center justify-center bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 disabled:opacity-50" title="초기화">
+          {/* v1.1.161: 아이콘만 있어 눈에 띄지 않아 글자를 같이 표시한다. */}
+          <button onClick={handleClearAllPoints} disabled={savedPointsCount === 0} className="px-2 py-1.5 flex items-center justify-center gap-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 disabled:opacity-50" title="포인트 전체 초기화 (기본값으로)">
             <Trash2 className="w-4 h-4" />
+            <span className="text-xs">초기화</span>
           </button>
           <div className="w-px h-5 bg-gray-700 mx-1" />
           <button
