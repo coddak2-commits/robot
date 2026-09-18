@@ -1,5 +1,5 @@
 import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo } from '../..';
-import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, pulseWireFeedMs, WireDirection, splineMove } from '../../../../lib';
+import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, pulseWireFeedMs, wireFeedDurationMs, WireDirection, splineMove } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { setWeldingPartOrder } from '../..';
@@ -13,15 +13,19 @@ import { determinePointTouchOffset } from './weldingPointLoop';
 
 const log_weldingExecution = createLogger('weldingCore.weldingExecution');
 
-// 파트 전환 시 다음 파트 시작 스틱아웃 보정 (v1.1.153, 목표 25mm).
-// 실측(9/17): 수직 종료 후 수평 시작 15mm, 수평 종료 후 수직(P9) 시작 50mm.
-// 인칭 실측: 밀기 약 10.3mm/s, 당기기 약 27.5mm/s, 모터 지연 약 210ms.
-// 아크 OFF 후 후퇴 위치에서만 실행한다. 0으로 두면 보정 안 함.
-// v1.1.154: 수직(P9) 당기기 끔. P9 와이어가 길어진 원인은 남은 와이어가 아니라
-// p6→p9 이동에 터치 보정이 빠져 토치가 접합부에서 25~28mm 떨어져 점화가 늦어진 것.
-const PART_START_WIRE_ADJUST: Record<'vertical' | 'horizontal', { direction: WireDirection; ms: number }> = {
-  vertical: { direction: 'reverse', ms: 0 },
-  horizontal: { direction: 'forward', ms: 1180 },
+// 파트 전환 와이어 보정 (v1.1.160, 목표 스틱아웃 25mm).
+//
+// v1.1.153~159: 아크 OFF 후 후퇴 위치에서 한 번에 밀었다. 그 상태로 이동하니
+// 길어진 와이어가 기존 수직 비드에 닿아 휘어서 시작부가 불량이었다(2026-09-18 사진).
+// v1.1.160: 두 단계로 나눈다.
+//   ① 후퇴 위치에서 retractMm 만큼 당긴다 → 짧은 상태로 이동하므로 간섭 없음
+//   ② 시작점에 도착한 뒤 feedMm 만큼 민다 → 이동이 끝난 뒤라 닿을 일이 없음
+// 도착 위치에서는 와이어 끝과 접합부 사이가 목표 스틱아웃만큼뿐이라, 25mm를 다 채우면
+// 와이어가 모재에 닿는다. 그래서 feedMm은 목표보다 작게 두고 나머지는 점화 때 채운다.
+// 수직 시작(P9)은 이미 정상이라 0으로 둔다. 0이면 그 단계는 실행하지 않는다.
+const PART_WIRE_PLAN: Record<'vertical' | 'horizontal', { retractMm: number; feedMm: number }> = {
+  vertical: { retractMm: 0, feedMm: 0 },
+  horizontal: { retractMm: 10, feedMm: 12 },
 };
 const VERTICAL_POINT_NUMBERS = [1, 2, 3, 7, 8, 9];
 // 파트 시작 체류 (v1.1.158). 아크를 켠 자리에서 잠깐 머물러 시작부를 채운다.
@@ -39,20 +43,37 @@ async function dwellAtPartStart(point: TeachingPoint, active: boolean): Promise<
   );
   await new Promise(resolve => setTimeout(resolve, ms));
 }
-async function adjustWireForPartStart(point: TeachingPoint): Promise<void> {
+function partWirePlan(point: TeachingPoint): { retractMm: number; feedMm: number } | null {
   const n = parseInt((point.id ?? '').replace(/\D/g, ''), 10);
-  if (!Number.isFinite(n)) return;
-  const kind = VERTICAL_POINT_NUMBERS.includes(n) ? 'vertical' : 'horizontal';
-  const { direction, ms } = PART_START_WIRE_ADJUST[kind];
+  if (!Number.isFinite(n)) return null;
+  return PART_WIRE_PLAN[VERTICAL_POINT_NUMBERS.includes(n) ? 'vertical' : 'horizontal'];
+}
+async function runWirePulse(
+  direction: WireDirection,
+  amountMm: number,
+  tag: string,
+  detail: string,
+): Promise<void> {
+  const ms = wireFeedDurationMs(amountMm, direction);
   if (ms <= 0) return;
-  log_weldingExecution.info(
-    'welding.partTransition.wireAdjust',
-    `파트 전환 와이어 보정: ${point.name} (${kind}) ${direction} ${ms}ms`,
-  );
+  log_weldingExecution.info(tag, `${detail} ${direction} ${amountMm}mm (${ms}ms)`);
   const result = await pulseWireFeedMs(direction, ms);
   if (!result.stopped) throw new Error('와이어 송급 정지 실패 - 비상정지로 즉시 멈추세요');
-  if (!result.ok)
-    log_weldingExecution.warn('welding.partTransition.wireAdjust.fail', `와이어 보정 실패: ${result.error ?? ''}`);
+  if (!result.ok) log_weldingExecution.warn(`${tag}.fail`, `와이어 보정 실패: ${result.error ?? ''}`);
+}
+// ① 후퇴 위치에서 당기기 (이동 중 간섭 방지)
+async function retractWireBeforeTransition(point: TeachingPoint): Promise<void> {
+  const plan = partWirePlan(point);
+  if (!plan || plan.retractMm <= 0) return;
+  await runWirePulse('reverse', plan.retractMm, 'welding.partTransition.wireRetract',
+    `파트 전환 와이어 당기기: ${point.name}`);
+}
+// ② 시작점 도착 후 밀기 (아크 ON 직전)
+async function feedWireAtPartStart(point: TeachingPoint): Promise<void> {
+  const plan = partWirePlan(point);
+  if (!plan || plan.feedMm <= 0) return;
+  await runWirePulse('forward', plan.feedMm, 'welding.partStart.wireFeed',
+    `파트 시작 와이어 밀기: ${point.name}`);
 }
 export interface WeldingExecutionContext {
   stopRef: React.MutableRefObject<boolean>;
@@ -507,7 +528,7 @@ export async function executeWelding(
             if (retractResult?.status_code !== 200) throw new Error('파트 전환(p6→p9) 후퇴 이동 실패');
           }
           if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
-            await adjustWireForPartStart(point);
+            await retractWireBeforeTransition(point);
           if (point.tcp && !stopRef.current) {
             // v1.1.154: 다른 파트 전환 ③과 같이 P9 터치 보정값을 적용한다.
             const p9Offset = point.touchOffset
@@ -533,6 +554,8 @@ export async function executeWelding(
             );
             if (linResult?.status_code !== 200) throw new Error('파트 전환(p6→p9) 직선 이동 실패');
           }
+          if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
+            await feedWireAtPartStart(point);
           if (!stopRef.current) {
             await startPartWelding(
               point,
@@ -589,7 +612,7 @@ export async function executeWelding(
           if (retractResult?.status_code !== 200) throw new Error('파트 전환 후퇴 이동 실패');
         }
         if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
-          await adjustWireForPartStart(point);
+          await retractWireBeforeTransition(point);
         if (!stopRef.current) {
           if (isSameSide && point.tcp) {
             log_weldingExecution.info(
@@ -726,6 +749,8 @@ export async function executeWelding(
           );
           if (finalResult?.status_code !== 200) throw new Error('파트 전환 정위치 이동 실패');
         }
+        if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
+          await feedWireAtPartStart(point);
         await startPartWelding(
           point,
           firstWeldPoint,

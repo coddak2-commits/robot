@@ -25,12 +25,13 @@ export type WireDirection = 'forward' | 'reverse';
 // 실측 프로파일 (2026-09-18, v1.1.159).
 // 모터 ON 후 와이어가 실제로 움직이기까지 지연이 있어서 (길이/속도)만으로는
 // 짧은 시간에서 크게 틀린다. 두 점 실측으로 지연과 속도를 같이 구했다.
-//   밀기   571ms → +2mm,  2857ms → +20mm  => 지연 320ms, 7.9mm/s
-//   당기기 571ms → -10mm, 2857ms → -73mm  => 지연 210ms, 27.5mm/s (2026-09-17 실측)
-// 이전 상수 1.75mm/s는 0.5mm 한 번 측정에서 역산한 값이라 실제와 4~15배 차이가 났다.
+// v1.1.160 재보정. 159 값으로 요청 대비 실제를 재서 역산했다.
+//   밀기   5mm 요청 → +7mm(953ms), 25mm 요청 → +26mm(3484ms)  => 지연 20ms, 7.5mm/s
+//   당기기 5mm 요청 → -4mm(392ms), 25mm 요청 → -21mm(1119ms)  => 지연 220ms, 23.4mm/s
+// 1mm처럼 짧은 값은 양방향 모두 ±1mm 수준이 한계다.
 export const WIRE_FEED_PROFILE: Record<WireDirection, { deadTimeMs: number; speedMmPerSec: number }> = {
-  forward: { deadTimeMs: 320, speedMmPerSec: 7.9 },
-  reverse: { deadTimeMs: 210, speedMmPerSec: 27.5 },
+  forward: { deadTimeMs: 20, speedMmPerSec: 7.5 },
+  reverse: { deadTimeMs: 220, speedMmPerSec: 23.4 },
 };
 
 // 정지 명령이 실패하면 와이어가 계속 송급된다. 반드시 재시도한다.
