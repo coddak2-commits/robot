@@ -228,6 +228,9 @@ export interface TouchSensingSettings {
   p12_touch_center: boolean;
   p12_touch_top: boolean;
   p12_touch_bottom: boolean;
+  spline_move_enabled: boolean;
+  spline_type: number;
+  spline_average_time: number;
   arc_tracking_enabled: boolean;
   arc_tracking_left_right: boolean;
   arc_tracking_up_down: boolean;

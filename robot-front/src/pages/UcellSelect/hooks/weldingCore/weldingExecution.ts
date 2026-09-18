@@ -1,5 +1,5 @@
 import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo } from '../..';
-import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, pulseWireFeedMs, WireDirection } from '../../../../lib';
+import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, pulseWireFeedMs, WireDirection, splineMove } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { setWeldingPartOrder } from '../..';
@@ -765,15 +765,25 @@ export async function executeWelding(
         i++;
         continue;
       }
+      // v1.1.156: 설정에서 스플라인 이동을 켜면 티칭점을 모두 지나가는 경로로 바꾼다.
+      // 끄면 지금까지와 동일하게 끝점 보정 단일 MoveL.
+      const useSpline = sequenceSettings.splineMoveEnabled && batchPoints.length >= 2;
       log_weldingExecution.info(
         'welding.batch',
-        `Batch MoveL: ${batchPoints.length}포인트 → 단일 MoveL (경유 스킵)`,
+        useSpline
+          ? `Spline move: ${batchPoints.length}포인트 (type=${sequenceSettings.splineType}, avgTime=${sequenceSettings.splineAverageTime}ms)`
+          : `Batch MoveL: ${batchPoints.length}포인트 → 단일 MoveL (경유 스킵)`,
         {
           indices: batchIndices.map(idx => weldingPoints[idx].id),
         },
       );
       try {
-        const batchResult = await batchMoveL(batchPoints, { perPoint: isDryRun });
+        const batchResult = useSpline
+          ? await splineMove(batchPoints, {
+              splineType: sequenceSettings.splineType,
+              averageTime: sequenceSettings.splineAverageTime,
+            })
+          : await batchMoveL(batchPoints, { perPoint: isDryRun });
         // 배치는 블로킹 호출 1번이라 구간별 실측이 불가능하다. v1.1.133까지는 반환 후
         // 루프를 돌며 경과시간을 넣어, 첫 구간이 배치 전체 시간을 먹고 나머지는 0이 됐다.
         // 배치 안에서는 명령 속도가 동일하므로 거리 비율로 배분한다 (v1.1.134 수정).

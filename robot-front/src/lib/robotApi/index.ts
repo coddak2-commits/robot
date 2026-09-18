@@ -1489,6 +1489,24 @@ export const batchMoveL = async (
     throw error;
   }
 };
+// v1.1.156: 스플라인 이동(시험). 설정에서 켰을 때만 용접 실행부가 이 API를 부른다.
+// 직선 배치(batchMoveL)와 같은 포인트 배열을 보내고, core가 포인트별 보정값을 좌표에 더한다.
+export const splineMove = async (
+  points: BatchMovePoint[],
+  options?: { splineType?: number; averageTime?: number; blendR?: number },
+): Promise<BatchMoveResult> => {
+  try {
+    const body: Record<string, unknown> = { points };
+    if (options?.splineType !== undefined) body.spline_type = options.splineType;
+    if (options?.averageTime !== undefined) body.average_time = options.averageTime;
+    if (options?.blendR !== undefined) body.blend_r = options.blendR;
+    const response = await api.post('/welding/spline-move', body, { timeout: 1800000 });
+    return response.data;
+  } catch (error) {
+    console.error('Spline move 오류:', error);
+    throw error;
+  }
+};
 export const getWeldingConfig = async (): Promise<WeldingConfigData> => {
   try {
     const response = await api.get('/robot_sdk/welding-config');
@@ -1652,6 +1670,9 @@ export interface WeldingConfigData {
   p12_touch_center: boolean;
   p12_touch_top: boolean;
   p12_touch_bottom: boolean;
+  spline_move_enabled?: boolean;
+  spline_type?: number;
+  spline_average_time?: number;
   arc_tracking_enabled: boolean;
   arc_tracking_left_right: boolean;
   arc_tracking_up_down: boolean;

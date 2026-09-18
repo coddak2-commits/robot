@@ -78,6 +78,11 @@ public:
                        float circleRadio, float yawAngle, float rotAngle);
     int weaveStart(int weaveNum);
     int weaveEnd(int weaveNum);
+    // v1.1.156: 스플라인 이동 (티칭점을 곡선으로 이어서 지나감)
+    int newSplineStart(int type, int averageTime);
+    int newSplinePoint(const double descPos[6], int tool, int user,
+                       float vel, float acc, float ovl, float blendR, int lastFlag);
+    int newSplineEnd();
     int wireSearchStart(int refPos, float searchVel, float searchDis,
                         int autoBackFlag, float autoBackVel, float autoBackDis,
                         int offsetFlag);
@@ -456,6 +461,10 @@ struct WeldingConfig {
     double arc_tracking_reference_current = 0.0; // reference_type=1일 때만 사용(mA)
     double arc_tracking_refer_sample_start_ud = 10.0; // 기준 전류 샘플링 시작(cyc)
     double arc_tracking_refer_sample_count_ud = 10.0; // 기준 전류 샘플 주기 수(cyc)
+    // v1.1.156: 스플라인 이동(시험). 꺼져 있으면 기존 직선 이동 그대로.
+    bool spline_move_enabled = false;
+    int  spline_type = 1;          // 0-원호 전환, 1-주어진 점을 경로점으로
+    int  spline_average_time = 2000; // 점 사이 평균 연결 시간(ms, 10~)
     std::string updated_at;
 };
 struct WeldingLog {

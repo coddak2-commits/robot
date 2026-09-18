@@ -988,6 +988,28 @@ int RobotService::setWeaveParams(int weaveNum, int weaveType, float freq, float 
                                  leftStayTime, rightStayTime,
                                  circleRadio, 0, yawAngle, rotAngle);
 }
+// v1.1.156: 스플라인 이동. NewSplinePoint에는 offsetFlag 인자가 없어서
+// 터치 보정값은 호출 전에 좌표에 더해서 넘긴다 (MoveL offsetFlag=1과 같은 베이스 좌표계 기준).
+int RobotService::newSplineStart(int type, int averageTime) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    std::cout << "[RobotService] NewSplineStart type=" << type << " avgTime=" << averageTime << std::endl;
+    return m_robot.NewSplineStart(type, averageTime);
+}
+int RobotService::newSplinePoint(const double descPos[6], int tool, int user,
+                                 float vel, float acc, float ovl, float blendR, int lastFlag) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    DescPose targetPos(descPos[0], descPos[1], descPos[2],
+                       descPos[3], descPos[4], descPos[5]);
+    return m_robot.NewSplinePoint(&targetPos, tool, user, vel, acc, ovl, blendR, lastFlag);
+}
+int RobotService::newSplineEnd() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_connected) return -1;
+    std::cout << "[RobotService] NewSplineEnd" << std::endl;
+    return m_robot.NewSplineEnd();
+}
 int RobotService::weaveStart(int weaveNum) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_connected) return -1;
@@ -4657,6 +4679,108 @@ void registerWeldingBatchRoutes(
         HttpRouteHelpers::setCorsHeaders(res);
         res.status = 200;
     });
+    server.Options("/welding/spline-move", [](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        res.status = 200;
+    });
+    // v1.1.156: 스플라인 이동(시험). 설정에서 켰을 때만 앱이 이 경로를 부른다.
+    // 직선 경로(/welding/batch-move)는 그대로 두고, 여기서는 티칭점을 모두 지나간다.
+    // NewSplinePoint에 offsetFlag가 없으므로 포인트별 터치 보정값을 좌표에 더해서 보낸다.
+    server.Post("/welding/spline-move", [&robotService, dbService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        if (!robotService.isConnected()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "Robot not connected"}}).dump(), "application/json");
+            return;
+        }
+        BatchInProgressGuard batchGuard;
+        if (!batchGuard.owns) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(409, {{"message", "다른 배치 이동이 이미 진행 중입니다"}}).dump(), "application/json");
+            return;
+        }
+        try {
+            json body = json::parse(req.body);
+            auto points = body["points"];
+            int total = static_cast<int>(points.size());
+            if (total <= 0) {
+                res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "points 배열이 비어 있습니다"}}).dump(), "application/json");
+                return;
+            }
+            int splineType = body.value("spline_type", 1);
+            int averageTime = body.value("average_time", 2000);
+            float blendRMid = body.value("blend_r", 0.0f);
+            auto& firstPt = points[0];
+            // 속도 환산은 직선 배치와 같은 식을 쓴다 (WELD_BATCH_SPEED_SCALE = 0.431).
+            float speedRaw = firstPt.value("speed", 15.0f);
+            int velModeIn = firstPt.value("vel_mode", 1);
+            static constexpr float SPLINE_SPEED_SCALE = 0.431f;
+            float speed = (velModeIn == 1) ? (speedRaw / 15.0f) * SPLINE_SPEED_SCALE : speedRaw;
+            speed = clampMotionPercent(speed);
+            if (dbService && dbService->isConnected()) {
+                RobotSettings ovlSettings = dbService->getRobotSettings();
+                int ovlPct = ovlSettings.default_ovl;
+                if (ovlPct < 10) ovlPct = 10;
+                if (ovlPct > 150) ovlPct = 150;
+                if (ovlPct != 100) speed = speed * (ovlPct / 100.0f);
+            }
+            int tool = firstPt.value("tool", 3);
+            int user = firstPt.value("user", 0);
+            robotService.setSpeed(60);
+            g_batchStopFlag = false;
+            FLOG_INFO("WeldSpline", "Spline move start: " + std::to_string(total) +
+                " points type=" + std::to_string(splineType) +
+                " avgTime=" + std::to_string(averageTime) +
+                " speed=" + std::to_string(speed));
+            int startRet = robotService.newSplineStart(splineType, averageTime);
+            if (startRet != 0) {
+                FLOG_SDK_ERROR("newSplineStart", startRet, "spline start failed");
+                res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", "NewSplineStart 실패"}, {"result", startRet}}).dump(), "application/json");
+                return;
+            }
+            std::vector<int> results;
+            int completed = 0;
+            bool stopped = false;
+            for (int idx = 0; idx < total; idx++) {
+                if (g_batchStopFlag) { stopped = true; break; }
+                auto& pt = points[idx];
+                double ptTcp[6] = {0};
+                for (int k = 0; k < 6; k++) ptTcp[k] = pt["tcp"][k].get<double>();
+                int ptOffsetFlag = pt.value("offset_flag", 0);
+                if (ptOffsetFlag > 0 && pt.contains("offset") && pt["offset"].is_array()) {
+                    for (int k = 0; k < 6 && k < (int)pt["offset"].size(); k++)
+                        ptTcp[k] += pt["offset"][k].get<double>();
+                }
+                int lastFlag = (idx == total - 1) ? 1 : 0;
+                float blendR = (idx == total - 1) ? -1.0f : blendRMid;
+                int ret = robotService.newSplinePoint(ptTcp, tool, user, speed, 100.0f, 100.0f, blendR, lastFlag);
+                results.push_back(ret);
+                FLOG_INFO("WeldSpline", "point " + std::to_string(idx + 1) + "/" + std::to_string(total) +
+                    " tcp=[" + std::to_string(ptTcp[0]) + "," + std::to_string(ptTcp[1]) + "," + std::to_string(ptTcp[2]) +
+                    "] offsetApplied=" + (ptOffsetFlag > 0 ? "Y" : "N") +
+                    " lastFlag=" + std::to_string(lastFlag) + " ret=" + std::to_string(ret));
+                if (ret == 0) {
+                    completed++;
+                } else {
+                    FLOG_SDK_ERROR("newSplinePoint", ret, "idx=" + std::to_string(idx));
+                    stopped = true;
+                    break;
+                }
+            }
+            int endRet = robotService.newSplineEnd();
+            FLOG_INFO("WeldSpline", "Spline move complete: " + std::to_string(completed) + "/" +
+                std::to_string(total) + " end=" + std::to_string(endRet) + (stopped ? " (stopped)" : ""));
+            json resultData;
+            resultData["completed"] = completed;
+            resultData["total"] = total;
+            resultData["stopped"] = stopped;
+            resultData["results"] = results;
+            resultData["end_result"] = endRet;
+            res.set_content(HttpRouteHelpers::makeStatusResponse(
+                stopped ? 499 : 200, resultData).dump(), "application/json");
+        } catch (const std::exception& e) {
+            FLOG_ERROR("WeldSpline", std::string("Spline move exception: ") + e.what());
+            res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", e.what()}}).dump(), "application/json");
+        }
+    });
     server.Post("/welding/batch-move", [&robotService, dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         if (!robotService.isConnected()) {
@@ -5955,6 +6079,9 @@ void registerSdkRoutes(
             if (body.contains("arc_tracking_reference_current")) config.arc_tracking_reference_current = body["arc_tracking_reference_current"].get<double>();
             if (body.contains("arc_tracking_refer_sample_start_ud")) config.arc_tracking_refer_sample_start_ud = body["arc_tracking_refer_sample_start_ud"].get<double>();
             if (body.contains("arc_tracking_refer_sample_count_ud")) config.arc_tracking_refer_sample_count_ud = body["arc_tracking_refer_sample_count_ud"].get<double>();
+            if (body.contains("spline_move_enabled")) config.spline_move_enabled = body["spline_move_enabled"].get<bool>();
+            if (body.contains("spline_type")) config.spline_type = body["spline_type"].get<int>();
+            if (body.contains("spline_average_time")) config.spline_average_time = body["spline_average_time"].get<int>();
             if (dbService->updateWeldingConfig(config)) {
                 WeldingConfig updated = dbService->getWeldingConfig();
                 response["status_code"] = 200;
@@ -6891,7 +7018,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.155"
+#define APP_VERSION_STRING "1.1.156"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -8868,7 +8995,8 @@ WeldingConfig DatabaseService::getWeldingConfig() {
         "arc_tracking_sum_max_lr, arc_tracking_sum_max_ud, "
         "arc_tracking_delay_time, arc_tracking_t_start_lr, arc_tracking_t_start_ud, "
         "arc_tracking_axis_select, arc_tracking_reference_type, arc_tracking_reference_current, "
-        "arc_tracking_refer_sample_start_ud, arc_tracking_refer_sample_count_ud, updated_at "
+        "arc_tracking_refer_sample_start_ud, arc_tracking_refer_sample_count_ud, "
+        "spline_move_enabled, spline_type, spline_average_time, updated_at "
         "FROM welding_config WHERE id = 1"
     );
     if (!result) {
@@ -8951,6 +9079,9 @@ WeldingConfig DatabaseService::getWeldingConfig() {
         config.arc_tracking_reference_current = row[col] ? std::stod(row[col]) : 0.0; col++;
         config.arc_tracking_refer_sample_start_ud = row[col] ? std::stod(row[col]) : 10.0; col++;
         config.arc_tracking_refer_sample_count_ud = row[col] ? std::stod(row[col]) : 10.0; col++;
+        config.spline_move_enabled = row[col] ? (std::stoi(row[col]) != 0) : false; col++;
+        config.spline_type = row[col] ? std::stoi(row[col]) : 1; col++;
+        config.spline_average_time = row[col] ? std::stoi(row[col]) : 2000; col++;
         config.updated_at = row[col] ? row[col] : ""; col++;
     }
     return config;
@@ -9031,7 +9162,10 @@ bool DatabaseService::updateWeldingConfig(const WeldingConfig& config) {
           << "arc_tracking_reference_type = " << config.arc_tracking_reference_type << ", "
           << "arc_tracking_reference_current = " << config.arc_tracking_reference_current << ", "
           << "arc_tracking_refer_sample_start_ud = " << config.arc_tracking_refer_sample_start_ud << ", "
-          << "arc_tracking_refer_sample_count_ud = " << config.arc_tracking_refer_sample_count_ud
+          << "arc_tracking_refer_sample_count_ud = " << config.arc_tracking_refer_sample_count_ud << ", "
+          << "spline_move_enabled = " << (config.spline_move_enabled ? 1 : 0) << ", "
+          << "spline_type = " << config.spline_type << ", "
+          << "spline_average_time = " << config.spline_average_time
           << " WHERE id = 1";
     return executeQuery(query.str());
 }
@@ -9110,6 +9244,9 @@ json DatabaseService::weldingConfigToJson(const WeldingConfig& config) {
         {"arc_tracking_reference_current", config.arc_tracking_reference_current},
         {"arc_tracking_refer_sample_start_ud", config.arc_tracking_refer_sample_start_ud},
         {"arc_tracking_refer_sample_count_ud", config.arc_tracking_refer_sample_count_ud},
+        {"spline_move_enabled", config.spline_move_enabled},
+        {"spline_type", config.spline_type},
+        {"spline_average_time", config.spline_average_time},
         {"updated_at", config.updated_at}
     };
 }
@@ -9188,6 +9325,9 @@ WeldingConfig DatabaseService::jsonToWeldingConfig(const json& j) {
     if (j.contains("arc_tracking_reference_current")) config.arc_tracking_reference_current = j["arc_tracking_reference_current"].get<double>();
     if (j.contains("arc_tracking_refer_sample_start_ud")) config.arc_tracking_refer_sample_start_ud = j["arc_tracking_refer_sample_start_ud"].get<double>();
     if (j.contains("arc_tracking_refer_sample_count_ud")) config.arc_tracking_refer_sample_count_ud = j["arc_tracking_refer_sample_count_ud"].get<double>();
+    if (j.contains("spline_move_enabled")) config.spline_move_enabled = j["spline_move_enabled"].get<bool>();
+    if (j.contains("spline_type")) config.spline_type = j["spline_type"].get<int>();
+    if (j.contains("spline_average_time")) config.spline_average_time = j["spline_average_time"].get<int>();
     return config;
 }
 json DatabaseService::getWeldingPartOrder() {

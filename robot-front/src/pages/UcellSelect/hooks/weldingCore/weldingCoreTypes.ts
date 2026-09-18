@@ -51,6 +51,9 @@ export interface WeldingSequenceSettings {
   p12TouchCenter: boolean;
   p12TouchTop: boolean;
   p12TouchBottom: boolean;
+  splineMoveEnabled: boolean;
+  splineType: number;
+  splineAverageTime: number;
   arcTrackingEnabled: boolean;
   arcTrackingLeftRight: boolean;
   arcTrackingUpDown: boolean;

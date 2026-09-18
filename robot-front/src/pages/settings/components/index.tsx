@@ -1,6 +1,7 @@
 export * from './ArcTrackingSection';
 export * from './DiagnosticLogsSection';
 export * from './RobotSettingsTab';
+export * from './SplineMoveSection';
 export * from './StatusCard';
 export * from './SystemEnvTab';
 export * from './TouchSensingSection';

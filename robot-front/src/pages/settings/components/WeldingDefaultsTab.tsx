@@ -10,6 +10,7 @@ import { setSoundEnabled, setAutoLogoutMinutes, setNotificationsEnabled } from '
 import { percent, displayProgress } from '../../../lib/updater';
 import { ArcTrackingSection } from './ArcTrackingSection';
 import { TouchSensingSection } from './TouchSensingSection';
+import { SplineMoveSection } from './SplineMoveSection';
 
 interface WeldingDefaultsTabProps {
   touchSensingSettings: TouchSensingSettings;
@@ -31,6 +32,8 @@ const WeldingDefaultsTab: React.FC<WeldingDefaultsTabProps> = ({
       </h2>
       {}
       <ArcTrackingSection settings={touchSensingSettings} updateTouch={updateTouch} />
+      {}
+      <SplineMoveSection settings={touchSensingSettings} updateTouch={updateTouch} />
       {}
       <div className="mt-8 pt-6 border-t border-gray-700">
         <button
