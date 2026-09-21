@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
 import { AlertTriangle, Edit3, Trash2, Check, X, Clock, FolderOpen, ChevronLeft, ChevronRight, Target, Shield, Settings, Wrench, History, RefreshCw, Save, Home, Circle, GripVertical, Play, Square, Pause, RotateCcw, Wifi, WifiOff, Zap, MapPin, Navigation, Crosshair } from 'lucide-react';
 import { WeldingLogData, getWeldingLogs, deleteWeldingLogs, updateWeldingLog, RealtimeRobotStatus, getRealtimeRobotStatus, getWeldingPartOrder } from '../../../lib';
 import Modal from 'react-modal';
@@ -23,6 +23,7 @@ import { PartToggleLayer } from './unifiedCanvas/PartToggleLayer';
 import { CurrentPositionLayer } from './unifiedCanvas/CurrentPositionLayer';
 import { useDragAndDrop } from './unifiedCanvas/useDragAndDrop';
 import { WeaveParamsEditor } from './WeaveParamsEditor';
+import { gapParamToPointFields } from '../gapParamApply';
 
 const getPostureFromPointId = (pointId: string): 'vertical' | 'horizontal' => {
   const m = pointId.match(/^P(\d+)$/i);
@@ -75,6 +76,8 @@ export function PointItem({
   onApplyParamsToAll,
   onSaveJob,
 }: PointItemProps) {
+  // 연속 입력(예: 1 -> 1.5) 시 늦게 도착한 이전 조회 결과가 덮어쓰지 않도록 요청 번호로 거른다.
+  const gapLookupSeq = useRef(0);
   return (
     <div
       onClick={onSelect}
@@ -140,7 +143,9 @@ export function PointItem({
                     const raw = e.target.value;
                     const newGap = raw === '' ? 0 : Math.min(6, Math.max(0, Number(raw)));
                     onUpdateGap(newGap);
-                    if (newGap > 0 && typeof localStorage !== 'undefined' && localStorage.getItem('gap_token')) {
+                    // v1.1.168: gap 0(기본값)도 조회하고, 위빙까지 적용한다.
+                    if (typeof localStorage !== 'undefined' && localStorage.getItem('gap_token')) {
+                      const reqId = ++gapLookupSeq.current;
                       try {
                         const mod = await import('../../../lib/gapApi');
                         const res = await mod.paramApi.lookup({
@@ -150,9 +155,13 @@ export function PointItem({
                           material: 'SS400',
                           joint: 'fillet',
                         });
+                        if (reqId !== gapLookupSeq.current) return;
                         if (res.param) {
-                          onUpdateWeldParams(Number(res.param.voltage_v), res.param.current_a);
-                          onUpdateSpeed(res.param.speed_cpm, 1);
+                          const f = gapParamToPointFields(point.id, res.param);
+                          onUpdateWeldParams(f.weldVoltage, f.weldCurrent);
+                          onUpdateSpeed(f.moveSpeed, 1);
+                          onUpdateWeavingType(f.weavingType);
+                          if (f.weaveParams) onUpdateWeaveParams(f.weaveParams);
                         }
                       } catch (err) {
                         console.warn('[gap] auto-load failed:', err);
@@ -162,7 +171,7 @@ export function PointItem({
                   onClick={e => e.stopPropagation()}
                   onFocus={e => e.target.select()}
                   className="w-full px-2 py-1.5 bg-gray-900 border border-gray-600 rounded text-white text-sm focus:outline-none focus:border-cyan-500"
-                  title="갭 입력 시 갭 시스템에 로그인되어 있으면 전류/전압/속도가 자동 로드됩니다"
+                  title="갭 입력 시 전류/전압/속도/위빙이 갭 파라미터 표에서 자동 로드됩니다 (0 = 기본값)"
                 />
               </div>
             )}

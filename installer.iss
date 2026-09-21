@@ -1,5 +1,5 @@
 ﻿#define MyAppName "Robot Welding Control"
-#define MyAppVersion "1.1.167"
+#define MyAppVersion "1.1.168"
 #define MyAppPublisher "Robot Welding"
 #define MyAppExeName "robot_core.exe"
 
@@ -44,6 +44,9 @@ Source: "robot-back\env.deploy.ini"; DestDir: "{app}"; DestName: ".env"; Flags: 
 
 ; 앱과 백엔드를 함께 띄우는 런처
 Source: "launcher.bat"; DestDir: "{app}"; Flags: ignoreversion
+
+; DB 마이그레이션 스크립트 (현장 노트북에서 mysql로 직접 실행)
+Source: "database\migrations\*.sql"; DestDir: "{app}\database\migrations"; Flags: ignoreversion
 
 ; 프론트엔드 빌드 결과물 (robot-model, sound 포함)
 Source: "robot-front\build\*"; DestDir: "{app}\www"; Flags: ignoreversion recursesubdirs createallsubdirs
