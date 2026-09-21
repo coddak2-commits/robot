@@ -882,13 +882,17 @@ export async function executeWelding(
         continue;
       }
       // v1.1.156: 설정에서 스플라인 이동을 켜면 티칭점을 모두 지나가는 경로로 바꾼다.
-      // 끄면 지금까지와 동일하게 끝점 보정 단일 MoveL.
+      // v1.1.167: 끄면 실제 용접도 드라이런과 같은 경유점 방식(per_point, 블렌드 10mm)으로 간다.
+      // 1.1.149~166은 실제 용접만 끝점 보정 단일 MoveL이라 중간점 보정이 빠졌다.
+      // 모재가 휘면 양 끝만 맞고 가운데는 직선으로 지나가 비드가 휘어 보였다
+      // (2026-09-21 좌측 수직: 직선 보간 dx -0.05 vs P2 실측 dx -6.5, 6.5mm 차이).
+      // 경유점 방식은 드라이런에서 매번 돌던 경로라 속도·위빙 조합은 확인된 상태다.
       const useSpline = sequenceSettings.splineMoveEnabled && batchPoints.length >= 2;
       log_weldingExecution.info(
         'welding.batch',
         useSpline
           ? `Spline move: ${batchPoints.length}포인트 (type=${sequenceSettings.splineType}, avgTime=${sequenceSettings.splineAverageTime}ms)`
-          : `Batch MoveL: ${batchPoints.length}포인트 → 단일 MoveL (경유 스킵)`,
+          : `Batch MoveL: ${batchPoints.length}포인트 → 경유점 방식 (블렌드)`,
         {
           indices: batchIndices.map(idx => weldingPoints[idx].id),
         },
@@ -899,7 +903,7 @@ export async function executeWelding(
               splineType: sequenceSettings.splineType,
               averageTime: sequenceSettings.splineAverageTime,
             })
-          : await batchMoveL(batchPoints, { perPoint: isDryRun });
+          : await batchMoveL(batchPoints, { perPoint: true });
         // 배치는 블로킹 호출 1번이라 구간별 실측이 불가능하다. v1.1.133까지는 반환 후
         // 루프를 돌며 경과시간을 넣어, 첫 구간이 배치 전체 시간을 먹고 나머지는 0이 됐다.
         // 배치 안에서는 명령 속도가 동일하므로 거리 비율로 배분한다 (v1.1.134 수정).
