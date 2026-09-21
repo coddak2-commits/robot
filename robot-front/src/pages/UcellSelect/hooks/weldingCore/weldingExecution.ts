@@ -20,13 +20,18 @@ const log_weldingExecution = createLogger('weldingCore.weldingExecution');
 // v1.1.160: 두 단계로 나눈다.
 //   ① 후퇴 위치에서 retractMm 만큼 당긴다 → 짧은 상태로 이동하므로 간섭 없음
 //   ② 시작점에 도착한 뒤 feedMm 만큼 민다 → 이동이 끝난 뒤라 닿을 일이 없음
-// 도착 위치에서는 와이어 끝과 접합부 사이가 목표 스틱아웃만큼뿐이라, 25mm를 다 채우면
-// 와이어가 모재에 닿는다. 그래서 feedMm은 목표보다 작게 두고 나머지는 점화 때 채운다.
+// v1.1.165: 밀기 양을 포인트별로 나눈다. 2026-09-21 현장 실측에서 같은 12mm를 밀었는데도
+// 시작 스틱아웃이 P4 약 10mm, P10 약 15mm로 갈렸다. 목표는 20~25mm(중간값 22mm)이므로
+// 부족한 만큼을 각각 더한다(P4 +12 → 24mm, P10 +7 → 19mm).
+// 당기기 10mm는 이동 중 기존 비드 간섭을 막는 용도라 그대로 둔다. 밀기는 도착 후라
+// 길어져도 닿지 않는다.
 // 수직 시작(P9)은 이미 정상이라 0으로 둔다. 0이면 그 단계는 실행하지 않는다.
-const PART_WIRE_PLAN: Record<'vertical' | 'horizontal', { retractMm: number; feedMm: number }> = {
-  vertical: { retractMm: 0, feedMm: 0 },
-  horizontal: { retractMm: 10, feedMm: 12 },
+const HORIZONTAL_WIRE_PLAN: Record<string, { retractMm: number; feedMm: number }> = {
+  p4: { retractMm: 10, feedMm: 24 },
+  p10: { retractMm: 10, feedMm: 19 },
 };
+const HORIZONTAL_WIRE_DEFAULT = { retractMm: 10, feedMm: 12 };
+const VERTICAL_WIRE_PLAN = { retractMm: 0, feedMm: 0 };
 const VERTICAL_POINT_NUMBERS = [1, 2, 3, 7, 8, 9];
 // 파트 시작 체류 (v1.1.158). 아크를 켠 자리에서 잠깐 머물러 시작부를 채운다.
 // 수평 시작(P4/P10)은 수직 비드와 만나는 지점이라 틈이 남아 수동 보강이 필요했다(2026-09-18 사진).
@@ -94,9 +99,11 @@ async function verifyStartGap(
   if (back?.status_code !== 200) throw new Error('시작점 확인 터치 후 복귀 이동 실패');
 }
 function partWirePlan(point: TeachingPoint): { retractMm: number; feedMm: number } | null {
-  const n = parseInt((point.id ?? '').replace(/\D/g, ''), 10);
+  const id = (point.id ?? '').toLowerCase();
+  const n = parseInt(id.replace(/\D/g, ''), 10);
   if (!Number.isFinite(n)) return null;
-  return PART_WIRE_PLAN[VERTICAL_POINT_NUMBERS.includes(n) ? 'vertical' : 'horizontal'];
+  if (VERTICAL_POINT_NUMBERS.includes(n)) return VERTICAL_WIRE_PLAN;
+  return HORIZONTAL_WIRE_PLAN[id] ?? HORIZONTAL_WIRE_DEFAULT;
 }
 async function runWirePulse(
   direction: WireDirection,
