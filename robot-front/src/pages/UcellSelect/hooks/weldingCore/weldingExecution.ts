@@ -59,13 +59,16 @@ async function dwellAtPartStart(point: TeachingPoint, active: boolean): Promise<
 // 남기므로 좌우 값을 비교하면 된다.
 // 탐색이 끝나면 접촉점에서 retract_distance(10mm)만큼 물러난 자리에 서므로,
 // 같은 좌표·같은 보정으로 다시 이동해 원위치시킨다.
+// v1.1.173: 비활성화. 2026-09-22 드라이런에서 P9 확인 터치가 접촉을 감지하지 못하고
+// -X 45mm를 밀고 들어가 U셀을 밀었다(code=185). 진단 목적(점화 지연 원인)은 이미 결론이 났다.
+const START_GAP_VERIFY_ENABLED = false;
 async function verifyStartGap(
   point: TeachingPoint,
   offsetFlag: number,
   offset: number[],
   active: boolean,
 ): Promise<void> {
-  if (!active || !point.tcp) return;
+  if (!START_GAP_VERIFY_ENABLED || !active || !point.tcp) return;
   log_weldingExecution.info('welding.startGap.begin', `시작점 확인 터치: ${point.name} (-X)`);
   try {
     const result = await findDx(-1);
@@ -651,7 +654,8 @@ export async function executeWelding(
         };
         const isSameSide =
           !!prevPoint?.id && !!point?.id && pointSide(prevPoint.id) === pointSide(point.id);
-        const CROSS_CLEARANCE_X = 150;
+        // v1.1.173: 횡단 전환 정면 이격을 150mm 고정에서 같은 쪽 전환과 같은 approachOffset으로 변경.
+        const CROSS_CLEARANCE_X = approachOffset;
         const CROSS_LIFT_Z = 100;
         if (prevPoint?.tcp && !stopRef.current && isSameSide) {
           log_weldingExecution.info(
