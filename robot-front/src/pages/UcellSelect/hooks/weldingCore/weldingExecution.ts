@@ -1,5 +1,5 @@
 import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo } from '../..';
-import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, pulseWireFeedMs, wireFeedDurationMs, WireDirection, splineMove } from '../../../../lib';
+import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, findDx, pulseWireFeedMs, wireFeedDurationMs, WireDirection, splineMove } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { setWeldingPartOrder } from '../..';
@@ -42,6 +42,56 @@ async function dwellAtPartStart(point: TeachingPoint, active: boolean): Promise<
     `파트 시작 체류: ${point.name} ${ms}ms (이동 전 정지 상태로 용착)`,
   );
   await new Promise(resolve => setTimeout(resolve, ms));
+}
+// 시작점 확인 터치 (v1.1.164, 드라이런 전용).
+// 터치 보정을 적용해 시작점에 도착한 뒤, 접합부까지 실제로 얼마나 남았는지 -X로 한 번 더
+// 탐색해서 남긴다. 2026-09-21 세트에서 좌우 점화 시간이 1.29/1.36초(좌) vs 1.60/1.58초(우)로
+// 갈렸는데, 그게 보정이 덜 먹어서 생긴 위치 차이인지 다른 원인인지 가리기 위한 진단이다.
+// 실제 용접에서는 돌지 않는다(드라이런에서만). 코어가 find-dx COMPLETE: delta=..를 로그에
+// 남기므로 좌우 값을 비교하면 된다.
+// 탐색이 끝나면 접촉점에서 retract_distance(10mm)만큼 물러난 자리에 서므로,
+// 같은 좌표·같은 보정으로 다시 이동해 원위치시킨다.
+async function verifyStartGap(
+  point: TeachingPoint,
+  offsetFlag: number,
+  offset: number[],
+  active: boolean,
+): Promise<void> {
+  if (!active || !point.tcp) return;
+  log_weldingExecution.info('welding.startGap.begin', `시작점 확인 터치: ${point.name} (-X)`);
+  try {
+    const result = await findDx(-1);
+    const delta = result?.data?.delta_x;
+    if (result?.status_code === 200 && delta !== undefined) {
+      log_weldingExecution.info(
+        'welding.startGap.result',
+        `시작점 확인 터치: ${point.name} 남은 거리 ${Math.abs(delta).toFixed(2)}mm`,
+        { deltaX: delta },
+      );
+    } else {
+      log_weldingExecution.warn('welding.startGap.failed', `시작점 확인 터치 실패: ${point.name}`, {
+        status: result?.status_code,
+      });
+    }
+  } catch (error) {
+    log_weldingExecution.warn('welding.startGap.error', `시작점 확인 터치 오류: ${point.name}`, {
+      error: String(error),
+    });
+  }
+  const back = await moveToCartesianPosition(
+    point.tcp,
+    30,
+    100,
+    100,
+    -1,
+    offsetFlag,
+    offset,
+    undefined,
+    point.toolNum ?? 3,
+    point.userNum ?? 0,
+    0,
+  );
+  if (back?.status_code !== 200) throw new Error('시작점 확인 터치 후 복귀 이동 실패');
 }
 function partWirePlan(point: TeachingPoint): { retractMm: number; feedMm: number } | null {
   const n = parseInt((point.id ?? '').replace(/\D/g, ''), 10);
@@ -464,6 +514,12 @@ export async function executeWelding(
         0,
       );
       if (descentResult?.status_code !== 200) throw new Error('최종 하강 이동 실패');
+      await verifyStartGap(
+        startPoint,
+        useStartOffset ? 1 : 0,
+        startTouchOffset,
+        isDryRun && !stopRef.current,
+      );
     }
     if (stopRef.current) return await handleStopped(0);
     const isStartAtPartEnd = partBoundaryInfo.partEndIndices.includes(startPointIndex);
@@ -553,6 +609,7 @@ export async function executeWelding(
               0,
             );
             if (linResult?.status_code !== 200) throw new Error('파트 전환(p6→p9) 직선 이동 실패');
+            await verifyStartGap(point, useP9Offset ? 1 : 0, p9Offset, isDryRun && !stopRef.current);
           }
           if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
             await feedWireAtPartStart(point);
@@ -748,6 +805,12 @@ export async function executeWelding(
             0,
           );
           if (finalResult?.status_code !== 200) throw new Error('파트 전환 정위치 이동 실패');
+          await verifyStartGap(
+            point,
+            usePointOffset ? 1 : 0,
+            pointTouchOffset,
+            isDryRun && !stopRef.current,
+          );
         }
         if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
           await feedWireAtPartStart(point);
