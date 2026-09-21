@@ -653,15 +653,10 @@ export async function executeWelding(
           !!prevPoint?.id && !!point?.id && pointSide(prevPoint.id) === pointSide(point.id);
         const CROSS_CLEARANCE_X = 150;
         const CROSS_LIFT_Z = 100;
-        if (prevPoint?.tcp && !stopRef.current) {
-          const retractOffset = isSameSide
-            ? [approachOffset, 0, 0, 0, 0, 0]
-            : [CROSS_CLEARANCE_X, 0, CROSS_LIFT_Z, 0, 0, 0];
+        if (prevPoint?.tcp && !stopRef.current && isSameSide) {
           log_weldingExecution.info(
             'welding.partTransition.retract',
-            isSameSide
-              ? `파트 전환 ①: base +X +${approachOffset}mm 후퇴`
-              : `파트 전환 ①(횡단): base +X +${CROSS_CLEARANCE_X} / +Z +${CROSS_LIFT_Z}mm 후퇴`,
+            `파트 전환 ①: base +X +${approachOffset}mm 후퇴`,
           );
           const retractResult = await moveToCartesianPosition(
             prevPoint.tcp,
@@ -670,13 +665,51 @@ export async function executeWelding(
             100,
             -1,
             1,
-            retractOffset,
+            [approachOffset, 0, 0, 0, 0, 0],
             undefined,
             prevPoint.toolNum ?? 3,
             prevPoint.userNum ?? 0,
             0,
           );
           if (retractResult?.status_code !== 200) throw new Error('파트 전환 후퇴 이동 실패');
+        } else if (prevPoint?.tcp && !stopRef.current) {
+          // v1.1.171: 횡단 전환(좌 <-> 우) 후퇴를 바꾼다.
+          // 1.1.170까지는 이전 점에서 base +X150 / +Z100 으로 물러났다. 옛 순서의 횡단은
+          // 바닥 높이(P6->P9, 전용 분기)뿐이라 문제가 없었는데, 수평 우선 순서(4-5-6, 3-2-1,
+          // 10-11-12, 9-8-7)에서는 P1(좌측 상단, 높이 약 554mm) -> P10 이 횡단이 된다.
+          // P1에서 위로 100mm 더 올린 자리는 도달 불가라 code=112로 거부됐다(2026-09-21 드라이런).
+          // 용접 종료 때 P7(우측 상단)에서 매번 쓰는 동작과 같은 방식으로 바꾼다:
+          //   토치 축 -Z 100mm 후퇴 -> 홈 MoveJ -> (아래 ②) 목표 앞 상공 IK MoveJ -> 하강 -> ③ 진입.
+          // 홈을 거치므로 팔이 U셀 안을 가로지르지 않는다.
+          log_weldingExecution.info(
+            'welding.partTransition.retract',
+            `파트 전환 ①(횡단): ${prevPoint.name} 토치 축 -Z 100mm 후퇴 -> 홈 경유`,
+          );
+          const retractResult = await moveToCartesianPosition(
+            prevPoint.tcp,
+            transitionSpeed,
+            100,
+            100,
+            -1,
+            2,
+            [0, 0, -100, 0, 0, 0],
+            undefined,
+            prevPoint.toolNum ?? 3,
+            prevPoint.userNum ?? 0,
+            0,
+          );
+          if (retractResult?.status_code !== 200) throw new Error('파트 전환(횡단) 후퇴 이동 실패');
+          if (homePoint?.joints && !stopRef.current) {
+            const homeResult = await moveToJointWithStopCheck(
+              homePoint.joints,
+              homePoint.moveSpeed || 50,
+              homePoint.toolNum ?? 3,
+              homePoint.userNum ?? 0,
+              stopRef,
+            );
+            if (homeResult.stopped) stopRef.current = true;
+            else if (!homeResult.success) throw new Error('파트 전환(횡단) 홈 경유 실패');
+          }
         }
         if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
           await retractWireBeforeTransition(point);
