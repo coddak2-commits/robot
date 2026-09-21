@@ -890,6 +890,10 @@ export async function executeWelding(
       // 모재가 휘면 양 끝만 맞고 가운데는 직선으로 지나가 비드가 휘어 보였다
       // (2026-09-21 좌측 수직: 직선 보간 dx -0.05 vs P2 실측 dx -6.5, 6.5mm 차이).
       // 경유점 방식은 드라이런에서 매번 돌던 경로라 속도·위빙 조합은 확인된 상태다.
+      // v1.1.170: 블렌드 10 -> 50mm. 10mm에서는 경유점(P8)에서 방향이 바뀌는 게 비드에 각지게
+      // 드러났다(2026-09-21 사진). 휜 각도 1~2도 기준 경유점에서 벗어나는 거리는 0.2~0.4mm 수준이고,
+      // 꺾이는 구간이 약 100mm로 늘어나 완만해진다. 가장 짧은 구간(P5->P6 약 186mm)의 절반 이하.
+      const WAYPOINT_BLEND_MM = 50;
       const useSpline = sequenceSettings.splineMoveEnabled && batchPoints.length >= 2;
       log_weldingExecution.info(
         'welding.batch',
@@ -906,7 +910,7 @@ export async function executeWelding(
               splineType: sequenceSettings.splineType,
               averageTime: sequenceSettings.splineAverageTime,
             })
-          : await batchMoveL(batchPoints, { perPoint: true });
+          : await batchMoveL(batchPoints, { perPoint: true, blendR: WAYPOINT_BLEND_MM });
         // 배치는 블로킹 호출 1번이라 구간별 실측이 불가능하다. v1.1.133까지는 반환 후
         // 루프를 돌며 경과시간을 넣어, 첫 구간이 배치 전체 시간을 먹고 나머지는 0이 됐다.
         // 배치 안에서는 명령 속도가 동일하므로 거리 비율로 배분한다 (v1.1.134 수정).
