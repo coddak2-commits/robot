@@ -678,12 +678,17 @@ export async function executeWelding(
           // 바닥 높이(P6->P9, 전용 분기)뿐이라 문제가 없었는데, 수평 우선 순서(4-5-6, 3-2-1,
           // 10-11-12, 9-8-7)에서는 P1(좌측 상단, 높이 약 554mm) -> P10 이 횡단이 된다.
           // P1에서 위로 100mm 더 올린 자리는 도달 불가라 code=112로 거부됐다(2026-09-21 드라이런).
-          // 용접 종료 때 P7(우측 상단)에서 매번 쓰는 동작과 같은 방식으로 바꾼다:
-          //   토치 축 -Z 100mm 후퇴 -> 홈 MoveJ -> (아래 ②) 목표 앞 상공 IK MoveJ -> 하강 -> ③ 진입.
+          // v1.1.172: 1.1.171의 토치 축 -Z 100mm 후퇴도 P1에서 code=112(도달 불가)로 거부됐다
+          // (2026-09-22). 용접 종료 후퇴는 옛 순서에서 P12(바닥)에서만 쓰였고 상단에서는 검증된 적이 없었다.
+          // 상단에서 실제로 동작이 확인된 것은 터치센싱 종료 시 P7(우측 상단)의
+          //   base +X touchHomeRetractOffset 후퇴 -> 홈 MoveJ
+          // 이고, P1도 터치센싱 접근 때 base +X 오프셋 자리에 매번 도달한다. 그 방식을 그대로 쓴다.
+          //   base +X 후퇴 -> 홈 MoveJ -> (아래 ②) 목표 앞 상공 IK MoveJ -> 하강 -> ③ 진입.
           // 홈을 거치므로 팔이 U셀 안을 가로지르지 않는다.
+          const crossRetract = sequenceSettings.touchHomeRetractOffset;
           log_weldingExecution.info(
             'welding.partTransition.retract',
-            `파트 전환 ①(횡단): ${prevPoint.name} 토치 축 -Z 100mm 후퇴 -> 홈 경유`,
+            `파트 전환 ①(횡단): ${prevPoint.name} base +X ${crossRetract}mm 후퇴 -> 홈 경유`,
           );
           const retractResult = await moveToCartesianPosition(
             prevPoint.tcp,
@@ -691,8 +696,8 @@ export async function executeWelding(
             100,
             100,
             -1,
-            2,
-            [0, 0, -100, 0, 0, 0],
+            1,
+            [crossRetract, 0, 0, 0, 0, 0],
             undefined,
             prevPoint.toolNum ?? 3,
             prevPoint.userNum ?? 0,
