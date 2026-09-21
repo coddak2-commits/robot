@@ -26,11 +26,14 @@ const log_weldingExecution = createLogger('weldingCore.weldingExecution');
 // 당기기 10mm는 이동 중 기존 비드 간섭을 막는 용도라 그대로 둔다. 밀기는 도착 후라
 // 길어져도 닿지 않는다.
 // 수직 시작(P9)은 이미 정상이라 0으로 둔다. 0이면 그 단계는 실행하지 않는다.
+// v1.1.169: 파트 순서를 수평 먼저(4-5-6, 3-2-1, 10-11-12, 9-8-7)로 바꾸면서
+// 와이어 당기기/밀기를 전부 끈다(사용자 요청, 효과 확인용). 0이면 실행하지 않는다.
+// 되살릴 때 참고: 1.1.165 값은 P4 10/24, P10 10/19, 그 외 수평 10/12.
 const HORIZONTAL_WIRE_PLAN: Record<string, { retractMm: number; feedMm: number }> = {
-  p4: { retractMm: 10, feedMm: 24 },
-  p10: { retractMm: 10, feedMm: 19 },
+  p4: { retractMm: 0, feedMm: 0 },
+  p10: { retractMm: 0, feedMm: 0 },
 };
-const HORIZONTAL_WIRE_DEFAULT = { retractMm: 10, feedMm: 12 };
+const HORIZONTAL_WIRE_DEFAULT = { retractMm: 0, feedMm: 0 };
 const VERTICAL_WIRE_PLAN = { retractMm: 0, feedMm: 0 };
 const VERTICAL_POINT_NUMBERS = [1, 2, 3, 7, 8, 9];
 // 파트 시작 체류 (v1.1.158). 아크를 켠 자리에서 잠깐 머물러 시작부를 채운다.
