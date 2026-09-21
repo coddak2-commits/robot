@@ -110,6 +110,9 @@ public:
     void setErrorCallback(ErrorCallback callback);
     void startStateMonitor(int intervalMs = 50);
     void stopStateMonitor();
+    // 모니터 스레드가 정상적으로 빠져나왔는지. false면 SDK 호출 안에서 막혀
+    // detach한 상태이므로, m_mutex를 잡는 호출(disconnect 등)을 더 하면 안 된다.
+    bool monitorFinished() const { return m_monitorFinished.load(); }
     void setAutoReconnect(bool enabled) { m_autoReconnect = enabled; }
     bool isAutoReconnectEnabled() const { return m_autoReconnect; }
     using ReconnectCallback = std::function<void(bool connected, const std::string& ip)>;
@@ -132,6 +135,7 @@ private:
     int getNextReconnectDelay();
     std::thread m_monitorThread;
     std::atomic<bool> m_monitorRunning{false};
+    std::atomic<bool> m_monitorFinished{true};
     StateCallback m_stateCallback;
     ErrorCallback m_errorCallback;
     void monitorLoop(int intervalMs);

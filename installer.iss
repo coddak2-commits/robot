@@ -1,5 +1,5 @@
-#define MyAppName "Robot Welding Control"
-#define MyAppVersion "1.1.165"
+﻿#define MyAppName "Robot Welding Control"
+#define MyAppVersion "1.1.166"
 #define MyAppPublisher "Robot Welding"
 #define MyAppExeName "robot_core.exe"
 
@@ -23,7 +23,7 @@ SetupLogging=yes
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Files]
-; robot_core ?�행?�일 + DLL
+; robot_core 실행파일 + DLL
 Source: "robot-core\build-unity\robot_core.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "robot-core\build-unity\fairino.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "robot-core\build-unity\libmariadb.dll"; DestDir: "{app}"; Flags: ignoreversion
@@ -33,19 +33,19 @@ Source: "robot-core\runtime-deps\vcruntime140.dll"; DestDir: "{app}"; Flags: ign
 Source: "robot-core\runtime-deps\vcruntime140_1.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "robot-core\runtime-deps\zlib1.dll"; DestDir: "{app}"; Flags: ignoreversion
 
-; config.ini: 기존 ?�정 ?�일???�으�??��? ??��?��? ?�음 (?�제 ?�드 DB ?�보 보존)
+; config.ini: 기존 설정 파일이 있으면 덮어쓰지 않음 (현장 노트북 DB 정보 보존)
 Source: "robot-core\config.ini.example"; DestDir: "{app}"; DestName: "config.ini"; Flags: onlyifdoesntexist
 Source: "robot-core\config.ini.example"; DestDir: "{app}"; Flags: ignoreversion
 
-; robot-back (�??�라미터 백엔?? Python->exe)
+; robot-back (갭 파라미터 백엔드, Python -> exe)
 Source: "robot-back\dist\robot-back.exe"; DestDir: "{app}"; Flags: ignoreversion
-; .env: 기존 ?�정 ?�일???�으�??��? ??��?��? ?�음 (DB 계정 ?�보 보존)
+; .env: 기존 설정 파일이 있으면 덮어쓰지 않음 (DB 계정 정보 보존)
 Source: "robot-back\env.deploy.ini"; DestDir: "{app}"; DestName: ".env"; Flags: onlyifdoesntexist
 
-; ??백엔?��? ?�께 ?�우???�처
+; 앱과 백엔드를 함께 띄우는 런처
 Source: "launcher.bat"; DestDir: "{app}"; Flags: ignoreversion
 
-; ?�론?�엔??빌드 결과�?(robot-model, sound ?�함)
+; 프론트엔드 빌드 결과물 (robot-model, sound 포함)
 Source: "robot-front\build\*"; DestDir: "{app}\www"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -53,4 +53,4 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\launcher.bat"; IconFilename: "{ap
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\launcher.bat"; IconFilename: "{app}\{#MyAppExeName}"
 
 [Run]
-Filename: "{app}\launcher.bat"; Description: "지�??�행"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\launcher.bat"; Description: "지금 실행"; Flags: nowait postinstall skipifsilent

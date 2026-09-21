@@ -404,6 +404,9 @@ int runService() {
     FLOG_INFO("Main", "Robot Core 서비스 종료 시작");
     ProcessStability::uninstallCrashHandlers();
 #ifdef _WIN32
+    // v1.1.166: 정리 작업이 이 스레드에서 도는 동안에는 창이 메시지를 처리하지 못해
+    // "응답 없음"으로 보인다. 눌렀을 때 바로 사라지도록 창과 트레이 아이콘을 먼저 닫는다.
+    mgmtDialog.close();
     if (g_trayIcon) {
         g_trayIcon->shutdown();
         g_trayIcon = nullptr;
@@ -420,14 +423,25 @@ int runService() {
     robotService.stopStateMonitor();
     httpServer.stop();
     zmqServer.stop();
-    if (robotService.isConnected()) {
+    // 모니터 스레드를 detach한 경우, 그 스레드가 m_mutex를 쥔 채 SDK 안에 있을 수 있다.
+    // 여기서 disconnect()를 부르면 같은 뮤텍스에서 또 멈추므로 건너뛴다.
+    if (robotService.monitorFinished() && robotService.isConnected()) {
         robotService.disconnect();
+    } else if (!robotService.monitorFinished()) {
+        FLOG_WARN("Main", "모니터 스레드 detach 상태 - 로봇 연결 해제 생략");
     }
     g_robotService = nullptr;
     g_zmqServer = nullptr;
     g_httpServer = nullptr;
     FLOG_INFO("Main", "Robot Core 서비스 종료 완료");
     FileLogger::instance().shutdown();
+#ifdef _WIN32
+    // detach한 모니터 스레드가 남아 있으면 CRT 정리 중에 이미 해제된 객체를 건드릴 수 있다.
+    // 로그는 위에서 모두 내려갔으므로 여기서 프로세스를 바로 끝낸다. (재시작 때는 제외)
+    if (!g_restart) {
+        TerminateProcess(GetCurrentProcess(), 0);
+    }
+#endif
     return 0;
 }
 #ifdef _WIN32
@@ -1109,13 +1123,34 @@ void RobotService::startStateMonitor(int intervalMs) {
     if (m_monitorRunning) return;
     FLOG_INFO("RobotMonitor", "State monitor starting: interval=" + std::to_string(intervalMs) + "ms");
     m_monitorRunning = true;
+    m_monitorFinished = false;
     m_monitorThread = std::thread(&RobotService::monitorLoop, this, intervalMs);
 }
+// v1.1.166: join에 타임아웃을 둔다.
+// 모니터 스레드는 50ms마다 SDK를 호출하고, 연결이 끊기면 재연결 RPC()를 부른다.
+// RPC()는 응답이 없으면 수 초(2026-09-21 로그에서 9초)를 그대로 잡고 있어서,
+// 종료 시 join이 그만큼 멈췄다. 창이 메시지를 못 받아 "응답 없음"으로 보이고
+// 사용자가 강제 종료하면 종료 로그조차 남지 않았다.
+// 일정 시간 안에 빠져나오지 못하면 detach하고 진행한다. 이후 m_mutex를 잡는
+// 호출은 하지 않는다(monitorFinished()로 판단).
 void RobotService::stopStateMonitor() {
     FLOG_INFO("RobotMonitor", "State monitor stopping");
     m_monitorRunning = false;
     if (m_monitorThread.joinable()) {
-        m_monitorThread.join();
+        const int JOIN_TIMEOUT_MS = 2000;
+        int elapsed = 0;
+        while (!m_monitorFinished.load() && elapsed < JOIN_TIMEOUT_MS) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            elapsed += 50;
+        }
+        if (m_monitorFinished.load()) {
+            m_monitorThread.join();
+        } else {
+            FLOG_WARN("RobotMonitor",
+                "State monitor join timeout (" + std::to_string(JOIN_TIMEOUT_MS) +
+                "ms) - SDK 호출에 막혀 있어 detach하고 진행");
+            m_monitorThread.detach();
+        }
     }
     FLOG_INFO("RobotMonitor", "State monitor stopped");
 }
@@ -1213,6 +1248,7 @@ void RobotService::monitorLoop(int intervalMs) {
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(intervalMs));
     }
+    m_monitorFinished = true;
 }
 bool RobotService::checkConnection() {
     // [v1.1.61 역적용] 위 getState()와 동일한 이유로 try_to_lock 사용 — 긴 이동(m_mutex 점유) 중에는
@@ -7018,7 +7054,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.165"
+#define APP_VERSION_STRING "1.1.166"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
