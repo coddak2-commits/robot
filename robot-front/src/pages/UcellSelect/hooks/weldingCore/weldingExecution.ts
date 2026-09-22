@@ -742,6 +742,29 @@ export async function executeWelding(
               0,
             );
             if (sameSideResult?.status_code !== 200) throw new Error('파트 전환(같은 쪽) 접근 이동 실패');
+          } else if (point.tcp && NEAR_UCELL_CORNER.includes((point.id ?? '').toLowerCase())) {
+            // v1.1.175: 횡단 전환 목표가 P9/P10(우측 바닥 코너)이면 시작점 접근과 같은 방식을 쓴다.
+            // 홈에서 -Y approachOffset 자리로 직선(MoveL) 이동 -> ③ 정위치 진입.
+            // 1.1.174의 IK 상공 MoveJ + 하강 두 단계를 없앤다. (+X 접근은 code=185, MoveJ 곡선은 U셀 접촉 이력)
+            const cornerOffset = getStartApproachOffsetPos(point.id, approachOffset);
+            log_weldingExecution.info(
+              'welding.partTransition.approachCorner',
+              `파트 전환 ②(횡단): ${point.name} -Y ${approachOffset}mm 직선 접근 (U셀 코너, 시작점 접근 방식)`,
+            );
+            const cornerResult = await moveToCartesianPosition(
+              point.tcp,
+              transitionSpeed,
+              100,
+              100,
+              -1,
+              1,
+              cornerOffset,
+              undefined,
+              point.toolNum ?? 3,
+              point.userNum ?? 0,
+              0,
+            );
+            if (cornerResult?.status_code !== 200) throw new Error('파트 전환(횡단, U셀 코너) 접근 이동 실패');
           } else if (point.joints && point.joints.length === 6) {
             let liftedJoints: number[] | null = null;
             if (point.tcp) {
