@@ -654,8 +654,8 @@ export async function executeWelding(
         };
         const isSameSide =
           !!prevPoint?.id && !!point?.id && pointSide(prevPoint.id) === pointSide(point.id);
-        // v1.1.173: 횡단 전환 정면 이격을 150mm 고정에서 같은 쪽 전환과 같은 approachOffset으로 변경.
-        const CROSS_CLEARANCE_X = approachOffset;
+        // v1.1.174: 횡단 전환 정면 이격 approachOffset -> 100mm 고정. approachOffset(현장 25mm)은 홈에서 MoveJ로 들어가기엔 가까워 쓰지 않는다.
+        const CROSS_CLEARANCE_X = 100;
         const CROSS_LIFT_Z = 100;
         if (prevPoint?.tcp && !stopRef.current && isSameSide) {
           log_weldingExecution.info(
