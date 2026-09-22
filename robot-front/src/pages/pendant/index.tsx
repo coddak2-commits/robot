@@ -34,10 +34,10 @@ const SEGMENTS: { key: string; startId: string; endId: string; label: string; of
 
 // 파트별 "패스(skip)" 체크박스 배치 (U-셀 안쪽)
 const PART_CHECKBOXES: { partIdx: number; refPoint: string; offsetX?: number; offsetY?: number }[] = [
-  { partIdx: 0, refPoint: 'p5', offsetY: -100 },
-  { partIdx: 1, refPoint: 'p2', offsetX: 135 },
-  { partIdx: 2, refPoint: 'p11', offsetY: -100 },
-  { partIdx: 3, refPoint: 'p8', offsetX: -135 },
+  { partIdx: 0, refPoint: 'p5', offsetY: -60 },
+  { partIdx: 1, refPoint: 'p2', offsetX: 160 },
+  { partIdx: 2, refPoint: 'p11', offsetY: -60 },
+  { partIdx: 3, refPoint: 'p8', offsetX: -160 },
 ];
 
 // 파트별 대표 gap 소스 매핑
@@ -140,6 +140,13 @@ const PendantInner: React.FC = () => {
   }, []);
   const canvasW = Math.max(MIN_CANVAS_W, Math.min(MAX_CANVAS_W, viewport.w - DOCK_RESERVE - 24));
   const canvasH = Math.max(MIN_CANVAS_H, Math.min(MAX_CANVAS_H, viewport.h - 24));
+  // 오버레이 오프셋은 1100x800 기준 픽셀값이므로 캔버스가 줄면 같은 비율로 줄인다.
+  const offScaleX = canvasW / MAX_CANVAS_W;
+  const offScaleY = canvasH / MAX_CANVAS_H;
+  const OVERLAY_MARGIN = 26;
+  const clampX = (x: number) => Math.min(canvasW - OVERLAY_MARGIN, Math.max(OVERLAY_MARGIN, x));
+  const clampY = (y: number) => Math.min(canvasH - OVERLAY_MARGIN, Math.max(OVERLAY_MARGIN, y));
+  const compact = viewport.h < 700;
   const currentJobName = jobList.find(j => j.id === currentJobId)?.name ?? null;
   const savedCount = teachingPoints.filter(p => p.id !== 'home' && p.isSaved).length;
   const openJobPicker = async () => {
@@ -557,8 +564,8 @@ const PendantInner: React.FC = () => {
           const a = getSchematicPosition(seg.startId);
           const b = getSchematicPosition(seg.endId);
           const mid = worldToCanvas({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, canvasW, canvasH);
-          const left = mid.x + (seg.offsetX ?? 0);
-          const top = mid.y + (seg.offsetY ?? 0);
+          const left = clampX(mid.x + (seg.offsetX ?? 0) * offScaleX);
+          const top = clampY(mid.y + (seg.offsetY ?? 0) * offScaleY);
           const pt = teachingPoints.find(p => p.id === seg.startId);
           const g = pt?.gap ?? 0;
           const dec = () => updatePointGap(seg.startId, Math.max(0, g - 1));
@@ -587,8 +594,8 @@ const PendantInner: React.FC = () => {
         {PART_CHECKBOXES.map(pc => {
           const ref = getSchematicPosition(pc.refPoint);
           const pos = worldToCanvas(ref, canvasW, canvasH);
-          const left = pos.x + (pc.offsetX ?? 0);
-          const top = pos.y + (pc.offsetY ?? 0);
+          const left = clampX(pos.x + (pc.offsetX ?? 0) * offScaleX);
+          const top = clampY(pos.y + (pc.offsetY ?? 0) * offScaleY);
           const enabled = partEnabled[pc.partIdx];
           const toggle = () => setPartEnabled(prev => {
             const next = [...prev] as [boolean, boolean, boolean, boolean];
@@ -627,9 +634,9 @@ const PendantInner: React.FC = () => {
         {/* 중앙 통합 허브 (U-셀 내부) */}
         <div style={{
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -55%)',
-          width: 'min(340px, calc(100vw - 200px))', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(6px)',
-          border: '1px solid #334155', borderRadius: 14, padding: 16, zIndex: 10,
-          display: 'flex', flexDirection: 'column', gap: 12,
+          width: compact ? 'min(300px, calc(100vw - 260px))' : 'min(340px, calc(100vw - 200px))', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(6px)',
+          border: '1px solid #334155', borderRadius: 14, padding: compact ? 10 : 16, zIndex: 10,
+          display: 'flex', flexDirection: 'column', gap: compact ? 8 : 12,
         }}>
           {/* 진행 상황 (용접 중) */}
           {isWelding && (
