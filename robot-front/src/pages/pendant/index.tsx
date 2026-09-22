@@ -49,12 +49,18 @@ const PART_GAP_MAP: { points: string[]; gapPoints: string[] }[] = [
   { points: ['p9', 'p8', 'p7'], gapPoints: ['p7', 'p8'] }, // 파트4 (우측 수직) - 세그먼트 p7-p8, p8-p9 평균
 ];
 
-const CANVAS_W = 1100;
-const CANVAS_H = 800;
+// v1.1.176: 캔버스 크기를 창 크기에 맞춰 계산한다(펜던트 1024x600 대응).
+// 아래 값은 최대 크기이고, 창이 작으면 그만큼 줄어든다. 오버레이(갭 입력, 패스 체크박스)는
+// worldToCanvas가 캔버스 크기를 인자로 받으므로 자동으로 따라 움직인다.
+const MAX_CANVAS_W = 1100;
+const MAX_CANVAS_H = 800;
+const MIN_CANVAS_W = 560;
+const MIN_CANVAS_H = 400;
+const DOCK_RESERVE = 170; // 우측 용접 실행 도크가 차지하는 폭
 const BOUNDS = { minX: -400, maxX: 400, minY: -400, maxY: 400 };
-const worldToCanvas = (p: { x: number; y: number }) => ({
-  x: (p.x - BOUNDS.minX) * (CANVAS_W / (BOUNDS.maxX - BOUNDS.minX)),
-  y: CANVAS_H - (p.y - BOUNDS.minY) * (CANVAS_H / (BOUNDS.maxY - BOUNDS.minY)),
+const worldToCanvas = (p: { x: number; y: number }, cw: number, ch: number) => ({
+  x: (p.x - BOUNDS.minX) * (cw / (BOUNDS.maxX - BOUNDS.minX)),
+  y: ch - (p.y - BOUNDS.minY) * (ch / (BOUNDS.maxY - BOUNDS.minY)),
 });
 
 const getPosture = (pointId: string): Posture => {
@@ -125,6 +131,15 @@ const PendantInner: React.FC = () => {
     stopTouchSensing,
   } = useWeldingOperations();
   const [jobPickerOpen, setJobPickerOpen] = useState(false);
+  // v1.1.176: 창 크기에 맞춘 캔버스 크기
+  const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
+  useEffect(() => {
+    const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const canvasW = Math.max(MIN_CANVAS_W, Math.min(MAX_CANVAS_W, viewport.w - DOCK_RESERVE - 24));
+  const canvasH = Math.max(MIN_CANVAS_H, Math.min(MAX_CANVAS_H, viewport.h - 24));
   const currentJobName = jobList.find(j => j.id === currentJobId)?.name ?? null;
   const savedCount = teachingPoints.filter(p => p.id !== 'home' && p.isSaved).length;
   const openJobPicker = async () => {
@@ -522,8 +537,8 @@ const PendantInner: React.FC = () => {
 
   return (
     <div style={{ minHeight: '100vh', background: '#0d1220', color: '#fff', position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'relative', width: '100%', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ position: 'relative', width: CANVAS_W, height: CANVAS_H }}>
+      <div style={{ position: 'relative', width: '100%', height: '100vh', boxSizing: 'border-box', paddingRight: DOCK_RESERVE, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'relative', width: canvasW, height: canvasH }}>
         <UnifiedWorkspaceCanvas
           ucellConfig={CELL_CONFIG}
           workspaceConfig={{ bounds: BOUNDS, showGrid: true, gridSpacing: 100 }}
@@ -531,8 +546,8 @@ const PendantInner: React.FC = () => {
           onWeldPointClick={pt => setTeachPointId(pt.id)}
           ucellWidth={CELL_CONFIG.width}
           ucellHeight={CELL_CONFIG.height}
-          canvasWidth={CANVAS_W}
-          canvasHeight={CANVAS_H}
+          canvasWidth={canvasW}
+          canvasHeight={canvasH}
           animated
           currentPointId={isWelding && currentPointIndex >= 0 ? weldPoints[currentPointIndex]?.id ?? null : null}
         />
@@ -541,7 +556,7 @@ const PendantInner: React.FC = () => {
         {SEGMENTS.map(seg => {
           const a = getSchematicPosition(seg.startId);
           const b = getSchematicPosition(seg.endId);
-          const mid = worldToCanvas({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+          const mid = worldToCanvas({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, canvasW, canvasH);
           const left = mid.x + (seg.offsetX ?? 0);
           const top = mid.y + (seg.offsetY ?? 0);
           const pt = teachingPoints.find(p => p.id === seg.startId);
@@ -571,7 +586,7 @@ const PendantInner: React.FC = () => {
         {/* 파트별 패스 체크박스 */}
         {PART_CHECKBOXES.map(pc => {
           const ref = getSchematicPosition(pc.refPoint);
-          const pos = worldToCanvas(ref);
+          const pos = worldToCanvas(ref, canvasW, canvasH);
           const left = pos.x + (pc.offsetX ?? 0);
           const top = pos.y + (pc.offsetY ?? 0);
           const enabled = partEnabled[pc.partIdx];
@@ -612,7 +627,7 @@ const PendantInner: React.FC = () => {
         {/* 중앙 통합 허브 (U-셀 내부) */}
         <div style={{
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -55%)',
-          width: 340, background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(6px)',
+          width: 'min(340px, calc(100vw - 200px))', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(6px)',
           border: '1px solid #334155', borderRadius: 14, padding: 16, zIndex: 10,
           display: 'flex', flexDirection: 'column', gap: 12,
         }}>
@@ -799,7 +814,7 @@ const PendantInner: React.FC = () => {
         </button>
         {alertsOpen && (
           <div style={{
-            marginTop: 8, width: 420, maxHeight: '60vh', overflowY: 'auto',
+            marginTop: 8, width: 'min(420px, 92vw)', maxHeight: '60vh', overflowY: 'auto',
             background: '#0f172a', border: '1px solid #334155', borderRadius: 12, padding: 12,
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -839,7 +854,7 @@ const PendantInner: React.FC = () => {
 
       {/* 우측 세로 용접 실행 도크 */}
       <div style={{
-        position: 'fixed', left: 'calc(50% + 570px)', top: '50%', transform: 'translateY(-50%)', zIndex: 20,
+        position: 'fixed', right: 8, top: '50%', transform: 'translateY(-50%)', zIndex: 20, maxHeight: '96vh', overflowY: 'auto',
         display: 'flex', flexDirection: 'column', gap: 8,
         background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(6px)',
         border: '1px solid #334155', borderRadius: 12, padding: 10, minWidth: 140,
@@ -937,7 +952,7 @@ const PendantInner: React.FC = () => {
           }}>
             <div onClick={e => e.stopPropagation()} style={{
               background: '#0f172a', border: '1px solid #334155', borderRadius: 14,
-              padding: 20, width: 360,
+              padding: 20, width: 'min(360px, 92vw)', maxHeight: '90vh', overflowY: 'auto',
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <h2 style={{ margin: 0, fontSize: 20 }}>{label} 티칭</h2>
@@ -980,7 +995,7 @@ const PendantInner: React.FC = () => {
         }}>
           <div onClick={e => e.stopPropagation()} style={{
             background: '#0f172a', border: '1px solid #334155', borderRadius: 14,
-            padding: 20, width: 320,
+            padding: 20, width: 'min(320px, 92vw)', maxHeight: '90vh', overflowY: 'auto',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <h2 style={{ margin: 0, fontSize: 18 }}>{gapEditSeg.label} 갭 입력 (mm)</h2>

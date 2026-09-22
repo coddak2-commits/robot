@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Cpu, ClipboardList, Settings, Target, FlaskConical, CheckSquare } from 'lucide-react';
+import { LayoutDashboard, Cpu, ClipboardList, Settings, Target, FlaskConical, CheckSquare, Gamepad2 } from 'lucide-react';
 import { useLang } from '../../contexts';
 interface MenuItem {
   id: string;
@@ -14,6 +14,14 @@ const Main: React.FC = () => {
   const navigate = useNavigate();
   const { lang, t } = useLang();
   const mainItems: MenuItem[] = [
+    {
+      id: 'pendant',
+      label: '펜던트',
+      eng: 'Pendant',
+      icon: Gamepad2,
+      path: '/pendant',
+      color: 'from-sky-500 to-indigo-500',
+    },
     {
       id: 'dashboard',
       label: '대시보드',
