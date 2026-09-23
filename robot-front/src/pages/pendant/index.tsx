@@ -24,12 +24,12 @@ const STEP_OPTIONS = [1.0, 5.0, 25.0]; // v1.1.178: 와이어 조정 화면(/gap
 const LOOKUP_DEBOUNCE_MS = 400;
 
 const SEGMENTS: { key: string; startId: string; endId: string; label: string; offsetX?: number; offsetY?: number }[] = [
-  { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -55 },
-  { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -55 },
-  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 105 },
-  { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 55 },
-  { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 55 },
-  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 105 },
+  { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -25 },
+  { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -25 },
+  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 140 },
+  { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 25 },
+  { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 25 },
+  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 140 },
 ];
 
 // 파트별 "패스(skip)" 체크박스 배치 (U-셀 안쪽)
@@ -159,9 +159,9 @@ const PendantInner: React.FC = () => {
   const partCheckboxPos = (partIdx: number) => {
     const w = cellRightX - cellLeftX;
     switch (partIdx) {
-      case 0: return { x: cellLeftX + w * 0.28, y: cellBottomY - 52 }; // 하단 좌측 (p4-p6)
+      case 0: return { x: cellLeftX + w * 0.28, y: cellBottomY - 40 }; // 하단 좌측 (p4-p6)
       case 1: return { x: cellLeftX + 58, y: cellMidY }; // 좌측 수직 (p1-p3)
-      case 2: return { x: cellLeftX + w * 0.72, y: cellBottomY - 52 }; // 하단 우측 (p10-p12)
+      case 2: return { x: cellLeftX + w * 0.72, y: cellBottomY - 40 }; // 하단 우측 (p10-p12)
       default: return { x: cellRightX - 58, y: cellMidY }; // 우측 수직 (p7-p9)
     }
   };
@@ -657,8 +657,8 @@ const PendantInner: React.FC = () => {
           position: 'absolute',
           top: '50%',
           left: `calc(50% - ${DOCK_RESERVE / 2}px)`,
-          transform: compact ? 'translate(-50%, -60%)' : 'translate(-50%, -55%)',
-          width: compact ? 'min(270px, calc(100vw - 300px))' : 'min(340px, calc(100vw - 200px))',
+          transform: compact ? 'translate(-50%, -64%)' : 'translate(-50%, -55%)',
+          width: compact ? 'min(250px, calc(100vw - 320px))' : 'min(340px, calc(100vw - 200px))',
           maxHeight: '96vh', overflowY: 'auto',
           background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(6px)',
           border: '1px solid #334155', borderRadius: 14, padding: compact ? 8 : 16, zIndex: 10,
