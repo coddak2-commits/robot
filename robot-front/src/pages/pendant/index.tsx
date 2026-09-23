@@ -26,10 +26,10 @@ const LOOKUP_DEBOUNCE_MS = 400;
 const SEGMENTS: { key: string; startId: string; endId: string; label: string; offsetX?: number; offsetY?: number }[] = [
   { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -25 },
   { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -25 },
-  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 120 },
+  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 105 },
   { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 25 },
   { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 25 },
-  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 120 },
+  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 105 },
 ];
 
 // 파트별 "패스(skip)" 체크박스 배치 (U-셀 안쪽)
@@ -59,7 +59,7 @@ const MIN_CANVAS_W = 440;
 const MIN_CANVAS_H = 400;
 const DOCK_RESERVE = 170; // 우측 용접 실행 도크가 차지하는 폭
 const HUB_RESERVE = 320; // 좁은 화면에서 중앙 허브를 좌측으로 뺄 때 쓰는 폭
-const BOUNDS = { minX: -440, maxX: 440, minY: -440, maxY: 440 }; // v1.1.186: U셀 주변 여백 확보
+const BOUNDS = { minX: -420, maxX: 420, minY: -420, maxY: 420 }; // v1.1.187: 여백 확보와 U셀 크기 절충
 const worldToCanvas = (p: { x: number; y: number }, cw: number, ch: number) => ({
   x: (p.x - BOUNDS.minX) * (cw / (BOUNDS.maxX - BOUNDS.minX)),
   y: ch - (p.y - BOUNDS.minY) * (ch / (BOUNDS.maxY - BOUNDS.minY)),
