@@ -35,10 +35,10 @@ const SEGMENTS: { key: string; startId: string; endId: string; label: string; of
 // 파트별 "패스(skip)" 체크박스 배치 (U-셀 안쪽)
 const PART_CHECKBOXES: { partIdx: number; refPoint: string; offsetX?: number; offsetY?: number }[] = [
   // v1.1.178: 중앙 허브(폭 300~340, 화면 중앙)와 겹치지 않도록 벽 가까이로 옮김.
-  { partIdx: 0, refPoint: 'p5', offsetY: -40 },
-  { partIdx: 1, refPoint: 'p2', offsetX: 80 },
-  { partIdx: 2, refPoint: 'p11', offsetY: -40 },
-  { partIdx: 3, refPoint: 'p8', offsetX: -80 },
+  { partIdx: 0, refPoint: 'p5', offsetY: -35 },
+  { partIdx: 1, refPoint: 'p2', offsetX: 65 },
+  { partIdx: 2, refPoint: 'p11', offsetY: -35 },
+  { partIdx: 3, refPoint: 'p8', offsetX: -65 },
 ];
 
 // 파트별 대표 gap 소스 매핑
@@ -143,7 +143,7 @@ const PendantInner: React.FC = () => {
   // v1.1.179: 좁은 화면(폭 1200 미만 또는 높이 700 미만)에서는 허브를 U셀 위에 겹치지 않고
   // 왼쪽 열로 뺀다. U셀 안쪽이 비어 파트 체크박스/갭 입력과 겹치지 않는다.
   const compact = viewport.w < 1200 || viewport.h < 700;
-  const hubReserve = compact ? HUB_RESERVE : 0;
+  const hubReserve = 0; // v1.1.180: 허브를 다시 U셀 중앙에 둔다(좌측 열 배치 취소)
   const canvasW = Math.max(MIN_CANVAS_W, Math.min(MAX_CANVAS_W, viewport.w - DOCK_RESERVE - hubReserve - 24));
   const canvasH = Math.max(MIN_CANVAS_H, Math.min(MAX_CANVAS_H, viewport.h - 24));
   // 오버레이 오프셋은 1100x800 기준 픽셀값이므로 캔버스가 줄면 같은 비율로 줄인다.
@@ -638,11 +638,11 @@ const PendantInner: React.FC = () => {
 
         {/* 중앙 통합 허브 (U-셀 내부) */}
         <div style={{
-          position: compact ? 'fixed' : 'absolute',
+          position: 'absolute',
           top: '50%',
-          left: compact ? 8 : '50%',
-          transform: compact ? 'translateY(-50%)' : 'translate(-50%, -55%)',
-          width: compact ? HUB_RESERVE - 28 : 'min(340px, calc(100vw - 200px))',
+          left: '50%',
+          transform: 'translate(-50%, -55%)',
+          width: compact ? 'min(300px, calc(100vw - 260px))' : 'min(340px, calc(100vw - 200px))',
           maxHeight: '96vh', overflowY: 'auto',
           background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(6px)',
           border: '1px solid #334155', borderRadius: 14, padding: compact ? 10 : 16, zIndex: 10,
