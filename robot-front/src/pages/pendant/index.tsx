@@ -803,6 +803,13 @@ const PendantInner: React.FC = () => {
 
       {/* 우상단 알람 배지 + 로그아웃 */}
       <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 30, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        {/* v1.1.188: 메인 메뉴로 이동 */}
+        <button onClick={() => { window.location.href = '/menu'; }}
+          style={{
+            padding: '10px 16px', fontSize: 14, fontWeight: 'bold',
+            background: '#1e293b', color: '#fff', border: '1px solid #334155', borderRadius: 10, cursor: 'pointer',
+          }}
+        >메뉴</button>
         <button onClick={() => {
           if (!window.confirm('로그아웃 하시겠습니까?')) return;
           localStorage.removeItem('token');
