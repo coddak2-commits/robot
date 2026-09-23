@@ -657,12 +657,12 @@ const PendantInner: React.FC = () => {
           position: 'absolute',
           top: '50%',
           left: `calc(50% - ${DOCK_RESERVE / 2}px)`,
-          transform: compact ? 'translate(-50%, -64%)' : 'translate(-50%, -55%)',
+          transform: compact ? 'translate(-50%, -68%)' : 'translate(-50%, -55%)',
           width: compact ? 'min(250px, calc(100vw - 320px))' : 'min(340px, calc(100vw - 200px))',
           maxHeight: '96vh', overflowY: 'auto',
           background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(6px)',
-          border: '1px solid #334155', borderRadius: 14, padding: compact ? 8 : 16, zIndex: 10,
-          display: 'flex', flexDirection: 'column', gap: compact ? 6 : 12,
+          border: '1px solid #334155', borderRadius: 14, padding: compact ? 6 : 16, zIndex: 10,
+          display: 'flex', flexDirection: 'column', gap: compact ? 4 : 12,
         }}>
           {/* 진행 상황 (용접 중) */}
           {isWelding && (
@@ -767,7 +767,7 @@ const PendantInner: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               <button onClick={handleSaveHome} disabled={isRobotMoving}
                 style={{
-                  padding: '10px 0', fontSize: 12, fontWeight: 'bold',
+                  padding: compact ? '7px 0' : '10px 0', fontSize: compact ? 11 : 12, fontWeight: 'bold',
                   background: '#1e293b', color: '#fff', border: '1px solid #334155',
                   borderRadius: 6, cursor: isRobotMoving ? 'not-allowed' : 'pointer',
                 }}
