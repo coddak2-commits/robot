@@ -24,12 +24,12 @@ const STEP_OPTIONS = [1.0, 5.0, 25.0]; // v1.1.178: 와이어 조정 화면(/gap
 const LOOKUP_DEBOUNCE_MS = 400;
 
 const SEGMENTS: { key: string; startId: string; endId: string; label: string; offsetX?: number; offsetY?: number }[] = [
-  { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -40 },
-  { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -40 },
-  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 65 },
-  { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 40 },
-  { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 40 },
-  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 65 },
+  { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -55 },
+  { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -55 },
+  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 105 },
+  { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 55 },
+  { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 55 },
+  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 105 },
 ];
 
 // 파트별 "패스(skip)" 체크박스 배치 (U-셀 안쪽)
@@ -55,9 +55,10 @@ const PART_GAP_MAP: { points: string[]; gapPoints: string[] }[] = [
 // worldToCanvas가 캔버스 크기를 인자로 받으므로 자동으로 따라 움직인다.
 const MAX_CANVAS_W = 1100;
 const MAX_CANVAS_H = 800;
-const MIN_CANVAS_W = 560;
+const MIN_CANVAS_W = 440;
 const MIN_CANVAS_H = 400;
 const DOCK_RESERVE = 170; // 우측 용접 실행 도크가 차지하는 폭
+const HUB_RESERVE = 320; // 좁은 화면에서 중앙 허브를 좌측으로 뺄 때 쓰는 폭
 const BOUNDS = { minX: -400, maxX: 400, minY: -400, maxY: 400 };
 const worldToCanvas = (p: { x: number; y: number }, cw: number, ch: number) => ({
   x: (p.x - BOUNDS.minX) * (cw / (BOUNDS.maxX - BOUNDS.minX)),
@@ -139,15 +140,18 @@ const PendantInner: React.FC = () => {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
-  const canvasW = Math.max(MIN_CANVAS_W, Math.min(MAX_CANVAS_W, viewport.w - DOCK_RESERVE - 24));
+  // v1.1.179: 좁은 화면(폭 1200 미만 또는 높이 700 미만)에서는 허브를 U셀 위에 겹치지 않고
+  // 왼쪽 열로 뺀다. U셀 안쪽이 비어 파트 체크박스/갭 입력과 겹치지 않는다.
+  const compact = viewport.w < 1200 || viewport.h < 700;
+  const hubReserve = compact ? HUB_RESERVE : 0;
+  const canvasW = Math.max(MIN_CANVAS_W, Math.min(MAX_CANVAS_W, viewport.w - DOCK_RESERVE - hubReserve - 24));
   const canvasH = Math.max(MIN_CANVAS_H, Math.min(MAX_CANVAS_H, viewport.h - 24));
   // 오버레이 오프셋은 1100x800 기준 픽셀값이므로 캔버스가 줄면 같은 비율로 줄인다.
-  const offScaleX = canvasW / MAX_CANVAS_W;
-  const offScaleY = canvasH / MAX_CANVAS_H;
+  const offScaleX = Math.max(0.6, canvasW / MAX_CANVAS_W);
+  const offScaleY = Math.max(0.6, canvasH / MAX_CANVAS_H);
   const OVERLAY_MARGIN = 26;
   const clampX = (x: number) => Math.min(canvasW - OVERLAY_MARGIN, Math.max(OVERLAY_MARGIN, x));
   const clampY = (y: number) => Math.min(canvasH - OVERLAY_MARGIN, Math.max(OVERLAY_MARGIN, y));
-  const compact = viewport.h < 700;
   const currentJobName = jobList.find(j => j.id === currentJobId)?.name ?? null;
   const savedCount = teachingPoints.filter(p => p.id !== 'home' && p.isSaved).length;
   const openJobPicker = async () => {
@@ -545,7 +549,7 @@ const PendantInner: React.FC = () => {
 
   return (
     <div style={{ minHeight: '100vh', background: '#0d1220', color: '#fff', position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'relative', width: '100%', height: '100vh', boxSizing: 'border-box', paddingRight: DOCK_RESERVE, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'relative', width: '100%', height: '100vh', boxSizing: 'border-box', paddingRight: DOCK_RESERVE, paddingLeft: hubReserve, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ position: 'relative', width: canvasW, height: canvasH }}>
         <UnifiedWorkspaceCanvas
           ucellConfig={CELL_CONFIG}
@@ -634,8 +638,13 @@ const PendantInner: React.FC = () => {
 
         {/* 중앙 통합 허브 (U-셀 내부) */}
         <div style={{
-          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -55%)',
-          width: compact ? 'min(300px, calc(100vw - 260px))' : 'min(340px, calc(100vw - 200px))', background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(6px)',
+          position: compact ? 'fixed' : 'absolute',
+          top: '50%',
+          left: compact ? 8 : '50%',
+          transform: compact ? 'translateY(-50%)' : 'translate(-50%, -55%)',
+          width: compact ? HUB_RESERVE - 28 : 'min(340px, calc(100vw - 200px))',
+          maxHeight: '96vh', overflowY: 'auto',
+          background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(6px)',
           border: '1px solid #334155', borderRadius: 14, padding: compact ? 10 : 16, zIndex: 10,
           display: 'flex', flexDirection: 'column', gap: compact ? 8 : 12,
         }}>
