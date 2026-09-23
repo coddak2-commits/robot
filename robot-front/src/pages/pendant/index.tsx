@@ -143,6 +143,21 @@ const PendantInner: React.FC = () => {
   // v1.1.179: 좁은 화면(폭 1200 미만 또는 높이 700 미만)에서는 허브를 U셀 위에 겹치지 않고
   // 왼쪽 열로 뺀다. U셀 안쪽이 비어 파트 체크박스/갭 입력과 겹치지 않는다.
   const compact = viewport.w < 1200 || viewport.h < 700;
+  // 그려진 U셀 사각형의 캔버스 좌표 (CELL_CONFIG 기준, 중앙 정렬)
+  const cellLeftX = ((-CELL_CONFIG.width / 2) - BOUNDS.minX) * (canvasW / (BOUNDS.maxX - BOUNDS.minX));
+  const cellRightX = ((CELL_CONFIG.width / 2) - BOUNDS.minX) * (canvasW / (BOUNDS.maxX - BOUNDS.minX));
+  const cellBottomY = canvasH - ((-CELL_CONFIG.height / 2) - BOUNDS.minY) * (canvasH / (BOUNDS.maxY - BOUNDS.minY));
+  const cellTopY = canvasH - ((CELL_CONFIG.height / 2) - BOUNDS.minY) * (canvasH / (BOUNDS.maxY - BOUNDS.minY));
+  const cellMidY = (cellTopY + cellBottomY) / 2;
+  const partCheckboxPos = (partIdx: number) => {
+    const w = cellRightX - cellLeftX;
+    switch (partIdx) {
+      case 0: return { x: cellLeftX + w * 0.28, y: cellBottomY - 26 }; // 하단 좌측 (p4-p6)
+      case 1: return { x: cellLeftX + 58, y: cellMidY }; // 좌측 수직 (p1-p3)
+      case 2: return { x: cellLeftX + w * 0.72, y: cellBottomY - 26 }; // 하단 우측 (p10-p12)
+      default: return { x: cellRightX - 58, y: cellMidY }; // 우측 수직 (p7-p9)
+    }
+  };
   const hubReserve = 0; // v1.1.180: 허브를 다시 U셀 중앙에 둔다(좌측 열 배치 취소)
   const canvasW = Math.max(MIN_CANVAS_W, Math.min(MAX_CANVAS_W, viewport.w - DOCK_RESERVE - hubReserve - 24));
   const canvasH = Math.max(MIN_CANVAS_H, Math.min(MAX_CANVAS_H, viewport.h - 24));
@@ -597,10 +612,11 @@ const PendantInner: React.FC = () => {
 
         {/* 파트별 패스 체크박스 */}
         {PART_CHECKBOXES.map(pc => {
-          const ref = getSchematicPosition(pc.refPoint);
-          const pos = worldToCanvas(ref, canvasW, canvasH);
-          const left = clampX(pos.x + (pc.offsetX ?? 0) * offScaleX);
-          const top = clampY(pos.y + (pc.offsetY ?? 0) * offScaleY);
+          // v1.1.182: 티칭 좌표 기준이면 U셀 그림과 어긋나 벽에 겹친다.
+          // 그려진 U셀 사각형을 기준으로 배치한다(좌/우 벽 안쪽, 바닥 위).
+          const pos = partCheckboxPos(pc.partIdx);
+          const left = clampX(pos.x);
+          const top = clampY(pos.y);
           const enabled = partEnabled[pc.partIdx];
           const toggle = () => setPartEnabled(prev => {
             const next = [...prev] as [boolean, boolean, boolean, boolean];
@@ -714,7 +730,7 @@ const PendantInner: React.FC = () => {
               {STEP_OPTIONS.map(v => (
                 <button key={v} onClick={() => setStepMm(v)} disabled={busy}
                   style={{
-                    flex: 1, padding: '6px 0', fontSize: 12, fontWeight: 'bold',
+                    flex: 1, padding: compact ? '4px 0' : '6px 0', fontSize: compact ? 11 : 12, fontWeight: 'bold',
                     background: stepMm === v ? '#2b7ae6' : '#1e293b',
                     color: '#fff', border: 'none', borderRadius: 6, cursor: busy ? 'not-allowed' : 'pointer',
                   }}
@@ -723,14 +739,14 @@ const PendantInner: React.FC = () => {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
               <button onClick={() => startStop('reverse', stepMm)} disabled={busy}
-                style={{ padding: '10px 0', fontSize: 13, fontWeight: 'bold', background: busy ? '#334155' : '#a30', color: '#fff', border: 'none', borderRadius: 6, cursor: busy ? 'wait' : 'pointer' }}
+                style={{ padding: compact ? '7px 0' : '10px 0', fontSize: compact ? 12 : 13, fontWeight: 'bold', background: busy ? '#334155' : '#a30', color: '#fff', border: 'none', borderRadius: 6, cursor: busy ? 'wait' : 'pointer' }}
               >◀ 당기기</button>
               <button onClick={() => startStop('forward', stepMm)} disabled={busy}
-                style={{ padding: '10px 0', fontSize: 13, fontWeight: 'bold', background: busy ? '#334155' : '#0a5', color: '#fff', border: 'none', borderRadius: 6, cursor: busy ? 'wait' : 'pointer' }}
+                style={{ padding: compact ? '7px 0' : '10px 0', fontSize: compact ? 12 : 13, fontWeight: 'bold', background: busy ? '#334155' : '#0a5', color: '#fff', border: 'none', borderRadius: 6, cursor: busy ? 'wait' : 'pointer' }}
               >밀기 ▶</button>
             </div>
             <button onClick={wireStopAll}
-              style={{ width: '100%', padding: '8px 0', fontSize: 12, fontWeight: 'bold', background: '#475569', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+              style={{ width: '100%', padding: compact ? '6px 0' : '8px 0', fontSize: compact ? 11 : 12, fontWeight: 'bold', background: '#475569', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
             >와이어 정지</button>
             {lastAction && <div style={{ marginTop: 6, padding: 4, fontSize: 11, color: '#86efac', background: '#020617', borderRadius: 4, textAlign: 'center' }}>{lastAction}</div>}
           </div>
