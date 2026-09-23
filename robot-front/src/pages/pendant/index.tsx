@@ -26,10 +26,10 @@ const LOOKUP_DEBOUNCE_MS = 400;
 const SEGMENTS: { key: string; startId: string; endId: string; label: string; offsetX?: number; offsetY?: number }[] = [
   { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -25 },
   { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -25 },
-  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 175 },
+  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 120 },
   { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 25 },
   { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 25 },
-  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 175 },
+  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 120 },
 ];
 
 // 파트별 "패스(skip)" 체크박스 배치 (U-셀 안쪽)
@@ -59,7 +59,7 @@ const MIN_CANVAS_W = 440;
 const MIN_CANVAS_H = 400;
 const DOCK_RESERVE = 170; // 우측 용접 실행 도크가 차지하는 폭
 const HUB_RESERVE = 320; // 좁은 화면에서 중앙 허브를 좌측으로 뺄 때 쓰는 폭
-const BOUNDS = { minX: -400, maxX: 400, minY: -400, maxY: 400 };
+const BOUNDS = { minX: -440, maxX: 440, minY: -440, maxY: 440 }; // v1.1.186: U셀 주변 여백 확보
 const worldToCanvas = (p: { x: number; y: number }, cw: number, ch: number) => ({
   x: (p.x - BOUNDS.minX) * (cw / (BOUNDS.maxX - BOUNDS.minX)),
   y: ch - (p.y - BOUNDS.minY) * (ch / (BOUNDS.maxY - BOUNDS.minY)),
@@ -149,7 +149,7 @@ const PendantInner: React.FC = () => {
   // 오버레이 오프셋은 1100x800 기준 픽셀값이므로 캔버스가 줄면 같은 비율로 줄인다.
   const offScaleX = Math.max(0.6, canvasW / MAX_CANVAS_W);
   const offScaleY = Math.max(0.6, canvasH / MAX_CANVAS_H);
-  const OVERLAY_MARGIN = 26;
+  const OVERLAY_MARGIN = 14;
   // 그려진 U셀 사각형의 캔버스 좌표 (CELL_CONFIG 기준, 중앙 정렬)
   const cellLeftX = ((-CELL_CONFIG.width / 2) - BOUNDS.minX) * (canvasW / (BOUNDS.maxX - BOUNDS.minX));
   const cellRightX = ((CELL_CONFIG.width / 2) - BOUNDS.minX) * (canvasW / (BOUNDS.maxX - BOUNDS.minX));
@@ -598,13 +598,13 @@ const PendantInner: React.FC = () => {
               zIndex: 5,
             }}>
               <button onClick={dec} disabled={g <= 0}
-                style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, cursor: g <= 0 ? 'not-allowed' : 'pointer', fontSize: 8, fontWeight: 'bold', opacity: g <= 0 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
+                style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, overflow: 'visible', cursor: g <= 0 ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 'bold', opacity: g <= 0 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
               >−</button>
               <button onClick={() => { setGapEditSeg({ startId: seg.startId, label: seg.label }); setGapEditValue(String(g)); }}
                 style={{ minWidth: 26, textAlign: 'center', fontSize: 18, lineHeight: 1, fontWeight: 'bold', background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer', padding: 0 }}
               >{g}</button>
               <button onClick={inc} disabled={g >= 6}
-                style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, cursor: g >= 6 ? 'not-allowed' : 'pointer', fontSize: 8, fontWeight: 'bold', opacity: g >= 6 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
+                style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, overflow: 'visible', cursor: g >= 6 ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 'bold', opacity: g >= 6 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
               >+</button>
             </div>
           );
