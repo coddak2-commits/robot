@@ -578,15 +578,15 @@ const PendantInner: React.FC = () => {
           return (
             <div key={seg.key} style={{
               position: 'absolute', left, top, transform: 'translate(-50%, -50%) scale(0.8)', transformOrigin: 'center',
-              display: 'flex', alignItems: 'center', gap: 6,
-              background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', borderRadius: 4, padding: '2px 4px',
+              display: 'flex', alignItems: 'center', gap: 3,
+              background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', borderRadius: 4, padding: '1px 3px',
               zIndex: 5,
             }}>
               <button onClick={dec} disabled={g <= 0}
                 style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, cursor: g <= 0 ? 'not-allowed' : 'pointer', fontSize: 10, fontWeight: 'bold', opacity: g <= 0 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
               >−</button>
               <button onClick={() => { setGapEditSeg({ startId: seg.startId, label: seg.label }); setGapEditValue(String(g)); }}
-                style={{ minWidth: 30, textAlign: 'center', fontSize: 14, fontWeight: 'bold', background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer', padding: '0 2px' }}
+                style={{ minWidth: 22, textAlign: 'center', fontSize: 13, fontWeight: 'bold', background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer', padding: '0 1px' }}
               >{g}</button>
               <button onClick={inc} disabled={g >= 6}
                 style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, cursor: g >= 6 ? 'not-allowed' : 'pointer', fontSize: 10, fontWeight: 'bold', opacity: g >= 6 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
@@ -640,7 +640,7 @@ const PendantInner: React.FC = () => {
         <div style={{
           position: 'absolute',
           top: '50%',
-          left: '50%',
+          left: `calc(50% - ${DOCK_RESERVE / 2}px)`,
           transform: 'translate(-50%, -55%)',
           width: compact ? 'min(300px, calc(100vw - 260px))' : 'min(340px, calc(100vw - 200px))',
           maxHeight: '96vh', overflowY: 'auto',
