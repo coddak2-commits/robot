@@ -159,9 +159,9 @@ const PendantInner: React.FC = () => {
   const partCheckboxPos = (partIdx: number) => {
     const w = cellRightX - cellLeftX;
     switch (partIdx) {
-      case 0: return { x: cellLeftX + w * 0.28, y: cellBottomY - 26 }; // 하단 좌측 (p4-p6)
+      case 0: return { x: cellLeftX + w * 0.28, y: cellBottomY - 52 }; // 하단 좌측 (p4-p6)
       case 1: return { x: cellLeftX + 58, y: cellMidY }; // 좌측 수직 (p1-p3)
-      case 2: return { x: cellLeftX + w * 0.72, y: cellBottomY - 26 }; // 하단 우측 (p10-p12)
+      case 2: return { x: cellLeftX + w * 0.72, y: cellBottomY - 52 }; // 하단 우측 (p10-p12)
       default: return { x: cellRightX - 58, y: cellMidY }; // 우측 수직 (p7-p9)
     }
   };
@@ -592,16 +592,16 @@ const PendantInner: React.FC = () => {
           const inc = () => updatePointGap(seg.startId, Math.min(6, g + 1));
           return (
             <div key={seg.key} style={{
-              position: 'absolute', left, top, transform: 'translate(-50%, -50%) scale(0.8)', transformOrigin: 'center',
-              display: 'flex', alignItems: 'center', gap: 3,
-              background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', borderRadius: 4, padding: '1px 3px',
+              position: 'absolute', left, top, transform: 'translate(-50%, -50%) scale(0.7)', transformOrigin: 'center',
+              display: 'flex', alignItems: 'center', gap: 2,
+              background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', borderRadius: 4, padding: '1px 2px',
               zIndex: 5,
             }}>
               <button onClick={dec} disabled={g <= 0}
                 style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, cursor: g <= 0 ? 'not-allowed' : 'pointer', fontSize: 10, fontWeight: 'bold', opacity: g <= 0 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
               >−</button>
               <button onClick={() => { setGapEditSeg({ startId: seg.startId, label: seg.label }); setGapEditValue(String(g)); }}
-                style={{ minWidth: 22, textAlign: 'center', fontSize: 13, fontWeight: 'bold', background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer', padding: '0 1px' }}
+                style={{ minWidth: 18, textAlign: 'center', fontSize: 12, fontWeight: 'bold', background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer', padding: 0 }}
               >{g}</button>
               <button onClick={inc} disabled={g >= 6}
                 style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, cursor: g >= 6 ? 'not-allowed' : 'pointer', fontSize: 10, fontWeight: 'bold', opacity: g >= 6 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
@@ -657,12 +657,12 @@ const PendantInner: React.FC = () => {
           position: 'absolute',
           top: '50%',
           left: `calc(50% - ${DOCK_RESERVE / 2}px)`,
-          transform: 'translate(-50%, -55%)',
-          width: compact ? 'min(300px, calc(100vw - 260px))' : 'min(340px, calc(100vw - 200px))',
+          transform: compact ? 'translate(-50%, -60%)' : 'translate(-50%, -55%)',
+          width: compact ? 'min(270px, calc(100vw - 300px))' : 'min(340px, calc(100vw - 200px))',
           maxHeight: '96vh', overflowY: 'auto',
           background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(6px)',
-          border: '1px solid #334155', borderRadius: 14, padding: compact ? 10 : 16, zIndex: 10,
-          display: 'flex', flexDirection: 'column', gap: compact ? 8 : 12,
+          border: '1px solid #334155', borderRadius: 14, padding: compact ? 8 : 16, zIndex: 10,
+          display: 'flex', flexDirection: 'column', gap: compact ? 6 : 12,
         }}>
           {/* 진행 상황 (용접 중) */}
           {isWelding && (
