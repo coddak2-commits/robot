@@ -19,7 +19,7 @@ const CELL_CONFIG: UCellConfig = {
 };
 
 const THICKNESS_OPTIONS = [18, 20, 22, 23];
-const STEP_OPTIONS = [1.0, 2.5, 5.0];
+const STEP_OPTIONS = [1.0, 5.0, 25.0]; // v1.1.178: 와이어 조정 화면(/gap/wire-inching)과 동일하게 맞춤
 // 송급 속도 상수는 lib/wireFeed.ts로 통합됨 (v1.1.136). 여기서 따로 정의하지 말 것.
 const LOOKUP_DEBOUNCE_MS = 400;
 
@@ -34,10 +34,11 @@ const SEGMENTS: { key: string; startId: string; endId: string; label: string; of
 
 // 파트별 "패스(skip)" 체크박스 배치 (U-셀 안쪽)
 const PART_CHECKBOXES: { partIdx: number; refPoint: string; offsetX?: number; offsetY?: number }[] = [
-  { partIdx: 0, refPoint: 'p5', offsetY: -60 },
-  { partIdx: 1, refPoint: 'p2', offsetX: 160 },
-  { partIdx: 2, refPoint: 'p11', offsetY: -60 },
-  { partIdx: 3, refPoint: 'p8', offsetX: -160 },
+  // v1.1.178: 중앙 허브(폭 300~340, 화면 중앙)와 겹치지 않도록 벽 가까이로 옮김.
+  { partIdx: 0, refPoint: 'p5', offsetY: -40 },
+  { partIdx: 1, refPoint: 'p2', offsetX: 80 },
+  { partIdx: 2, refPoint: 'p11', offsetY: -40 },
+  { partIdx: 3, refPoint: 'p8', offsetX: -80 },
 ];
 
 // 파트별 대표 gap 소스 매핑
