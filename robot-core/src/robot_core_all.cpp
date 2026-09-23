@@ -169,9 +169,15 @@ void launchKioskBrowser(const std::wstring& url, bool kiosk) {
         GetTempPathW(MAX_PATH, tempPath);
         profileDir = std::wstring(tempPath) + L"RobotWeldingKiosk_ChromeProfile";
     }
-    std::wstring args = std::wstring(kiosk ? L"--kiosk " : L"--new-window ")
-        + L"--no-first-run --no-default-browser-check --disable-sync --disable-signin-promo "
-        + L"--user-data-dir=\"" + profileDir + L"\" " + url;
+    // v1.1.189: 일반 실행은 앱 모드(--app)로 연다. 탭/주소창이 없어 세로 공간을 약 80px 더 쓰고,
+    // 키오스크와 달리 창 닫기 버튼이 남아 터치만으로 닫을 수 있다(펜던트는 키보드가 없을 때가 많다).
+    // F12 개발자 도구는 앱 모드에서도 그대로 동작한다.
+    const std::wstring commonFlags =
+        std::wstring(L"--no-first-run --no-default-browser-check --disable-sync --disable-signin-promo ")
+        + L"--user-data-dir=\"" + profileDir + L"\"";
+    std::wstring args = kiosk
+        ? (std::wstring(L"--kiosk ") + commonFlags + L" " + url)
+        : (std::wstring(L"--app=") + url + L" " + commonFlags);
     std::wstring cmdLine = L"\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\" " + args;
     STARTUPINFOW si{};
     si.cb = sizeof(si);
@@ -7054,7 +7060,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.188"
+#define APP_VERSION_STRING "1.1.189"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
