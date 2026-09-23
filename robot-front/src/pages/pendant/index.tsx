@@ -143,6 +143,13 @@ const PendantInner: React.FC = () => {
   // v1.1.179: 좁은 화면(폭 1200 미만 또는 높이 700 미만)에서는 허브를 U셀 위에 겹치지 않고
   // 왼쪽 열로 뺀다. U셀 안쪽이 비어 파트 체크박스/갭 입력과 겹치지 않는다.
   const compact = viewport.w < 1200 || viewport.h < 700;
+  const hubReserve = 0; // v1.1.180: 허브를 다시 U셀 중앙에 둔다(좌측 열 배치 취소)
+  const canvasW = Math.max(MIN_CANVAS_W, Math.min(MAX_CANVAS_W, viewport.w - DOCK_RESERVE - hubReserve - 24));
+  const canvasH = Math.max(MIN_CANVAS_H, Math.min(MAX_CANVAS_H, viewport.h - 24));
+  // 오버레이 오프셋은 1100x800 기준 픽셀값이므로 캔버스가 줄면 같은 비율로 줄인다.
+  const offScaleX = Math.max(0.6, canvasW / MAX_CANVAS_W);
+  const offScaleY = Math.max(0.6, canvasH / MAX_CANVAS_H);
+  const OVERLAY_MARGIN = 26;
   // 그려진 U셀 사각형의 캔버스 좌표 (CELL_CONFIG 기준, 중앙 정렬)
   const cellLeftX = ((-CELL_CONFIG.width / 2) - BOUNDS.minX) * (canvasW / (BOUNDS.maxX - BOUNDS.minX));
   const cellRightX = ((CELL_CONFIG.width / 2) - BOUNDS.minX) * (canvasW / (BOUNDS.maxX - BOUNDS.minX));
@@ -158,13 +165,6 @@ const PendantInner: React.FC = () => {
       default: return { x: cellRightX - 58, y: cellMidY }; // 우측 수직 (p7-p9)
     }
   };
-  const hubReserve = 0; // v1.1.180: 허브를 다시 U셀 중앙에 둔다(좌측 열 배치 취소)
-  const canvasW = Math.max(MIN_CANVAS_W, Math.min(MAX_CANVAS_W, viewport.w - DOCK_RESERVE - hubReserve - 24));
-  const canvasH = Math.max(MIN_CANVAS_H, Math.min(MAX_CANVAS_H, viewport.h - 24));
-  // 오버레이 오프셋은 1100x800 기준 픽셀값이므로 캔버스가 줄면 같은 비율로 줄인다.
-  const offScaleX = Math.max(0.6, canvasW / MAX_CANVAS_W);
-  const offScaleY = Math.max(0.6, canvasH / MAX_CANVAS_H);
-  const OVERLAY_MARGIN = 26;
   const clampX = (x: number) => Math.min(canvasW - OVERLAY_MARGIN, Math.max(OVERLAY_MARGIN, x));
   const clampY = (y: number) => Math.min(canvasH - OVERLAY_MARGIN, Math.max(OVERLAY_MARGIN, y));
   const currentJobName = jobList.find(j => j.id === currentJobId)?.name ?? null;
