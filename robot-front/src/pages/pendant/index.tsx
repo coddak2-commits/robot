@@ -26,10 +26,10 @@ const LOOKUP_DEBOUNCE_MS = 400;
 const SEGMENTS: { key: string; startId: string; endId: string; label: string; offsetX?: number; offsetY?: number }[] = [
   { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -25 },
   { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -25 },
-  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 140 },
+  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 175 },
   { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 25 },
   { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 25 },
-  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 140 },
+  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 175 },
 ];
 
 // 파트별 "패스(skip)" 체크박스 배치 (U-셀 안쪽)
@@ -598,13 +598,13 @@ const PendantInner: React.FC = () => {
               zIndex: 5,
             }}>
               <button onClick={dec} disabled={g <= 0}
-                style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, cursor: g <= 0 ? 'not-allowed' : 'pointer', fontSize: 10, fontWeight: 'bold', opacity: g <= 0 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
+                style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, cursor: g <= 0 ? 'not-allowed' : 'pointer', fontSize: 8, fontWeight: 'bold', opacity: g <= 0 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
               >−</button>
               <button onClick={() => { setGapEditSeg({ startId: seg.startId, label: seg.label }); setGapEditValue(String(g)); }}
-                style={{ minWidth: 18, textAlign: 'center', fontSize: 12, fontWeight: 'bold', background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer', padding: 0 }}
+                style={{ minWidth: 26, textAlign: 'center', fontSize: 18, lineHeight: 1, fontWeight: 'bold', background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer', padding: 0 }}
               >{g}</button>
               <button onClick={inc} disabled={g >= 6}
-                style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, cursor: g >= 6 ? 'not-allowed' : 'pointer', fontSize: 10, fontWeight: 'bold', opacity: g >= 6 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
+                style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, cursor: g >= 6 ? 'not-allowed' : 'pointer', fontSize: 8, fontWeight: 'bold', opacity: g >= 6 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
               >+</button>
             </div>
           );
