@@ -278,6 +278,16 @@ export function useUpdater(options?: UseUpdaterOptions): UseUpdaterReturn {
       setStatus({ kind: 'available', release });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      // v1.1.191: 인터넷이 없는 환경(펜던트)에서는 업데이트 확인 실패가 정상이므로 팝업을 띄우지 않는다.
+      // 네트워크 계열 실패만 조용히 넘기고, 그 외 오류는 기존대로 표시한다.
+      const offline =
+        (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+        /failed to fetch|networkerror|load failed|err_internet|err_name_not_resolved/i.test(msg);
+      if (offline) {
+        log_useUpdater.warn('check.offline', '네트워크 없음 — 업데이트 확인 건너뜀', { error: msg });
+        setStatus({ kind: 'up_to_date' });
+        return;
+      }
       log_useUpdater.error('check.error', '업데이트 확인 실패', { error: msg });
       setStatus({ kind: 'error', message: msg });
     }
