@@ -59,6 +59,7 @@ const WeldPointsLayer: React.FC<{
             )}
             {}
             <circle
+              className={isDragging || isDropTarget || isCurrent ? undefined : 'wp-circle'}
               cx={transformed.x}
               cy={transformed.y}
               r={isDragging ? 10 : isDropTarget ? 15 : isCurrent ? 15 : 12}
@@ -70,6 +71,7 @@ const WeldPointsLayer: React.FC<{
             {}
             {point.order !== undefined && (
               <text
+                className="wp-num"
                 x={transformed.x}
                 y={transformed.y + 5}
                 fill="white"

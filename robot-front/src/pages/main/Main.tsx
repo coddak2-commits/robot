@@ -72,14 +72,14 @@ const Main: React.FC = () => {
     },
   ];
   return (
-    <div className="min-h-screen bg-black p-6">
-      {}
-      <div className="text-center mb-8">
+    <div className="mn-root min-h-screen bg-black p-6">
+      <style>{`@media (max-width: 1279px), (max-height: 719px) { .mn-root.mn-root { padding: 12px 12px 56px; } .mn-head.mn-head { margin-bottom: 12px; } .mn-head h1 { font-size: 28px; margin-bottom: 0; } .mn-grid.mn-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; } .mn-card.mn-card { min-height: 170px; padding: 12px; gap: 8px; } .mn-icon.mn-icon { width: 56px; height: 56px; } .mn-foot.mn-foot { padding: 8px; } }`}</style>
+      <div className="mn-head text-center mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">{t('mainTitle')}</h1>
         <p className="text-gray-400">{t('mainSubtitle')}</p>
       </div>
       {}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 max-w-5xl mx-auto">
+      <div className="mn-grid grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 max-w-5xl mx-auto">
         {mainItems.map(item => {
           const IconComponent = item.icon;
           return (
@@ -87,7 +87,7 @@ const Main: React.FC = () => {
               key={item.id}
               onClick={() => navigate(item.path)}
               className={`
-                relative overflow-hidden
+                mn-card relative overflow-hidden
                 bg-gray-800/50 hover:bg-gray-700/50
                 border-2 border-gray-700 hover:border-cyan-500/50
                 rounded-3xl p-6 md:p-8
@@ -109,7 +109,7 @@ const Main: React.FC = () => {
               {}
               <div
                 className={`
-                  w-16 h-16 md:w-20 md:h-20
+                  mn-icon w-16 h-16 md:w-20 md:h-20
                   rounded-2xl
                   bg-gradient-to-br ${item.color}
                   flex items-center justify-center
@@ -131,7 +131,7 @@ const Main: React.FC = () => {
         })}
       </div>
       {}
-      <div className="fixed bottom-0 left-0 right-0 bg-gray-900/90 border-t border-gray-800 p-4">
+      <div className="mn-foot fixed bottom-0 left-0 right-0 bg-gray-900/90 border-t border-gray-800 p-4">
         <div className="flex items-center justify-center gap-8 text-sm">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />

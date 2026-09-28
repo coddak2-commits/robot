@@ -127,7 +127,8 @@ export function PointItem({
           )}
           {}
           {}
-          <div className={`grid gap-2 ${point.id !== 'home' ? 'grid-cols-5' : 'grid-cols-1'}`}>
+          <div className={`pi-grid grid gap-2 ${point.id !== 'home' ? 'grid-cols-5' : 'grid-cols-1'}`}>
+            <style>{`@media (max-width: 1279px), (max-height: 719px) { .pi-grid { align-items: end; gap: 6px; } .pi-grid > div { min-width: 0; } .pi-grid label { white-space: nowrap; font-size: 10px; } .pi-grid input, .pi-grid select { min-height: 40px; padding-left: 4px; padding-right: 4px; font-size: 14px; } }`}</style>
             {point.id !== 'home' && (
               <div className="space-y-1">
                 <label className="block text-xs text-gray-400">GAP (mm)</label>

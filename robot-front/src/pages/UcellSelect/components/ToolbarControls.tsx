@@ -65,7 +65,7 @@ export function ToolbarControls({
   onHeightChange,
 }: ToolbarControlsProps) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="tb-compact flex flex-nowrap items-center gap-2 whitespace-nowrap overflow-x-auto scrollbar-hide min-w-0 flex-1 py-0.5">
       <button
         onClick={onToggleWsConnection}
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition ${

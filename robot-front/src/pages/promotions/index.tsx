@@ -46,7 +46,8 @@ const PromotionsInner: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: 24, color: '#fff' }}>
+    <div className="pr-root" style={{ padding: 24, color: '#fff' }}>
+      <style>{`@media (max-width: 1279px), (max-height: 719px) { .pr-root.pr-root { padding: 12px !important; } .pr-root h2 { font-size: 20px; margin-bottom: 10px !important; } .pr-root button, .pr-root select { min-height: 36px; font-size: 14px; } }`}</style>
       <h2 style={{ marginBottom: 20 }}>파라미터 승격 요청 관리 (관리자)</h2>
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center' }}>

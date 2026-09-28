@@ -408,9 +408,45 @@ export function CellSelectionCore({
     setSelectedWidth,
     setSelectedCell,
   ]);
+  // 반응형: 캔버스를 남은 영역에 맞춰 축소한다(최대 1100x800, 비율 유지). 큰 화면에서는 그대로 1100x800.
+  // 공통 레이아웃의 본문 영역이 화면 높이로 제한되지 않아, 이 화면의 높이를 남은 창 높이로 직접 맞춘다.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [rootH, setRootH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const update = () => {
+      const top = el.getBoundingClientRect().top;
+      setRootH(Math.max(300, Math.floor(window.innerHeight - top)));
+    };
+    update();
+    window.addEventListener('resize', update);
+    const header = el.parentElement?.previousElementSibling;
+    const ro = header ? new ResizeObserver(update) : null;
+    if (header && ro) ro.observe(header);
+    return () => {
+      window.removeEventListener('resize', update);
+      ro?.disconnect();
+    };
+  }, []);
+  const canvasBoxRef = useRef<HTMLDivElement>(null);
+  const [canvasBox, setCanvasBox] = useState({ w: 1100, h: 800 });
+  useEffect(() => {
+    const el = canvasBoxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const r = entries[0].contentRect;
+      setCanvasBox({ w: r.width, h: r.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeTab, selectedCell]);
+  const canvasFitW = Math.max(200, Math.min(1100, canvasBox.w, (canvasBox.h - (window.innerWidth <= 1279 || window.innerHeight <= 719 ? 38 : 48)) * (1100 / 800)));
+  const canvasFitH = canvasFitW * (800 / 1100);
   const displayCells = selectedType === 'collar_plate' ? COLLAR_PLATE_CELLS : NORMAL_CELLS;
   return (
-    <div className="flex-1 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden flex flex-col">
+    <div ref={rootRef} style={rootH ? { height: rootH } : undefined} className="flex-1 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden flex flex-col">
+      <style>{`@media (max-width: 1279px), (max-height: 719px) { .tb-compact button, .tb-compact input { min-height: 40px; } .tb-compact button, .tb-compact label { flex-shrink: 0; } .cv-box.cv-box { padding: 8px; } .cv-cap.cv-cap { margin-top: 4px; } .cv-cap select { min-height: 28px; } .tb-job { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px !important; padding-left: 6px !important; padding-right: 6px !important; } .tb-compact .tb-tab { padding-left: 12px; padding-right: 12px; } .wp-circle { r: 10px; } .wp-num { font-size: 12px; } }`}</style>
       {hasRobotError && (
         <button
           onClick={async () => {
@@ -492,22 +528,22 @@ export function CellSelectionCore({
                 />
               </div>
             )}
-            <div className="flex ml-auto flex-shrink-0 items-center">
+            <div className="tb-compact flex ml-auto flex-shrink-0 items-center">
               {currentJobName && (
-                <div className="mr-4 px-3 py-1 text-xs font-bold rounded bg-slate-800/80 border border-slate-700 text-slate-300">
+                <div className="tb-job mr-4 px-3 py-1 text-xs font-bold rounded bg-slate-800/80 border border-slate-700 text-slate-300">
                   작업: <span className="text-white">{currentJobName}</span>
                 </div>
               )}
               <button
                 onClick={() => setActiveTab('teaching')}
-                className={`px-5 py-2.5 text-sm font-medium transition whitespace-nowrap ${activeTab === 'teaching' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-gray-500 hover:text-gray-300'}`}
+                className={`tb-tab px-5 py-2.5 text-sm font-medium transition whitespace-nowrap ${activeTab === 'teaching' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-gray-500 hover:text-gray-300'}`}
               >
                 <MapPin className="w-4 h-4 inline mr-1.5" />
                 티칭
               </button>
               <button
                 onClick={() => setActiveTab('history')}
-                className={`px-5 py-2.5 text-sm font-medium transition whitespace-nowrap ${activeTab === 'history' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-gray-500 hover:text-gray-300'}`}
+                className={`tb-tab px-5 py-2.5 text-sm font-medium transition whitespace-nowrap ${activeTab === 'history' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-gray-500 hover:text-gray-300'}`}
               >
                 <History className="w-4 h-4 inline mr-1.5" />
                 작업내역
@@ -516,8 +552,8 @@ export function CellSelectionCore({
           </div>
           {activeTab === 'teaching' ? (
             <div className="flex-1 min-h-0 flex gap-3 mt-2">
-              <div className="flex-1 flex flex-col gap-2 min-h-0">
-                <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700/50 flex flex-col items-center justify-center p-6 relative flex-1">
+              <div className="flex-1 flex flex-col gap-2 min-h-0 min-w-0">
+                <div ref={canvasBoxRef} className="cv-box bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700/50 flex flex-col items-center justify-center p-6 relative flex-1 min-h-0 min-w-0 overflow-hidden">
                   {selectedCell ? (
                     <>
                       <UnifiedWorkspaceCanvas
@@ -542,12 +578,12 @@ export function CellSelectionCore({
                         onPartWeldToggle={handlePartWeldToggle}
                         ucellWidth={selectedWidth}
                         ucellHeight={selectedHeight || 550}
-                        canvasWidth={1100}
-                        canvasHeight={800}
+                        canvasWidth={canvasFitW}
+                        canvasHeight={canvasFitH}
                         animated={true}
                         currentPointId={isWelding && currentPointIndex >= 0 ? teachingWeldPoints[currentPointIndex]?.id ?? null : null}
                       />
-                      <div className="w-full mt-4 flex items-center justify-center gap-4 text-gray-400 text-sm">
+                      <div className="cv-cap w-full mt-4 flex items-center justify-center gap-4 text-gray-400 text-sm">
                         <span>폭: {selectedWidth}mm x 높이: {selectedHeight || '---'}mm</span>
                         <span className="flex items-center gap-1.5">
                           <span className="text-gray-500">판두께:</span>
@@ -572,7 +608,7 @@ export function CellSelectionCore({
                   )}
                 </div>
               </div>
-              <div className="w-[580px] bg-gray-900/80 border-l border-gray-800 flex flex-col">
+              <div style={{ width: 'min(580px, max(360px, calc(100vw - 720px)))' }} className="flex-shrink-0 bg-gray-900/80 border-l border-gray-800 flex flex-col">
                 {}
                 {currentJobId && (
                   <div className="px-4 py-1.5 text-xs border-b border-gray-800 flex items-center gap-2">

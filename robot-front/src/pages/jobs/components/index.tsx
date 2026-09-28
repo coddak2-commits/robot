@@ -372,11 +372,11 @@ const JobList: React.FC<JobListProps> = ({
   const totalPages = Math.ceil(jobs.length / itemsPerPage);
   const pagedJobs = jobs.slice((page - 1) * itemsPerPage, page * itemsPerPage);
   return (
-    <div className="space-y-3">
+    <div className="jm-list space-y-3">
       {pagedJobs.map(job => (
         <div
           key={job.id}
-          className={`bg-gray-800/60 backdrop-blur-sm rounded-2xl p-5 border transition cursor-pointer ${
+          className={`jm-row bg-gray-800/60 backdrop-blur-sm rounded-2xl p-5 border transition cursor-pointer ${
             selectedJobId === job.id
               ? 'border-cyan-500'
               : 'border-gray-700/50 hover:border-cyan-500/50'

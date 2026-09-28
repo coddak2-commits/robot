@@ -19,7 +19,8 @@ const RobotTest: React.FC = () => {
     isDancing, danceStep, danceSequence, startDance, stopDance,
   } = useRobotTestControl();
   return (
-    <div className="flex-1 bg-gradient-to-br from-gray-900 via-slate-900 to-gray-800 p-4 md:p-6 text-white overflow-auto">
+    <div className="rt-root flex-1 bg-gradient-to-br from-gray-900 via-slate-900 to-gray-800 p-4 md:p-6 text-white overflow-auto">
+      <style>{`@media (max-width: 1279px), (max-height: 719px) { .rt-root.rt-root { padding: 8px; } .rt-root .mb-4 { margin-bottom: 8px; } .rt-root .mb-3 { margin-bottom: 6px; } .rt-root .p-4 { padding: 10px; } .rt-root .py-3 { padding-top: 6px; padding-bottom: 6px; } .rt-root button { min-height: 36px; } }`}</style>
       <div className="max-w-7xl mx-auto">
         {}
         <ConnectionPanel

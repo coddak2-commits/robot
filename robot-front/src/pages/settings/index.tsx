@@ -59,8 +59,8 @@ const SystemSettings: React.FC = () => {
   }
   return (
     <PageLayout>
-      {}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <style>{`@media (max-width: 1279px), (max-height: 719px) { .st-stat.st-stat { gap: 8px; margin-bottom: 10px; } .st-stat > div { padding: 8px 10px; border-radius: 12px; } .st-stat .w-12 { width: 32px; height: 32px; } .st-stat svg { width: 16px; height: 16px; } .st-stat .text-lg { font-size: 18px; line-height: 22px; } .st-stat .text-sm { font-size: 12.5px; line-height: 16px; } .st-tabs.st-tabs { margin-bottom: 10px; } .st-tabs button { padding: 2px 8px; min-height: 36px; font-size: 14px; white-space: nowrap; } .st-tabs button svg { width: 16px; height: 16px; } .st-panel .p-6 { padding: 14px; } .st-panel .p-5 { padding: 10px; } .st-panel .mb-6 { margin-bottom: 10px; } .st-panel h2 { font-size: 16px; } .st-panel button { min-height: 36px; padding-top: 2px; padding-bottom: 2px; } .st-panel input, .st-panel select { min-height: 36px; padding-top: 2px; padding-bottom: 2px; font-size: 14px; } .st-panel .space-y-4 > * + * { margin-top: 8px; } }`}</style>
+      <div className="st-stat grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatusCard
           icon={<Wifi className={`w-6 h-6 ${robotConnected ? 'text-green-400' : 'text-red-400'}`} />}
           bgColor={robotConnected ? 'bg-green-500/20' : 'bg-red-500/20'}
@@ -92,7 +92,7 @@ const SystemSettings: React.FC = () => {
         />
       </div>
       {}
-      <div className="flex gap-2 mb-6">
+      <div className="st-tabs flex gap-2 mb-6">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 flex-1">
           {tabs.map(tab => (
             <button
@@ -119,7 +119,7 @@ const SystemSettings: React.FC = () => {
         </button>
       </div>
       {}
-      <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700/50">
+      <div className="st-panel bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700/50">
         {activeTab === 'users' && (
           <UserManagementTab
             users={users}

@@ -31,7 +31,9 @@ export interface LeftSidebarProps {
 }
 export function LeftSidebar({ selectedType, onTypeSelect, onNavigate, onAdminClick }: LeftSidebarProps) {
   return (
-    <div className="w-28 md:w-32 bg-gray-800/60 backdrop-blur-sm border-r border-gray-700/50 flex flex-col p-2 gap-2 flex-shrink-0 overflow-y-auto">
+    <>
+    <style>{`.sb-short{display:none}@media (max-width: 1279px), (max-height: 719px) { .sb-root.sb-root{width:72px} .sb-root button{min-height:40px;min-width:0;padding:6px 4px} .sb-full{display:none} .sb-short{display:inline} }`}</style>
+    <div className="sb-root w-28 md:w-32 bg-gray-800/60 backdrop-blur-sm border-r border-gray-700/50 flex flex-col p-2 gap-2 flex-shrink-0 overflow-y-auto">
       <button
         onClick={() => onTypeSelect('normal')}
         className={`p-3 rounded-xl border-2 transition touch-manipulation flex flex-col items-center justify-center gap-1 ${
@@ -39,7 +41,7 @@ export function LeftSidebar({ selectedType, onTypeSelect, onNavigate, onAdminCli
         }`}
       >
         <Target className="w-6 h-6" />
-        <span className="text-xs font-medium text-center">U-Cell<br />(일반)</span>
+        <span className="text-xs font-medium text-center"><span className="sb-full">U-Cell<br />(일반)</span><span className="sb-short">일반</span></span>
       </button>
       <button
         onClick={() => onTypeSelect('collar_plate')}
@@ -48,18 +50,19 @@ export function LeftSidebar({ selectedType, onTypeSelect, onNavigate, onAdminCli
         }`}
       >
         <Target className="w-6 h-6" />
-        <span className="text-xs font-medium text-center">U-Cell<br />(컬러)</span>
+        <span className="text-xs font-medium text-center"><span className="sb-full">U-Cell<br />(컬러)</span><span className="sb-short">컬러</span></span>
       </button>
       <div className="border-t border-gray-700/50 my-1" />
       <button onClick={() => onNavigate('/settings/welding')} className="p-2 rounded-xl border-2 bg-gray-700/50 border-gray-600 text-gray-300 hover:border-gray-500 hover:bg-gray-700 transition touch-manipulation flex flex-col items-center justify-center gap-1">
-        <Wrench className="w-4 h-4" /><span className="text-xs font-medium">용접 설정</span>
+        <Wrench className="w-4 h-4" /><span className="text-xs font-medium"><span className="sb-full">용접 설정</span><span className="sb-short">용접</span></span>
       </button>
       <button onClick={() => onNavigate('/settings/robot')} className="p-2 rounded-xl border-2 bg-gray-700/50 border-gray-600 text-gray-300 hover:border-gray-500 hover:bg-gray-700 transition touch-manipulation flex flex-col items-center justify-center gap-1">
-        <Settings className="w-4 h-4" /><span className="text-xs font-medium">로봇 설정</span>
+        <Settings className="w-4 h-4" /><span className="text-xs font-medium"><span className="sb-full">로봇 설정</span><span className="sb-short">로봇</span></span>
       </button>
       <button onClick={onAdminClick} className="p-2 rounded-xl border-2 bg-gray-700/50 border-gray-600 text-gray-300 hover:border-gray-500 hover:bg-gray-700 transition touch-manipulation flex flex-col items-center justify-center gap-1">
         <Shield className="w-4 h-4" /><span className="text-xs font-medium">관리자</span>
       </button>
     </div>
+    </>
   );
 }

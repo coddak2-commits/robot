@@ -178,8 +178,8 @@ const JobManagement: React.FC = () => {
   }
   return (
     <PageLayout>
-      {}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+      <style>{`@media (max-width: 1279px), (max-height: 719px) { .jm-stat.jm-stat { gap: 8px; margin-bottom: 10px; } .jm-stat > div { padding: 8px 10px; border-radius: 12px; } .jm-stat .w-12 { width: 32px; height: 32px; } .jm-stat svg { width: 16px; height: 16px; } .jm-stat .text-2xl { font-size: 20px; line-height: 24px; } .jm-stat .text-sm { font-size: 12.5px; line-height: 16px; } .jm-stat > button { padding: 8px; border-radius: 12px; font-size: 13px; min-height: 0; } .jm-tabs.jm-tabs { margin-bottom: 10px; } .jm-tabs button { padding-top: 2px; padding-bottom: 2px; min-height: 34px; font-size: 14px; } .jm-tabs button svg { width: 16px; height: 16px; } .jm-filter.jm-filter { margin-bottom: 8px; } .jm-filter input, .jm-filter select { min-height: 34px; padding-top: 2px; padding-bottom: 2px; font-size: 14px; } .jm-list > * + * { margin-top: 8px; } .jm-row.jm-row { padding: 10px 14px; border-radius: 12px; } .jm-row h3 { font-size: 15px; } .jm-row .mb-2 { margin-bottom: 2px; } .jm-row button { min-height: 36px; padding: 6px; } }`}</style>
+      <div className="jm-stat grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <StatCard icon={<List className="w-6 h-6 text-blue-400" />} label="전체 작업" value={jobs.length} color="blue" />
         <StatCard icon={<CheckCircle className="w-6 h-6 text-cyan-400" />} label="티칭완료" value={jobs.filter(j => (j.saved_points || 0) === (j.total_points || 10)).length} color="cyan" />
         <StatCard icon={<MapPin className="w-6 h-6 text-yellow-400" />} label="티칭중" value={jobs.filter(j => (j.saved_points || 0) > 0 && (j.saved_points || 0) < (j.total_points || 10)).length} color="yellow" />
@@ -193,7 +193,7 @@ const JobManagement: React.FC = () => {
         </button>
       </div>
       {}
-      <div className="flex gap-2 mb-6">
+      <div className="jm-tabs flex gap-2 mb-6">
         <button
           onClick={() => setActiveTab('list')}
           className={`flex-1 py-4 rounded-xl font-medium transition touch-manipulation flex items-center justify-center gap-2 ${
@@ -222,7 +222,7 @@ const JobManagement: React.FC = () => {
       </div>
       {}
       {activeTab === 'list' && (
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="jm-filter flex flex-wrap gap-2 mb-4">
           <input
             type="text"
             value={searchQuery}

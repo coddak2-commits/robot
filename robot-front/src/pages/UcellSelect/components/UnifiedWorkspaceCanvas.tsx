@@ -111,33 +111,36 @@ const UnifiedWorkspaceCanvasComponent: React.FC<UnifiedWorkspaceCanvasProps> = (
     const halfWidth = ucellWidth / 2;
     const halfHeight = ucellHeight / 2;
     const getPointCount = (index: number) => partSavedPointCounts?.[index] ?? 0;
+    const small = canvasWidth < 800;
+    const dx = small ? 24 : 0;
+    const dy = small ? -14 : 0;
     return [
       {
         index: 0, name: '파트1', enabled: partWeldEnabled[0] ?? true,
-        position: { x: -halfWidth / 2, y: -halfHeight + 50 }, labelOffset: { x: 0, y: 0 },
+        position: { x: -halfWidth / 2, y: -halfHeight + 50 }, labelOffset: { x: 0, y: dy },
         canToggle: getPointCount(0) >= 2, savedPointCount: getPointCount(0),
         executionOrder: partOrderMap[0],
       },
       {
         index: 1, name: '파트2', enabled: partWeldEnabled[1] ?? true,
-        position: { x: -halfWidth + 60, y: 0 }, labelOffset: { x: 0, y: 0 },
+        position: { x: -halfWidth + 60, y: 0 }, labelOffset: { x: dx, y: 0 },
         canToggle: getPointCount(1) >= 2, savedPointCount: getPointCount(1),
         executionOrder: partOrderMap[1],
       },
       {
         index: 2, name: '파트3', enabled: partWeldEnabled[2] ?? true,
-        position: { x: halfWidth / 2, y: -halfHeight + 50 }, labelOffset: { x: 0, y: 0 },
+        position: { x: halfWidth / 2, y: -halfHeight + 50 }, labelOffset: { x: 0, y: dy },
         canToggle: getPointCount(2) >= 2, savedPointCount: getPointCount(2),
         executionOrder: partOrderMap[2],
       },
       {
         index: 3, name: '파트4', enabled: partWeldEnabled[3] ?? true,
-        position: { x: halfWidth - 60, y: 0 }, labelOffset: { x: 0, y: 0 },
+        position: { x: halfWidth - 60, y: 0 }, labelOffset: { x: -dx, y: 0 },
         canToggle: getPointCount(3) >= 2, savedPointCount: getPointCount(3),
         executionOrder: partOrderMap[3],
       },
     ];
-  }, [partWeldEnabled, partSavedPointCounts, ucellWidth, ucellHeight, partOrderMap]);
+  }, [partWeldEnabled, partSavedPointCounts, ucellWidth, ucellHeight, partOrderMap, canvasWidth]);
   return (
     <svg
       ref={svgRef}

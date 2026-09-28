@@ -84,8 +84,9 @@ const Dashboard: React.FC = () => {
   return (
     <PageLayout>
       {/* 상단 요약 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className={`rounded-2xl p-4 border-2 ${getStatusBg(robotStatus)} backdrop-blur-sm`}>
+      <style>{`@media (max-width: 1279px), (max-height: 719px) { .db-sum.db-sum { gap: 8px; margin-bottom: 12px; } .db-gap.db-gap { gap: 12px; } .db-gap.mt-6 { margin-top: 12px; } .db-stat.db-stat { padding: 10px; border-radius: 12px; } .db-stat svg { width: 24px; height: 24px; } .db-stat .text-2xl { font-size: 20px; line-height: 24px; } .db-stat .mb-2 { margin-bottom: 2px; } .db-card.db-card { padding: 14px; border-radius: 12px; } .db-card h2 { font-size: 16px; margin-bottom: 8px; } .db-card h2 svg { width: 18px; height: 18px; } .db-card .mb-6 { margin-bottom: 10px; } .db-card .p-4 { padding: 10px; } .db-card .w-12 { width: 36px; height: 36px; } .db-card .w-16 { width: 40px; height: 40px; margin-bottom: 8px; } .db-card .py-8 { padding: 4px 0; } .db-card button { min-height: 40px; padding-top: 6px; padding-bottom: 6px; } .db-card .py-2 { padding-top: 4px; padding-bottom: 4px; } .db-warn.db-warn { margin-top: 8px; padding: 6px; } .db-quick.db-quick { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; } .db-quick button { flex-direction: column; gap: 4px; padding: 6px 2px; } .db-quick .w-12 { width: 32px; height: 32px; } .db-quick span { font-size: 13px; white-space: nowrap; } }`}</style>
+      <div className="db-sum grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className={`db-stat rounded-2xl p-4 border-2 ${getStatusBg(robotStatus)} backdrop-blur-sm`}>
           <div className="flex items-center justify-between mb-2">
             <Cpu className={`w-8 h-8 ${getStatusColor(robotStatus)}`} />
             <div className={`w-3 h-3 rounded-full animate-pulse ${robotStatus === 'running' ? 'bg-green-400' : robotStatus === 'error' ? 'bg-red-400' : 'bg-cyan-400'}`}></div>
@@ -94,7 +95,7 @@ const Dashboard: React.FC = () => {
           <div className="text-gray-400 text-sm">로봇 상태</div>
         </div>
 
-        <div className="rounded-2xl p-4 border-2 border-green-500/30 bg-green-500/10 backdrop-blur-sm">
+        <div className="db-stat rounded-2xl p-4 border-2 border-green-500/30 bg-green-500/10 backdrop-blur-sm">
           <div className="flex items-center justify-between mb-2">
             <CheckCircle className="w-8 h-8 text-green-400" />
           </div>
@@ -104,7 +105,7 @@ const Dashboard: React.FC = () => {
           <div className="text-gray-400 text-sm">오늘 완료/전체</div>
         </div>
 
-        <div className={`rounded-2xl p-4 border-2 ${(stats?.defectRate || 0) > 3 ? 'border-red-500/30 bg-red-500/10' : 'border-emerald-500/30 bg-emerald-500/10'} backdrop-blur-sm`}>
+        <div className={`db-stat rounded-2xl p-4 border-2 ${(stats?.defectRate || 0) > 3 ? 'border-red-500/30 bg-red-500/10' : 'border-emerald-500/30 bg-emerald-500/10'} backdrop-blur-sm`}>
           <div className="flex items-center justify-between mb-2">
             <Target className={`w-8 h-8 ${(stats?.defectRate || 0) > 3 ? 'text-red-400' : 'text-emerald-400'}`} />
           </div>
@@ -112,7 +113,7 @@ const Dashboard: React.FC = () => {
           <div className="text-gray-400 text-sm">오늘 불량률</div>
         </div>
 
-        <div className="rounded-2xl p-4 border-2 border-cyan-500/30 bg-cyan-500/10 backdrop-blur-sm">
+        <div className="db-stat rounded-2xl p-4 border-2 border-cyan-500/30 bg-cyan-500/10 backdrop-blur-sm">
           <div className="flex items-center justify-between mb-2">
             <Activity className="w-8 h-8 text-cyan-400" />
           </div>
@@ -121,9 +122,9 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="db-gap grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 로봇 실시간 */}
-        <div className="lg:col-span-2 bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50">
+        <div className="lg:col-span-2 db-card bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-white flex items-center gap-2">
               <Cpu className="w-6 h-6 text-cyan-400" />
@@ -164,14 +165,14 @@ const Dashboard: React.FC = () => {
           </div>
 
           {!robot?.connected && (
-            <div className="mt-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-sm text-center">
+            <div className="db-warn mt-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-sm text-center">
               로봇 미연결 — Robot Core 서버 상태를 확인하세요
             </div>
           )}
         </div>
 
         {/* 현재 작업 */}
-        <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50">
+        <div className="db-card bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50">
           <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
             <Zap className="w-6 h-6 text-yellow-400" />
             현재 작업
@@ -216,8 +217,8 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* 알림 + 빠른 이동 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-        <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50">
+      <div className="db-gap grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <div className="db-card bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50">
           <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
             <AlertTriangle className="w-6 h-6 text-yellow-400" />
             시스템 알림
@@ -261,9 +262,9 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50">
+        <div className="db-card bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50">
           <h2 className="text-xl font-semibold text-white mb-4">빠른 이동</h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="db-quick grid grid-cols-2 gap-3">
             <button onClick={() => navigate('/pendant')}
               className="p-4 bg-gray-900/60 hover:bg-gray-700/60 rounded-xl border border-gray-700/50 transition touch-manipulation flex items-center gap-3">
               <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center">

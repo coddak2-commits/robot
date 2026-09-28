@@ -139,8 +139,8 @@ export function TeachingTabContent({
     .map(pt => pt.id);
   return (
     <div className="space-y-4">
-      {}
-      <div className="flex items-center justify-between">
+      <style>{`@media (max-width: 1279px), (max-height: 719px) { .tp-head button { min-height: 36px; white-space: nowrap; flex-shrink: 0; } .tp-head span { white-space: nowrap; } .tp-btns button { padding-left: 2px !important; padding-right: 2px !important; min-width: 0 !important; word-break: keep-all; } .tp-dry > div:first-child { flex-wrap: wrap; row-gap: 0; min-width: 0; } .tp-dry span { white-space: nowrap; } .tp-dry span:nth-of-type(1) { font-size: 12px; } .tp-dry span:nth-of-type(2) { font-size: 10px; } }`}</style>
+      <div className="tp-head flex flex-wrap items-center justify-between gap-y-2">
         <div className="flex items-center gap-2">
           <MapPin className="w-5 h-5 text-purple-400" />
           <span className="text-white font-medium">포인트 티칭</span>
@@ -189,7 +189,7 @@ export function TeachingTabContent({
       {}
       {!simulationMode && (
         <div>
-          <label className={`flex items-center justify-between p-2.5 bg-gray-800/50 rounded-lg cursor-pointer hover:bg-gray-800/70 transition-colors ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}>
+          <label className={`tp-dry flex items-center justify-between p-2.5 bg-gray-800/50 rounded-lg cursor-pointer hover:bg-gray-800/70 transition-colors ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}>
             <div className="flex items-center gap-2">
               <Settings className={`w-4 h-4 ${dryRunMode ? 'text-orange-400' : 'text-gray-400'}`} />
               <span className={`text-sm ${dryRunMode ? 'text-orange-300' : 'text-gray-300'}`}>DryRun 모드</span>
@@ -210,7 +210,7 @@ export function TeachingTabContent({
       )}
       {}
       {!isWelding && !isTouchSensing ? (
-        <div className="flex gap-1.5">
+        <div className="tp-btns flex gap-1.5">
           {!simulationMode && (
             <button
               onClick={onStartTouchSensing}
@@ -266,7 +266,7 @@ export function TeachingTabContent({
           </button>
         </div>
       ) : (
-        <div className="flex gap-1.5">
+        <div className="tp-btns flex gap-1.5">
           <div className={`flex-1 p-2.5 rounded-lg border animate-pulse ${
             isTouchSensing ? 'bg-purple-900/30 border-purple-500/30' : 'bg-yellow-900/30 border-yellow-500/30'
           }`}>
