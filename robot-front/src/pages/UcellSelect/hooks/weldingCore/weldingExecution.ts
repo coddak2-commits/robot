@@ -377,10 +377,24 @@ export async function executeWelding(
       });
     }
     let arcTrackingWarned = false;
-    const armArcTracking = async () => {
+    // 아크 트래킹은 수직 위빙 파트에만 건다. (v1.1.196)
+    // 벤더 Lua(Ucell0)는 수직 용접(vl/vr)에만 ArcWeldTraceControl(1)을 걸고
+    // 수평(hl/hr)에는 아예 걸지 않는다. 상하 보정이 위빙 궤적을 기준으로 전류를
+    // 샘플링하므로 위빙 평면이 다르면 보정 방향이 달라진다.
+    // v1.1.169로 파트 순서가 수평 먼저가 되면서 트래킹이 수평 첫 파트에 걸렸고,
+    // 그 시작점에서 아크만 켜진 채 정지하는 증상이 났다.
+    // 수평 파트에서는 0을 보내 직전 파트의 트래킹을 명시적으로 끈다.
+    const VERTICAL_WEAVE_CODES = [1, 5, 6, 7];
+    const armArcTracking = async (point: TeachingPoint) => {
       if (!arcTrackingActive) return;
+      const weaveCode = getWeaveTypeCode(point.weavingType ?? firstWeldPoint.weavingType);
+      const isVertical = VERTICAL_WEAVE_CODES.includes(weaveCode);
       try {
-        await arcTraceControl({ flag: 1 });
+        await arcTraceControl({ flag: isVertical ? 1 : 0 });
+        log_weldingExecution.info(
+          'welding.arcTrace.set',
+          `아크 트래킹 ${isVertical ? 'ON' : 'OFF'}: ${point.name} (위빙 코드 ${weaveCode})`,
+        );
       } catch (arcTraceError) {
         log_weldingExecution.error(
           'welding.arcTrace.failed',
@@ -497,6 +511,7 @@ export async function executeWelding(
       }
     }
     if (stopRef.current) return await handleStopped(0);
+    await armArcTracking(firstWeldPoint);
     if (!startFromClosest && startPoint.tcp && !stopRef.current) {
       let startTouchOffset: number[] = [0, 0, 0, 0, 0, 0];
       let useStartOffset = false;
@@ -547,12 +562,6 @@ export async function executeWelding(
     if (hasWeaving && weaveTypeCode >= 0 && !isStartAtPartEnd)
       await setupAndStartWeave(firstWeldPoint, firstWeldPoint);
     if (!isStartAtPartEnd) setArcActive?.(true);
-    // 아크 트래킹은 아크와 위빙이 돌고 난 '뒤'에 걸어야 한다.
-    // reference_type=0은 아크 점화 직후 실측으로 기준 전류를 잡는 모드라,
-    // 아크가 없는 상태에서 걸면 잡을 기준이 없다.
-    // v1.1.196: 첫 파트만 500행에서 먼저 걸고 있었다(시작점에서 아크만 키진 채 정지).
-    // 641행·903행과 같은 순서로 맞춘다.
-    await armArcTracking();
     await dwellAtPartStart(
       firstWeldPoint,
       hasWelding && !simMode && !isStartAtPartEnd && !isWeldingTest,
@@ -643,7 +652,7 @@ export async function executeWelding(
             );
             setArcActive?.(true);
             if (hasWelding && !(simMode && !isWeldingTest)) arcMayBeOn = true;
-            await armArcTracking();
+            await armArcTracking(point);
             await dwellAtPartStart(point, hasWelding && !(simMode && !isWeldingTest));
           }
           const ptSegIdx = i - 1;
@@ -905,7 +914,7 @@ export async function executeWelding(
         );
         setArcActive?.(true);
         if (hasWelding && !(simMode && !isWeldingTest)) arcMayBeOn = true;
-        await armArcTracking();
+        await armArcTracking(point);
         await dwellAtPartStart(point, hasWelding && !(simMode && !isWeldingTest));
         const ptSegIdx = i - 1;
         if (ptSegIdx >= 0 && ptSegIdx < segments.length)
