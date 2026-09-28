@@ -497,7 +497,6 @@ export async function executeWelding(
       }
     }
     if (stopRef.current) return await handleStopped(0);
-    await armArcTracking();
     if (!startFromClosest && startPoint.tcp && !stopRef.current) {
       let startTouchOffset: number[] = [0, 0, 0, 0, 0, 0];
       let useStartOffset = false;
@@ -548,6 +547,12 @@ export async function executeWelding(
     if (hasWeaving && weaveTypeCode >= 0 && !isStartAtPartEnd)
       await setupAndStartWeave(firstWeldPoint, firstWeldPoint);
     if (!isStartAtPartEnd) setArcActive?.(true);
+    // 아크 트래킹은 아크와 위빙이 돌고 난 '뒤'에 걸어야 한다.
+    // reference_type=0은 아크 점화 직후 실측으로 기준 전류를 잡는 모드라,
+    // 아크가 없는 상태에서 걸면 잡을 기준이 없다.
+    // v1.1.196: 첫 파트만 500행에서 먼저 걸고 있었다(시작점에서 아크만 키진 채 정지).
+    // 641행·903행과 같은 순서로 맞춘다.
+    await armArcTracking();
     await dwellAtPartStart(
       firstWeldPoint,
       hasWelding && !simMode && !isStartAtPartEnd && !isWeldingTest,
