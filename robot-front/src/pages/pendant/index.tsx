@@ -657,12 +657,12 @@ const PendantInner: React.FC = () => {
           position: 'absolute',
           top: '50%',
           left: `calc(50% - ${DOCK_RESERVE / 2}px)`,
-          transform: compact ? 'translate(-50%, -68%)' : 'translate(-50%, -55%)',
+          transform: compact ? 'translate(-50%, -72%)' : 'translate(-50%, -55%)',
           width: compact ? 'min(250px, calc(100vw - 320px))' : 'min(340px, calc(100vw - 200px))',
           maxHeight: '96vh', overflowY: 'auto',
           background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(6px)',
-          border: '1px solid #334155', borderRadius: 14, padding: compact ? 6 : 16, zIndex: 10,
-          display: 'flex', flexDirection: 'column', gap: compact ? 4 : 12,
+          border: '1px solid #334155', borderRadius: 14, padding: compact ? 4 : 16, zIndex: 10,
+          display: 'flex', flexDirection: 'column', gap: compact ? 2 : 12,
         }}>
           {/* 진행 상황 (용접 중) */}
           {isWelding && (
