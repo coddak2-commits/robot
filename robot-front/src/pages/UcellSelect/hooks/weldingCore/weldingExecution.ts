@@ -996,12 +996,19 @@ export async function executeWelding(
       const batchWeaveCode = getWeaveTypeCode(batchPoints[0].weaving_type ?? null);
       const batchArcTracking = arcTrackingActive && VERTICAL_WEAVE_CODES.includes(batchWeaveCode);
       const WAYPOINT_BLEND_MM = batchArcTracking ? -1 : 50;
+      // v1.1.203: 아크 트래킹이 걸리는 배치는 중간 경유점을 지나지 않고
+      // 끝점까지 단일 MoveL로 간다(per_point=false). 중간점에서 방향이 꺾여
+      // 비드 모양이 바뀌던 문제를 없앤다. 모재가 휘어 생기는 편차는 트래킹이 잡는다.
+      // v1.1.149~166이 쓰던 경로와 같다. 끝점의 터치 보정만 적용된다.
+      const useWaypoints = !batchArcTracking;
       const useSpline = sequenceSettings.splineMoveEnabled && batchPoints.length >= 2;
       log_weldingExecution.info(
         'welding.batch',
         useSpline
           ? `Spline move: ${batchPoints.length}포인트 (type=${sequenceSettings.splineType}, avgTime=${sequenceSettings.splineAverageTime}ms)`
-          : `Batch MoveL: ${batchPoints.length}포인트 → 경유점 방식 (블렌드)`,
+          : useWaypoints
+            ? `Batch MoveL: ${batchPoints.length}포인트 → 경유점 방식 (블렌드 ${WAYPOINT_BLEND_MM}mm)`
+            : `Batch MoveL: ${batchPoints.length}포인트 → 끝점 단일 이동 (아크 트래킹 적용)`,
         {
           indices: batchIndices.map(idx => weldingPoints[idx].id),
         },
@@ -1012,7 +1019,7 @@ export async function executeWelding(
               splineType: sequenceSettings.splineType,
               averageTime: sequenceSettings.splineAverageTime,
             })
-          : await batchMoveL(batchPoints, { perPoint: true, blendR: WAYPOINT_BLEND_MM });
+          : await batchMoveL(batchPoints, { perPoint: useWaypoints, blendR: WAYPOINT_BLEND_MM });
         // 배치는 블로킹 호출 1번이라 구간별 실측이 불가능하다. v1.1.133까지는 반환 후
         // 루프를 돌며 경과시간을 넣어, 첫 구간이 배치 전체 시간을 먹고 나머지는 0이 됐다.
         // 배치 안에서는 명령 속도가 동일하므로 거리 비율로 배분한다 (v1.1.134 수정).
