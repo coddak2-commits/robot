@@ -48,15 +48,92 @@ const PART_START_DWELL_MS: Record<string, number> = {
   p1: 500, p3: 500, p7: 500, p9: 500,
   p4: 1000, p10: 1000,
 };
-async function dwellAtPartStart(point: TeachingPoint, active: boolean): Promise<void> {
+// v1.1.205: 체류를 '제자리 정지'에서 '아주 짧은 거리를 아주 느리게 이동'으로 바꾼다.
+// 위빙은 이동 궤적에 겹쳐서 나오는 기능이라 정지 상태에서는 위빙 모양이 안 나온다
+// (2026-09-29 현장 확인). 다음 포인트 방향으로 이 거리만큼 체류 시간에 걸쳐 기어가면
+// 위빙 한 주기(2Hz면 500ms)가 그 구간에 들어간다.
+// 속도 모델: 실제 이동속도 = 5.795mm/s x 명령% (v1.1.130에서 실측 확인).
+// 거리를 키우거나 체류 시간을 줄이면 명령%가 올라간다. 컨트롤러가 저속을 거부하면
+// 이 값을 키울 것. 이동이 실패하면 예전처럼 제자리 정지로 대체한다.
+const PART_START_CREEP_MM = 3;
+const SPEED_MM_PER_SEC_PER_PCT = 5.795;
+async function dwellAtPartStart(
+  point: TeachingPoint,
+  nextPoint: TeachingPoint | undefined,
+  active: boolean,
+): Promise<void> {
   if (!active) return;
   const ms = PART_START_DWELL_MS[point.id] ?? 0;
   if (ms <= 0) return;
+  const holdStill = async () => {
+    await new Promise(resolve => setTimeout(resolve, ms));
+  };
+  // 보정을 빌려 쓴 포인트(자기 touchOffset이 없는 경우)는 여기서 절대좌표를 다시 만들면
+  // 도착 때와 다른 자리로 튈 수 있다. 그럴 때는 기어가지 않고 그냥 멈춘다.
+  if (!point.tcp || !nextPoint?.tcp || !point.touchOffset) {
+    log_weldingExecution.info(
+      'welding.partStart.dwell',
+      `파트 시작 체류: ${point.name} ${ms}ms (제자리 정지)`,
+    );
+    await holdStill();
+    return;
+  }
+  const dx = nextPoint.tcp.x - point.tcp.x;
+  const dy = nextPoint.tcp.y - point.tcp.y;
+  const dz = nextPoint.tcp.z - point.tcp.z;
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (!Number.isFinite(dist) || dist < PART_START_CREEP_MM * 2) {
+    log_weldingExecution.info(
+      'welding.partStart.dwell',
+      `파트 시작 체류: ${point.name} ${ms}ms (구간이 짧아 제자리 정지)`,
+    );
+    await holdStill();
+    return;
+  }
+  const k = PART_START_CREEP_MM / dist;
+  const offset = [
+    point.touchOffset.dx + dx * k,
+    point.touchOffset.dy + dy * k,
+    point.touchOffset.dz + dz * k,
+    0,
+    0,
+    0,
+  ];
+  const mmPerSec = PART_START_CREEP_MM / (ms / 1000);
+  const speedPct = Math.max(1, Math.round(mmPerSec / SPEED_MM_PER_SEC_PER_PCT));
   log_weldingExecution.info(
     'welding.partStart.dwell',
-    `파트 시작 체류: ${point.name} ${ms}ms (이동 전 정지 상태로 용착)`,
+    `파트 시작 체류: ${point.name} ${ms}ms (위빙 유지, ${PART_START_CREEP_MM}mm 저속 이동 vel=${speedPct}%)`,
   );
-  await new Promise(resolve => setTimeout(resolve, ms));
+  try {
+    const result = await moveToCartesianPosition(
+      point.tcp,
+      speedPct,
+      100,
+      100,
+      -1,
+      1,
+      offset,
+      undefined,
+      point.toolNum ?? 3,
+      point.userNum ?? 0,
+      0,
+    );
+    if (result?.status_code !== 200) {
+      log_weldingExecution.warn(
+        'welding.partStart.dwell.fallback',
+        `파트 시작 저속 이동 실패 (status=${result?.status_code}) - 제자리 정지로 대체`,
+      );
+      await holdStill();
+    }
+  } catch (error) {
+    log_weldingExecution.warn(
+      'welding.partStart.dwell.error',
+      `파트 시작 저속 이동 오류 - 제자리 정지로 대체`,
+      { error: String(error) },
+    );
+    await holdStill();
+  }
 }
 // 시작점 확인 터치 (v1.1.164, 드라이런 전용).
 // 터치 보정을 적용해 시작점에 도착한 뒤, 접합부까지 실제로 얼마나 남았는지 -X로 한 번 더
@@ -575,6 +652,7 @@ export async function executeWelding(
     if (!isStartAtPartEnd) setArcActive?.(true);
     await dwellAtPartStart(
       firstWeldPoint,
+      weldingPoints[startPointIndex + 1],
       hasWelding && !simMode && !isStartAtPartEnd && !isWeldingTest,
     );
     const loopStartIndex = startPointIndex + 1;
@@ -669,7 +747,7 @@ export async function executeWelding(
             );
             setArcActive?.(true);
             if (hasWelding && !(simMode && !isWeldingTest)) arcMayBeOn = true;
-            await dwellAtPartStart(point, hasWelding && !(simMode && !isWeldingTest));
+            await dwellAtPartStart(point, weldingPoints[i + 1], hasWelding && !(simMode && !isWeldingTest));
           }
           const ptSegIdx = i - 1;
           if (ptSegIdx >= 0 && ptSegIdx < segments.length)
@@ -931,7 +1009,7 @@ export async function executeWelding(
         );
         setArcActive?.(true);
         if (hasWelding && !(simMode && !isWeldingTest)) arcMayBeOn = true;
-        await dwellAtPartStart(point, hasWelding && !(simMode && !isWeldingTest));
+        await dwellAtPartStart(point, weldingPoints[i + 1], hasWelding && !(simMode && !isWeldingTest));
         const ptSegIdx = i - 1;
         if (ptSegIdx >= 0 && ptSegIdx < segments.length)
           segments[ptSegIdx].actual_sec = (Date.now() - segmentStartTime) / 1000;
