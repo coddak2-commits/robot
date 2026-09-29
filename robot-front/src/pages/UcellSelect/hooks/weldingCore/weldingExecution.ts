@@ -511,7 +511,6 @@ export async function executeWelding(
       }
     }
     if (stopRef.current) return await handleStopped(0);
-    await armArcTracking(firstWeldPoint);
     if (!startFromClosest && startPoint.tcp && !stopRef.current) {
       let startTouchOffset: number[] = [0, 0, 0, 0, 0, 0];
       let useStartOffset = false;
@@ -562,6 +561,11 @@ export async function executeWelding(
     if (hasWeaving && weaveTypeCode >= 0 && !isStartAtPartEnd)
       await setupAndStartWeave(firstWeldPoint, firstWeldPoint);
     if (!isStartAtPartEnd) setArcActive?.(true);
+    // v1.1.198: 첫 파트도 아크 ON과 위빙 시작 뒤에 트래킹을 건다.
+    // 트래킹을 켠 두 번의 실패(195 수평: 아크는 붙었으나 정지 / 197 수직: ARCStart
+    // code=76 대기 타임아웃)가 모두 아크보다 먼저 건 상태였다. 뒤로 미룬 조합은
+    // 아직 검증되지 않았다. 두 번째 파트 이후(655행·917행)와 같은 순서가 된다.
+    await armArcTracking(firstWeldPoint);
     await dwellAtPartStart(
       firstWeldPoint,
       hasWelding && !simMode && !isStartAtPartEnd && !isWeldingTest,
