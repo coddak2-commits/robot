@@ -40,7 +40,12 @@ const VERTICAL_POINT_NUMBERS = [1, 2, 3, 7, 8, 9];
 // 수평 시작(P4/P10)은 수직 비드와 만나는 지점이라 틈이 남아 수동 보강이 필요했다(2026-09-18 사진).
 // 아크 ON 시퀀스 안에 이미 점화 후 500ms 대기가 있으므로 실제 체류는 이 값만큼 더해진다.
 // 0으로 두면 체류 없음.
-const PART_START_DWELL_MS: Record<string, number> = { p4: 1000, p10: 1000 };
+// v1.1.202: 수직 시작점에도 같은 1초 체류를 넣는다(모서리 메꿈, 사용자 요청).
+// 체류는 파트 시작점에서만 실행되므로, 수직 양끝(P1·P3, P7·P9)을 모두 등록해 두면
+// 파트 순서가 바뀌어도(3-2-1 이든 1-2-3 이든) 실제 시작점 한 곳에서만 걸린다.
+const PART_START_DWELL_MS: Record<string, number> = {
+  p1: 1000, p3: 1000, p4: 1000, p7: 1000, p9: 1000, p10: 1000,
+};
 async function dwellAtPartStart(point: TeachingPoint, active: boolean): Promise<void> {
   if (!active) return;
   const ms = PART_START_DWELL_MS[point.id] ?? 0;
