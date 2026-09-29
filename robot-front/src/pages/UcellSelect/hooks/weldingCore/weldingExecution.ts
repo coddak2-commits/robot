@@ -590,6 +590,11 @@ export async function executeWelding(
           weaveTypeCode,
         );
         arcMayBeOn = false;
+        // v1.1.201: 파트 종료 직후 트래킹을 끈다. 문서 4.3.1 예제와 예전 Lua 모두
+        // ARCEnd 바로 뒤에 ArcWeldTraceControl(0)을 건다. 지금까지는 다음 파트를
+        // 시작할 때 다시 걸면서 정리해, 파트 사이 이동 구간에는 아크가 없는데도
+        // 트래킹이 켜진 채로 남았다. v1.1.195에서 로봇이 멈췄던 조건이 그것이다.
+        if (arcTrackingActive) await arcTraceControl({ flag: 0 }).catch(() => {});
         const prevPoint = weldingPoints[i - 1];
         const transitionSpeed = 30;
         if (prevPoint?.id === 'p6' && point?.id === 'p9' && point.joints && point.joints.length === 6) {
