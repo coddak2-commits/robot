@@ -976,7 +976,16 @@ export async function executeWelding(
       // v1.1.170: 블렌드 10 -> 50mm. 10mm에서는 경유점(P8)에서 방향이 바뀌는 게 비드에 각지게
       // 드러났다(2026-09-21 사진). 휜 각도 1~2도 기준 경유점에서 벗어나는 거리는 0.2~0.4mm 수준이고,
       // 꺾이는 구간이 약 100mm로 늘어나 완만해진다. 가장 짧은 구간(P5->P6 약 186mm)의 절반 이하.
-      const WAYPOINT_BLEND_MM = 50;
+      // v1.1.199: 아크 트래킹이 걸리는 배치에서만 블렌드를 끈다(-1).
+      // 2026-09-29 v1.1.198 실측: 트래킹 ON + blendR=50에서 로봇이 시작점에 멈춘 채
+      // 10.7초 뒤 MoveL code=-4(XMLRPC 실행 실패)가 나고 컨트롤러 연결이 끊겼다.
+      // 그 시점에는 비상정지도 닿지 않는데, 큐에 이미 들어간 블렌드 이동은 컨트롤러가
+      // 계속 실행하므로 로봇이 혼자 움직였다. 예전 펜던트 Lua는 용접 이동을 전부
+      // blend -1로 돌렸다. 트래킹 검증 동안만 같은 조건으로 맞춘다.
+      // 트래킹을 끈 평소 운전은 50을 그대로 쓴다(v1.1.170의 경유점 각짐 대책).
+      const batchWeaveCode = getWeaveTypeCode(batchPoints[0].weaving_type ?? null);
+      const batchArcTracking = arcTrackingActive && VERTICAL_WEAVE_CODES.includes(batchWeaveCode);
+      const WAYPOINT_BLEND_MM = batchArcTracking ? -1 : 50;
       const useSpline = sequenceSettings.splineMoveEnabled && batchPoints.length >= 2;
       log_weldingExecution.info(
         'welding.batch',
