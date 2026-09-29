@@ -1,0 +1,17 @@
+﻿v1.1.200
+
+- 아크 트래킹 호출 순서를 벤더 문서대로 되돌린다
+  FR Robot-Welder Arc Tracking User Guide 4.3.1의 예제 프로그램이
+  ArcWeldTraceControl(1) -> ARCStart -> WeaveStart -> Lin -> WeaveEnd -> ARCEnd ->
+  ArcWeldTraceControl(0) 순이다. v1.1.198에서 아크 ON 뒤로 미뤘던 것을 되돌려
+  세 곳 모두 시작점 도착 후 아크 ON 직전에 걸도록 맞춘다.
+  v1.1.197의 수직 위빙 파트 한정 적용과 v1.1.199의 블렌드 해제는 그대로 둔다.
+  문서 예제의 용접 이동도 Lin(...,-1,...)로 블렌드가 없다.
+
+함께 적용할 DB 설정(welding_config, 코드 변경 아님):
+  arc_tracking_left_right = 0
+    문서 1.3.4에 좌우 보정은 직선 궤적 + 대칭 평면 삼각파/사인파 위빙에서만
+    적용된다고 명시돼 있다. 수직 삼각파를 쓰는 지금 조합에는 쓸 수 없다.
+  arc_tracking_t_start_lr = 8, arc_tracking_t_start_ud = 8,
+  arc_tracking_refer_sample_start_ud = 8
+    위빙 1Hz면 4, 2Hz면 8로 두라고 문서에 지정돼 있다. 현재 위빙은 2Hz다.

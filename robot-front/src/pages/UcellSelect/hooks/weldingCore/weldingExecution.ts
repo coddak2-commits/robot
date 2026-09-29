@@ -549,6 +549,11 @@ export async function executeWelding(
     }
     if (stopRef.current) return await handleStopped(0);
     const isStartAtPartEnd = partBoundaryInfo.partEndIndices.includes(startPointIndex);
+    // v1.1.200: 순서를 벤더 문서(FR Robot-Welder Arc Tracking User Guide 4.3.1)에 맞춘다.
+    // 예제 프로그램이 ArcWeldTraceControl(1) -> ARCStart -> WeaveStart -> Lin 순이다.
+    // v1.1.198에서 아크 뒤로 미뤘던 것을 되돌린다. 근거는 추정이었고 문서가 반대였다.
+    // 시작점 도착 후, 아크 ON 직전에 건다.
+    await armArcTracking(firstWeldPoint);
     if (hasWelding && !simMode && !isStartAtPartEnd && !isWeldingTest) {
       const arcOnOk = await safeArcOn(
         firstWeldPoint.weldCurrent!,
@@ -561,11 +566,6 @@ export async function executeWelding(
     if (hasWeaving && weaveTypeCode >= 0 && !isStartAtPartEnd)
       await setupAndStartWeave(firstWeldPoint, firstWeldPoint);
     if (!isStartAtPartEnd) setArcActive?.(true);
-    // v1.1.198: 첫 파트도 아크 ON과 위빙 시작 뒤에 트래킹을 건다.
-    // 트래킹을 켠 두 번의 실패(195 수평: 아크는 붙었으나 정지 / 197 수직: ARCStart
-    // code=76 대기 타임아웃)가 모두 아크보다 먼저 건 상태였다. 뒤로 미룬 조합은
-    // 아직 검증되지 않았다. 두 번째 파트 이후(655행·917행)와 같은 순서가 된다.
-    await armArcTracking(firstWeldPoint);
     await dwellAtPartStart(
       firstWeldPoint,
       hasWelding && !simMode && !isStartAtPartEnd && !isWeldingTest,
@@ -645,6 +645,7 @@ export async function executeWelding(
           if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
             await feedWireAtPartStart(point);
           if (!stopRef.current) {
+            await armArcTracking(point);
             await startPartWelding(
               point,
               firstWeldPoint,
@@ -656,7 +657,6 @@ export async function executeWelding(
             );
             setArcActive?.(true);
             if (hasWelding && !(simMode && !isWeldingTest)) arcMayBeOn = true;
-            await armArcTracking(point);
             await dwellAtPartStart(point, hasWelding && !(simMode && !isWeldingTest));
           }
           const ptSegIdx = i - 1;
@@ -907,6 +907,7 @@ export async function executeWelding(
         }
         if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
           await feedWireAtPartStart(point);
+        await armArcTracking(point);
         await startPartWelding(
           point,
           firstWeldPoint,
@@ -918,7 +919,6 @@ export async function executeWelding(
         );
         setArcActive?.(true);
         if (hasWelding && !(simMode && !isWeldingTest)) arcMayBeOn = true;
-        await armArcTracking(point);
         await dwellAtPartStart(point, hasWelding && !(simMode && !isWeldingTest));
         const ptSegIdx = i - 1;
         if (ptSegIdx >= 0 && ptSegIdx < segments.length)
