@@ -62,8 +62,17 @@ const PART_START_DWELL_MS: Record<string, number> = {
 // 아크를 켠 직후 10~15mm 는 모재가 차가워 비드가 얇게 깔린다. 그 구간을 용접 속도의
 // 절반으로 지나가 두껍게 채운다. 2026-09-30 모서리 미충전 사진 대응.
 // 수평/수직의 CPM 이 다르므로 고정 시간이 아니라 그 파트의 용접 속도에서 계산한다.
-const PART_START_CREEP_MM = 12;
-const PART_START_CREEP_SPEED_RATIO = 0.5;
+// v1.1.213: 12mm/0.5 -> 5mm/0.7. 아크 트래킹 기준 전류 샘플링과 겹치지 않게 줄인다.
+// welding_config.arc_tracking_refer_sample_start_ud = 8 은 위빙 8주기 뒤부터
+// 기준 전류를 재라는 뜻이고, 2Hz 위빙이면 아크 ON 후 약 4초 지점이다.
+// 12mm/0.5 는 수직 기준 0.23%(1.33mm/s)라 9.0초가 걸려 그 4초를 덮는다.
+// 기어가기 중에는 절반 속도라 용융지와 전류가 정상 주행과 다른데, 하필 그 값이
+// 기준으로 잡히면 남은 용접 내내 그 조건을 쫓게 된다.
+// 5mm/0.7 이면 0.32%(1.86mm/s), 2.7초로 샘플링 시작 전에 끝난다.
+// 거리를 다시 늘리려면 arc_tracking_refer_sample_start_ud 도 같이 밀어야 한다.
+// (2026-09-30 기준 실측 용접 속도: 수직 0.4597%=2.66mm/s, 수평 0.7471%=4.33mm/s)
+const PART_START_CREEP_MM = 5;
+const PART_START_CREEP_SPEED_RATIO = 0.7;
 const SPEED_MM_PER_SEC_PER_PCT = 5.795;
 // robot-core 의 WeldBatch 가 쓰는 환산과 같은 값 (v1.1.130 실측).
 const WELD_BATCH_SPEED_SCALE = 0.431;
