@@ -221,6 +221,56 @@ async function verifyStartGap(
   );
   if (back?.status_code !== 200) throw new Error('시작점 확인 터치 후 복귀 이동 실패');
 }
+// v1.1.212: 횡단 전환 후퇴가 도달 불가로 실패하면 거리를 줄여 다시 시도한다.
+//
+// 2026-09-30 15:59 로그: P1(좌측 상단, z=554)에서 base +X 100mm 후퇴가
+//   MoveL() -> code=112 | 직선이동 실패
+// 로 거부됐다. 그 4ms 뒤 홈 MoveJ 가 나가면서, 물러나지 않은 자리에서 팔이 움직여
+// 와이어가 모재를 스쳤다. 그리고 여기서 예외를 던지는 바람에 용접 사이클도 중단됐다
+// (같은 로그에서 16:01 수동 와이어 작업 -> 16:03 터치센싱 재시작).
+//
+// 그래서 후퇴 거리를 키우면 안 된다. 닿는 거리까지 단계적으로 줄인다.
+// 끝까지 안 되면 경고만 남기고 진행한다. 후퇴 실패가 사이클 중단 사유는 아니다.
+const CROSS_RETRACT_RATIOS = [1, 0.7, 0.45, 0.25];
+const CROSS_RETRACT_MIN_MM = 15;
+async function retreatBaseX(
+  point: TeachingPoint,
+  requestedMm: number,
+  speed: number,
+): Promise<number> {
+  if (!point.tcp || requestedMm <= 0) return 0;
+  for (const ratio of CROSS_RETRACT_RATIOS) {
+    const mm = Math.round(requestedMm * ratio);
+    if (mm < CROSS_RETRACT_MIN_MM) break;
+    let status: number | undefined;
+    let code: unknown;
+    try {
+      const res = await moveToCartesianPosition(
+        point.tcp,
+        speed,
+        100,
+        100,
+        -1,
+        1,
+        [mm, 0, 0, 0, 0, 0],
+        undefined,
+        point.toolNum ?? 3,
+        point.userNum ?? 0,
+        0,
+      );
+      status = res?.status_code;
+      code = res?.result;
+    } catch (error) {
+      code = String(error);
+    }
+    if (status === 200) return mm;
+    log_weldingExecution.warn(
+      'welding.partTransition.retract.retry',
+      `후퇴 ${mm}mm 실패 (status=${status ?? '-'} code=${String(code)}) - 거리를 줄여 재시도`,
+    );
+  }
+  return 0;
+}
 function partWirePlan(point: TeachingPoint): { retractMm: number; feedMm: number } | null {
   const id = (point.id ?? '').toLowerCase();
   const n = parseInt(id.replace(/\D/g, ''), 10);
@@ -835,20 +885,20 @@ export async function executeWelding(
             'welding.partTransition.retract',
             `파트 전환 ①(횡단): ${prevPoint.name} base +X ${crossRetract}mm 후퇴 -> 홈 경유`,
           );
-          const retractResult = await moveToCartesianPosition(
-            prevPoint.tcp,
-            transitionSpeed,
-            100,
-            100,
-            -1,
-            1,
-            [crossRetract, 0, 0, 0, 0, 0],
-            undefined,
-            prevPoint.toolNum ?? 3,
-            prevPoint.userNum ?? 0,
-            0,
-          );
-          if (retractResult?.status_code !== 200) throw new Error('파트 전환(횡단) 후퇴 이동 실패');
+          // v1.1.212: 도달 불가면 거리를 줄여 재시도한다. 위 retreatBaseX 주석 참고.
+          const retractedMm = await retreatBaseX(prevPoint, crossRetract, transitionSpeed);
+          if (retractedMm === 0) {
+            log_weldingExecution.warn(
+              'welding.partTransition.retract.none',
+              `파트 전환(횡단): ${prevPoint.name} 후퇴 실패 - 그 자리에서 홈으로 간다. `
+              + `와이어가 모재에 닿을 수 있으니 티칭 자세를 확인할 것`,
+            );
+          } else if (retractedMm !== crossRetract) {
+            log_weldingExecution.info(
+              'welding.partTransition.retract.reduced',
+              `파트 전환(횡단): ${prevPoint.name} 후퇴 ${crossRetract}mm -> ${retractedMm}mm 로 축소 적용`,
+            );
+          }
           if (homePoint?.joints && !stopRef.current) {
             const homeResult = await moveToJointWithStopCheck(
               homePoint.joints,
