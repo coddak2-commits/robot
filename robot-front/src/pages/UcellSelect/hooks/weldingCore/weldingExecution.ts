@@ -55,8 +55,18 @@ const PART_START_DWELL_MS: Record<string, number> = {
 // 속도 모델: 실제 이동속도 = 5.795mm/s x 명령% (v1.1.130에서 실측 확인).
 // 거리를 키우거나 체류 시간을 줄이면 명령%가 올라간다. 컨트롤러가 저속을 거부하면
 // 이 값을 키울 것. 이동이 실패하면 예전처럼 제자리 정지로 대체한다.
-const PART_START_CREEP_MM = 3;
+// v1.1.211: 거리 3 -> 12mm, 속도를 '체류시간으로 역산'에서 '용접 속도 대비 비율'로 바꾼다.
+// 이전 값은 3mm / 500ms = 6.0mm/s 인데 명령 1%가 5.795mm/s 라, 저속 이동이 아니라
+// 사실상 용접 속도 그대로였다. 프런트에서 속도를 Math.round 로 정수화하고 1% 하한을
+// 걸어둔 탓이다(robot-core의 clampMotionPercent 는 0.1%까지 받는다).
+// 아크를 켠 직후 10~15mm 는 모재가 차가워 비드가 얇게 깔린다. 그 구간을 용접 속도의
+// 절반으로 지나가 두껍게 채운다. 2026-09-30 모서리 미충전 사진 대응.
+// 수평/수직의 CPM 이 다르므로 고정 시간이 아니라 그 파트의 용접 속도에서 계산한다.
+const PART_START_CREEP_MM = 12;
+const PART_START_CREEP_SPEED_RATIO = 0.5;
 const SPEED_MM_PER_SEC_PER_PCT = 5.795;
+// robot-core 의 WeldBatch 가 쓰는 환산과 같은 값 (v1.1.130 실측).
+const WELD_BATCH_SPEED_SCALE = 0.431;
 async function dwellAtPartStart(
   point: TeachingPoint,
   nextPoint: TeachingPoint | undefined,
@@ -113,11 +123,20 @@ async function dwellAtPartStart(
     0,
     0,
   ];
-  const mmPerSec = PART_START_CREEP_MM / (ms / 1000);
-  const speedPct = Math.max(1, Math.round(mmPerSec / SPEED_MM_PER_SEC_PER_PCT));
+  // 그 파트의 용접 속도(명령%)를 배치와 같은 식으로 구한 뒤 비율을 곱한다.
+  // 반올림하지 않는다. 정수로 올리면 1%(=5.795mm/s)로 붙어 용접 속도와 같아진다.
+  const rawSpeed = point.moveSpeed ?? 15;
+  const weldPct = (point.velMode ?? 1) === 1
+    ? (rawSpeed / 15) * WELD_BATCH_SPEED_SCALE
+    : rawSpeed;
+  const speedPct = Math.min(100, Math.max(0.1, weldPct * PART_START_CREEP_SPEED_RATIO));
+  const mmPerSec = speedPct * SPEED_MM_PER_SEC_PER_PCT;
+  const creepSec = PART_START_CREEP_MM / mmPerSec;
   log_weldingExecution.info(
     'welding.partStart.dwell',
-    `파트 시작 체류: ${point.name} ${ms}ms (위빙 유지, ${PART_START_CREEP_MM}mm 저속 이동 vel=${speedPct}%)`,
+    `파트 시작 체류: ${point.name} ${PART_START_CREEP_MM}mm 저속 이동 `
+    + `(용접 ${weldPct.toFixed(2)}% x ${PART_START_CREEP_SPEED_RATIO} = ${speedPct.toFixed(2)}%, `
+    + `${mmPerSec.toFixed(2)}mm/s, 약 ${creepSec.toFixed(1)}초)`,
   );
   try {
     const result = await moveToCartesianPosition(
