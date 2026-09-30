@@ -1073,14 +1073,29 @@ export async function executeWelding(
       // 계속 실행하므로 로봇이 혼자 움직였다. 예전 펜던트 Lua는 용접 이동을 전부
       // blend -1로 돌렸다. 트래킹 검증 동안만 같은 조건으로 맞춘다.
       // 트래킹을 끈 평소 운전은 50을 그대로 쓴다(v1.1.170의 경유점 각짐 대책).
+      // v1.1.209: 수평도 블렌드를 끈다(-1). 2026-09-30 15:27 현장 사고.
+      // v1.1.205의 시작점 기어가기(별도 MoveL) 직후 블렌드 이동이 겹쳐 들어가면서
+      // 모션 파이프라인이 물렸다. 로봇은 끝점까지 정상 이동했는데 마지막 MoveL이
+      // 반환되지 않아 아크 OFF가 나가지 못했고, 2분 넘게 제자리 용접했다.
+      // 그 뒤 emergencyStop()=-1 / stopMotion()=-2 로 컨트롤러 연결이 끊겨
+      // 화면 비상정지가 닿지 않았다.
+      // 블렌드 이동만 완료를 기다리지 않고 바로 반환하므로, 앞 이동이 아직
+      // 안 끝난 상태에서 다음 명령이 겹칠 수 있는 경로는 블렌드뿐이다.
+      // 블렌드 -1인 수직(트래킹 ON)은 같은 기어가기로 정상 동작했다.
       const batchWeaveCode = getWeaveTypeCode(batchPoints[0].weaving_type ?? null);
       const batchArcTracking = arcTrackingActive && VERTICAL_WEAVE_CODES.includes(batchWeaveCode);
-      const WAYPOINT_BLEND_MM = batchArcTracking ? -1 : 50;
+      const WAYPOINT_BLEND_MM = -1;
       // v1.1.203: 아크 트래킹이 걸리는 배치는 중간 경유점을 지나지 않고
       // 끝점까지 단일 MoveL로 간다(per_point=false). 중간점에서 방향이 꺾여
       // 비드 모양이 바뀌던 문제를 없앤다. 모재가 휘어 생기는 편차는 트래킹이 잡는다.
       // v1.1.149~166이 쓰던 경로와 같다. 끝점의 터치 보정만 적용된다.
-      const useWaypoints = !batchArcTracking;
+      // v1.1.209: 수평도 끝점 단일 이동으로 통일한다.
+      // 블렌드를 -1로 두고 경유점을 유지하면 경유점마다 정지·출발이라 열이 몰린다.
+      // 수평 U셀의 휨은 2026-09-30 15:26 터치 실측으로 약 1.1mm였다
+      // (426mm 구간, contact 절대좌표 기준 x 0.81mm / z 0.72mm). 위빙 폭 안이다.
+      // 수평은 위빙이 평면 삼각파(코드 0)라 좌우 보정 조건에 안 맞아 트래킹을 못 켠다.
+      // 즉 중간 편차를 잡아주는 것이 없으므로, 휨이 커지면 이 판단을 다시 봐야 한다.
+      const useWaypoints = false;
       const useSpline = sequenceSettings.splineMoveEnabled && batchPoints.length >= 2;
       log_weldingExecution.info(
         'welding.batch',
@@ -1088,7 +1103,7 @@ export async function executeWelding(
           ? `Spline move: ${batchPoints.length}포인트 (type=${sequenceSettings.splineType}, avgTime=${sequenceSettings.splineAverageTime}ms)`
           : useWaypoints
             ? `Batch MoveL: ${batchPoints.length}포인트 → 경유점 방식 (블렌드 ${WAYPOINT_BLEND_MM}mm)`
-            : `Batch MoveL: ${batchPoints.length}포인트 → 끝점 단일 이동 (아크 트래킹 적용)`,
+            : `Batch MoveL: ${batchPoints.length}포인트 → 끝점 단일 이동 (아크 트래킹 ${batchArcTracking ? 'ON' : 'OFF'})`,
         {
           indices: batchIndices.map(idx => weldingPoints[idx].id),
         },
