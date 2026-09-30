@@ -68,6 +68,20 @@ async function dwellAtPartStart(
   const holdStill = async () => {
     await new Promise(resolve => setTimeout(resolve, ms));
   };
+  // v1.1.210: 기어가기는 수직에서만 쓴다. 수평(P4/P10)은 v1.1.204처럼 제자리 정지로
+  // 되돌린다. 2026-09-30 15:27 사고에서 기어가기가 수평 블렌드 이동과 겹쳐 모션이
+  // 물렸다. v1.1.209에서 수평 블렌드를 없애 조건 자체는 사라졌지만, 시작점에 MoveL을
+  // 하나 더 얹는 구조를 검증된 쪽(수직)에만 남긴다. 수직은 같은 기어가기로 정상
+  // 동작이 확인된 상태다(2026-09-30 현장).
+  const pointNum = parseInt((point.id ?? '').replace(/\D/g, ''), 10);
+  if (!VERTICAL_POINT_NUMBERS.includes(pointNum)) {
+    log_weldingExecution.info(
+      'welding.partStart.dwell',
+      `파트 시작 체류: ${point.name} ${ms}ms (수평 - 제자리 정지)`,
+    );
+    await holdStill();
+    return;
+  }
   // 보정을 빌려 쓴 포인트(자기 touchOffset이 없는 경우)는 여기서 절대좌표를 다시 만들면
   // 도착 때와 다른 자리로 튈 수 있다. 그럴 때는 기어가지 않고 그냥 멈춘다.
   if (!point.tcp || !nextPoint?.tcp || !point.touchOffset) {
