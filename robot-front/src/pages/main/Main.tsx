@@ -23,20 +23,20 @@ const Main: React.FC = () => {
       color: 'from-sky-500 to-indigo-500',
     },
     {
-      id: 'dashboard',
-      label: '대시보드',
-      eng: 'Dashboard',
-      icon: LayoutDashboard,
-      path: '/dashboard',
-      color: 'from-cyan-500 to-blue-500',
-    },
-    {
       id: 'cell-selection',
       label: '용접부 선택',
       eng: 'Cell Selection',
       icon: Target,
       path: '/cell-selection',
       color: 'from-orange-500 to-red-500',
+    },
+    {
+      id: 'dashboard',
+      label: '대시보드',
+      eng: 'Dashboard',
+      icon: LayoutDashboard,
+      path: '/dashboard',
+      color: 'from-cyan-500 to-blue-500',
     },
     {
       id: 'jobs',
