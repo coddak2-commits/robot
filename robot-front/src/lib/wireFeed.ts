@@ -29,8 +29,17 @@ export type WireDirection = 'forward' | 'reverse';
 //   밀기   5mm 요청 → +7mm(953ms), 25mm 요청 → +26mm(3484ms)  => 지연 20ms, 7.5mm/s
 //   당기기 5mm 요청 → -4mm(392ms), 25mm 요청 → -21mm(1119ms)  => 지연 220ms, 23.4mm/s
 // 1mm처럼 짧은 값은 양방향 모두 ±1mm 수준이 한계다.
+//
+// v1.1.208 밀기 재보정 (2026-09-30, 현장 반복 실측).
+// 160 값(지연 20ms, 7.5mm/s)으로 요청 5mm→실제 2.5mm, 요청 25mm→실제 20mm.
+// 해당 명령 시간은 687ms와 3353ms이므로,
+//   속도 = (20 - 2.5)mm / (3353 - 687)ms = 6.56mm/s
+//   지연 = 687ms - (2.5 / 6.56)*1000 = 306ms
+// 160 때는 과송급이었는데 지금은 부족하다. 송급 롤러 압력·라이너·스풀이 바뀌면
+// 다시 틀어진다는 뜻이므로, 값이 안 맞으면 같은 방식으로 두 점 재실측한다.
+// 당기기는 이번에 재지 않아 160 값 그대로 둔다.
 export const WIRE_FEED_PROFILE: Record<WireDirection, { deadTimeMs: number; speedMmPerSec: number }> = {
-  forward: { deadTimeMs: 20, speedMmPerSec: 7.5 },
+  forward: { deadTimeMs: 306, speedMmPerSec: 6.56 },
   reverse: { deadTimeMs: 220, speedMmPerSec: 23.4 },
 };
 
