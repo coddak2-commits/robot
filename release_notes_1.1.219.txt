@@ -1,0 +1,84 @@
+﻿v1.1.219 - 종단 크레이터(파임) 채움: 아크 OFF 전류 다운슬로프
+
+■ 문제
+2026-10-01 수직 용접 종단 사진에 구멍 같은 파임이 남았다.
+크레이터 파이프다. 아크 OFF 시퀀스가 그 모양을 그대로 만든다.
+
+  v1.1.218 아크 OFF
+    1. 용접 전류 그대로 500ms 대기   <- 제자리에서 용융지가 커진다
+    2. ArcEnd
+    3. 번백 500ms
+    4. 전류/전압 0
+
+마지막 지점에 멈춘 채로 큰 용융지를 만들고 전류를 한 번에 끊는다.
+용융지가 통째로 굳으면서 수축이 한곳에 모이므로 중앙이 빨려 들어간다.
+
+■ 수정
+전류를 끊기 전에 단계적으로 내린다. 용융지가 줄어들면서 굳으므로
+수축이 한곳에 모이지 않고 파임이 스스로 메워진다.
+
+  v1.1.219 아크 OFF
+    1. 전류 다운슬로프 900ms (5단계)  <- 크레이터 채움
+    2. ArcEnd
+    3. 전류를 원래 값으로 복원         <- 추가
+    4. 번백 500ms
+    5. 전류/전압 0
+
+3번이 핵심이다. 전류를 내린 채로 번백이 돌면 와이어 끝이 덜 타서
+스틱아웃이 길어지고 다음 파트 재점화가 불안해진다. ArcEnd 직후에
+원래 값으로 되돌리면 번백 구간은 v1.1.218과 완전히 같아진다.
+
+■ 값
+robot-front/src/lib/robotApi/index.ts
+
+  CRATER_FILL_MS              900ms
+  CRATER_FILL_STEPS           5단계 (단계마다 180ms)
+  CRATER_END_CURRENT_RATIO    0.55
+  CRATER_END_VOLTAGE_RATIO    0.85
+
+160A / 20V 조건이면 이렇게 내려간다.
+
+  단계   전류     전압
+   1    146A   19.4V
+   2    131A   18.8V
+   3    117A   18.2V
+   4    102A   17.6V
+   5     88A   17.0V
+
+전압을 전류만큼 내리지 않는 이유는 아크 길이다. 전류만 반으로
+떨어뜨리면 아크가 길어져 와이어 끝이 들려 버린다. 시너직 기계가
+하는 비율에 맞춰 전압은 15%만 내린다.
+
+■ 적용 범위
+파트마다 끝날 때(p6, p1, p12, p7)와 전체 작업이 끝날 때 모두 적용된다.
+
+중단/비상 경로(handleStopped, emergencyWeldingShutdown 폴백)에는
+일부러 넣지 않았다. 아크를 1초 더 켜둘 이유가 없다.
+
+■ 파일
+robot-core/src/robot_core_all.cpp
+  /welding/arc/off 에 crater_current / crater_end_current /
+  crater_voltage / crater_end_voltage / crater_fill_ms / crater_steps
+  파라미터 추가. 안 보내면 v1.1.218과 같은 경로(전류 유지 500ms)로 간다.
+  로그: ArcOff CRATER_FILL, ArcOff BURNBACK_RESTORE
+
+robot-front/src/lib/robotApi/index.ts
+  CraterFillOptions, buildCraterFill, arcOff 5번째 인자
+
+robot-front/src/pages/UcellSelect/hooks/weldingCore/weaveHelpers.ts
+  safeArcOff / endPartWelding 에 용접 전류/전압 인자 추가
+
+robot-front/src/pages/UcellSelect/hooks/weldingCore/weldingExecution.ts
+  파트 전환과 전체 종료 두 곳에서 해당 파트의 조건을 넘긴다
+
+■ 동작 변화
+파트마다 아크 OFF 가 400ms 늘어난다 (500ms -> 900ms).
+4파트면 작업 전체가 1.6초 늘어난다.
+
+■ 확인할 것
+  종단 파임이 사라졌는지
+  와이어 스틱아웃이 v1.1.218과 같은지 (번백 복원이 먹는지)
+  로그에 ArcOff CRATER_FILL 과 BURNBACK_RESTORE 가 찍히는지
+
+파임이 덜 메워지면 CRATER_FILL_MS 를 늘리고, 종단 비드가 두꺼워지면
+CRATER_END_CURRENT_RATIO 를 내린다.

@@ -1297,7 +1297,48 @@ export const arcOn = async (
     throw error;
   }
 };
-export const arcOff = async (ioType = 0, arcNum = 0, timeout = 1000, gasPostFlowMs = 500) => {
+// v1.1.219: 크레이터 채움(전류 다운슬로프) 파라미터.
+// 아크를 끄기 직전에 전류를 crater_fill_ms 동안 crater_steps 단계로
+// crater_current -> crater_end_current 까지 내린다. 용융지가 줄어들면서
+// 굳으므로 종단에 파임이 남지 않는다. robot-core는 ArcEnd 직후 전류를
+// crater_current로 되돌려 번백 구간을 v1.1.218과 같게 유지한다.
+// 이 값을 안 보내면 robot-core는 예전 경로(전류 유지 500ms)로 동작한다.
+export interface CraterFillOptions {
+  crater_current: number;
+  crater_end_current: number;
+  crater_voltage?: number;
+  crater_end_voltage?: number;
+  crater_fill_ms: number;
+  crater_steps: number;
+}
+export const CRATER_FILL_MS = 900;
+export const CRATER_FILL_STEPS = 5;
+export const CRATER_END_CURRENT_RATIO = 0.55;
+export const CRATER_END_VOLTAGE_RATIO = 0.85;
+export const buildCraterFill = (
+  weldCurrent?: number | null,
+  weldVoltage?: number | null,
+): CraterFillOptions | undefined => {
+  if (!weldCurrent || weldCurrent <= 0) return undefined;
+  const options: CraterFillOptions = {
+    crater_current: Math.round(weldCurrent),
+    crater_end_current: Math.max(1, Math.round(weldCurrent * CRATER_END_CURRENT_RATIO)),
+    crater_fill_ms: CRATER_FILL_MS,
+    crater_steps: CRATER_FILL_STEPS,
+  };
+  if (weldVoltage && weldVoltage > 0) {
+    options.crater_voltage = Math.round(weldVoltage * 10) / 10;
+    options.crater_end_voltage = Math.round(weldVoltage * CRATER_END_VOLTAGE_RATIO * 10) / 10;
+  }
+  return options;
+};
+export const arcOff = async (
+  ioType = 0,
+  arcNum = 0,
+  timeout = 1000,
+  gasPostFlowMs = 500,
+  craterFill?: CraterFillOptions,
+) => {
   try {
     const response = await api.post(
       '/welding/arc/off',
@@ -1306,6 +1347,7 @@ export const arcOff = async (ioType = 0, arcNum = 0, timeout = 1000, gasPostFlow
         arc_num: arcNum,
         timeout,
         gas_post_flow_ms: gasPostFlowMs,
+        ...(craterFill ?? {}),
       },
       {
         timeout: 10000,

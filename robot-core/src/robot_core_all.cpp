@@ -4479,9 +4479,74 @@ void registerWeldingConfigRoutes(
                     << " timeout=" << timeout << " gasPostFlow=" << gasPostFlowMs << "ms";
                 dbService->logDebug("ArcOff", "SEQUENCE_START", oss.str());
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            // v1.1.219: 마무리 크레이터 채움(전류 다운슬로프).
+            // v1.1.218까지는 용접 전류를 그대로 500ms 유지한 뒤 ArcEnd를 쳤다.
+            // 마지막 지점에 멈춘 채 큰 용융지를 만들고 전류를 한 번에 끊으므로
+            // 응고 수축이 한곳에 모여 파임(크레이터 파이프)이 남는다.
+            // 2026-10-01 수직 종단 사진에서 확인한 것이 그것이다.
+            // 전류를 단계적으로 내리면 용융지가 줄어들면서 굳어 그 파임을 스스로 메운다.
+            // 프론트가 crater_current를 안 보내면 v1.1.218과 완전히 같은 경로로 간다.
+            // 중단/비상 경로는 일부러 안 보낸다. 아크를 1초 더 살려둘 이유가 없다.
+            float craterCurrent = body.value("crater_current", 0.0f);
+            float craterEndCurrent = body.value("crater_end_current", 0.0f);
+            float craterVoltage = body.value("crater_voltage", 0.0f);
+            float craterEndVoltage = body.value("crater_end_voltage", 0.0f);
+            int craterFillMs = body.value("crater_fill_ms", 0);
+            int craterSteps = body.value("crater_steps", 5);
+            bool craterFillOn = (craterCurrent > 0.0f && craterEndCurrent > 0.0f
+                                 && craterFillMs > 0 && craterSteps > 0);
+            if (craterFillOn) {
+                if (craterSteps > 20) craterSteps = 20;
+                if (craterEndCurrent > craterCurrent) craterEndCurrent = craterCurrent;
+                int stepMs = craterFillMs / craterSteps;
+                if (stepMs < 20) stepMs = 20;
+                std::ostringstream craterOss;
+                craterOss << std::fixed << std::setprecision(1)
+                          << "current=" << craterCurrent << "->" << craterEndCurrent
+                          << "A voltage=" << craterVoltage << "->" << craterEndVoltage
+                          << "V steps=" << craterSteps << " stepMs=" << stepMs;
+                FLOG_INFO("WeldingConfig", "ArcOff crater fill: " + craterOss.str());
+                if (dbService && dbService->isConnected()) {
+                    dbService->logDebug("ArcOff", "CRATER_FILL", craterOss.str());
+                }
+                for (int step = 1; step <= craterSteps; ++step) {
+                    float ratio = static_cast<float>(step) / static_cast<float>(craterSteps);
+                    float stepCurrent = craterCurrent + (craterEndCurrent - craterCurrent) * ratio;
+                    int stepCurrentResult = robotService.setWeldingCurrent(ioType, stepCurrent, 1, 0);
+                    if (stepCurrentResult != 0) {
+                        FLOG_SDK_ERROR("setWeldingCurrent", stepCurrentResult, "crater fill step=" + std::to_string(step));
+                        break;
+                    }
+                    if (craterVoltage > 0.0f && craterEndVoltage > 0.0f) {
+                        float stepVoltage = craterVoltage + (craterEndVoltage - craterVoltage) * ratio;
+                        int stepVoltageResult = robotService.setWeldingVoltage(ioType, stepVoltage, 0, 0);
+                        if (stepVoltageResult != 0) {
+                            FLOG_SDK_ERROR("setWeldingVoltage", stepVoltageResult, "crater fill step=" + std::to_string(step));
+                            break;
+                        }
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(stepMs));
+                }
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
             int resultArc = robotService.arcEnd(ioType, arcNum, timeout);
             g_arcActive.store(false);
+            // 번백 구간은 v1.1.218과 같은 조건이어야 한다. 전류를 내린 채
+            // 번백을 돌리면 와이어 끝이 덜 타서 스틱아웃이 길어지고
+            // 다음 파트 재점화가 불안해진다. 그래서 ArcEnd 직후에
+            // 원래 전류/전압으로 되돌린다.
+            if (craterFillOn) {
+                int restoreCurrentResult = robotService.setWeldingCurrent(ioType, craterCurrent, 1, 0);
+                int restoreVoltageResult = 0;
+                if (craterVoltage > 0.0f) {
+                    restoreVoltageResult = robotService.setWeldingVoltage(ioType, craterVoltage, 0, 0);
+                }
+                FLOG_INFO("WeldingConfig", "ArcOff burnback level restored: current_result=" + std::to_string(restoreCurrentResult) + " voltage_result=" + std::to_string(restoreVoltageResult));
+                if (dbService && dbService->isConnected()) {
+                    dbService->logDebug("ArcOff", "BURNBACK_RESTORE", "current_result=" + std::to_string(restoreCurrentResult) + " voltage_result=" + std::to_string(restoreVoltageResult));
+                }
+            }
             if (dbService && dbService->isConnected()) {
                 dbService->logDebug("ArcOff", "ARC_END", "result=" + std::to_string(resultArc));
             }
@@ -7068,7 +7133,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.218"
+#define APP_VERSION_STRING "1.1.219"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

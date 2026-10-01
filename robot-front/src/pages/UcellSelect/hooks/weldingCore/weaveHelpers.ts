@@ -1,5 +1,5 @@
 import { TeachingPoint } from '../..';
-import { endWeave, setWeaveParams, startWeave, arcOn, arcOff, isApiSuccess, markArcOff } from '../../../../lib';
+import { endWeave, setWeaveParams, startWeave, arcOn, arcOff, isApiSuccess, markArcOff, buildCraterFill } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { getWeaveTypeCode } from './moveStopCheck';
@@ -92,9 +92,15 @@ export async function safeArcOn(
     return false;
   }
 }
-export async function safeArcOff(gasPostFlowMs: number): Promise<void> {
+// v1.1.219: weldCurrent를 넘기면 아크를 끄기 직전에 전류 다운슬로프로 크레이터를
+// 채운다. 중단/비상 경로는 넘기지 않는다 — 아크를 1초 더 켜둘 이유가 없다.
+export async function safeArcOff(
+  gasPostFlowMs: number,
+  weldCurrent?: number | null,
+  weldVoltage?: number | null,
+): Promise<void> {
   try {
-    await arcOff(0, 0, 1000, gasPostFlowMs);
+    await arcOff(0, 0, 1000, gasPostFlowMs, buildCraterFill(weldCurrent, weldVoltage));
     // v1.1.218: 수동 송급 프로파일(식은/뜨거운) 선택에 쓸 시각만 남긴다.
     markArcOff();
     log_weaveHelpers.info('safeArcOff', '아크 OFF 완료');
@@ -107,7 +113,9 @@ export async function endPartWelding(
   hasWelding: boolean,
   simMode: boolean,
   gasPostFlowMs: number,
-  weaveTypeCode: number
+  weaveTypeCode: number,
+  weldCurrent?: number | null,
+  weldVoltage?: number | null,
 ): Promise<void> {
   log_weaveHelpers.info('endPartWelding', '파트 용접 종료 시작');
   if (hasWeaving && weaveTypeCode >= 0) {
@@ -115,7 +123,7 @@ export async function endPartWelding(
     await new Promise(resolve => setTimeout(resolve, 300));
   }
   if (hasWelding && !simMode) {
-    await safeArcOff(gasPostFlowMs);
+    await safeArcOff(gasPostFlowMs, weldCurrent, weldVoltage);
   }
   log_weaveHelpers.info('endPartWelding.done', '파트 용접 종료 완료');
 }

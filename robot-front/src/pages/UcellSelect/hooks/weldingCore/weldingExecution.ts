@@ -1,5 +1,5 @@
 import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo } from '../..';
-import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, findDx, pulseWireFeedMs, wireFeedDurationMs, WireDirection, splineMove, markArcOff } from '../../../../lib';
+import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, findDx, pulseWireFeedMs, wireFeedDurationMs, WireDirection, splineMove, markArcOff, buildCraterFill } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { setWeldingPartOrder } from '../..';
@@ -830,6 +830,9 @@ export async function executeWelding(
           simMode && !isWeldingTest,
           safetySettings.gasPostFlowTime,
           weaveTypeCode,
+          // v1.1.219: 방금 끝낸 파트의 용접 조건으로 크레이터를 채운다.
+          weldingPoints[i - 1]?.weldCurrent ?? firstWeldPoint?.weldCurrent,
+          weldingPoints[i - 1]?.weldVoltage ?? firstWeldPoint?.weldVoltage,
         );
         arcMayBeOn = false;
         // v1.1.201: 파트 종료 직후 트래킹을 끈다. 문서 4.3.1 예제와 예전 Lua 모두
@@ -1330,7 +1333,18 @@ export async function executeWelding(
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     if (hasWelding && !simMode && !isWeldingTest) {
-      await arcOff(0, 0, 1000, safetySettings.gasPostFlowTime);
+      // v1.1.219: 마지막 파트도 전류 다운슬로프로 크레이터를 채운다.
+      const lastPt = weldingPoints[weldingPoints.length - 1];
+      await arcOff(
+        0,
+        0,
+        1000,
+        safetySettings.gasPostFlowTime,
+        buildCraterFill(
+          lastPt?.weldCurrent ?? firstWeldPoint?.weldCurrent,
+          lastPt?.weldVoltage ?? firstWeldPoint?.weldVoltage,
+        ),
+      );
       markArcOff();  // v1.1.218: 수동 송급 프로파일 선택용 시각
     }
     arcMayBeOn = false;
