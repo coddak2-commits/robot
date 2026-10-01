@@ -242,15 +242,33 @@ async function verifyStartGap(
 // 끝까지 안 되면 경고만 남기고 진행한다. 후퇴 실패가 사이클 중단 사유는 아니다.
 const CROSS_RETRACT_RATIOS = [1, 0.7, 0.45, 0.25];
 const CROSS_RETRACT_MIN_MM = 15;
+// v1.1.214: 한 번 성공한 거리를 포인트별로 기억해 다음 사이클부터 바로 쓴다.
+// 도달 가능 여부는 그 포인트의 자세가 정하는 값이라 사이클마다 달라지지 않는다.
+// 기억이 없으면 종전처럼 큰 거리부터 시도한다. 성공만 기억하고 실패는 안 남긴다
+// (티칭을 고치면 다시 늘어날 수 있어야 한다). 새로고침하면 초기화된다.
+const crossRetractLearnedMm = new Map<string, number>();
 async function retreatBaseX(
   point: TeachingPoint,
   requestedMm: number,
   speed: number,
 ): Promise<number> {
   if (!point.tcp || requestedMm <= 0) return 0;
-  for (const ratio of CROSS_RETRACT_RATIOS) {
-    const mm = Math.round(requestedMm * ratio);
-    if (mm < CROSS_RETRACT_MIN_MM) break;
+  const key = point.id ?? point.name ?? '';
+  const learned = crossRetractLearnedMm.get(key);
+  const candidates = CROSS_RETRACT_RATIOS
+    .map(ratio => Math.round(requestedMm * ratio))
+    .filter(mm => mm >= CROSS_RETRACT_MIN_MM);
+  const narrowed = learned === undefined
+    ? candidates
+    : candidates.filter(mm => mm <= learned);
+  const tryList = narrowed.length > 0 ? narrowed : candidates;
+  if (learned !== undefined && tryList[0] !== candidates[0]) {
+    log_weldingExecution.info(
+      'welding.partTransition.retract.learned',
+      `${key} 이전에 성공한 후퇴 ${learned}mm 부터 시도`,
+    );
+  }
+  for (const mm of tryList) {
     let status: number | undefined;
     let code: unknown;
     try {
@@ -272,7 +290,10 @@ async function retreatBaseX(
     } catch (error) {
       code = String(error);
     }
-    if (status === 200) return mm;
+    if (status === 200) {
+      crossRetractLearnedMm.set(key, mm);
+      return mm;
+    }
     log_weldingExecution.warn(
       'welding.partTransition.retract.retry',
       `후퇴 ${mm}mm 실패 (status=${status ?? '-'} code=${String(code)}) - 거리를 줄여 재시도`,
