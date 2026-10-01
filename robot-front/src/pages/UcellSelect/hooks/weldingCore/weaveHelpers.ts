@@ -1,5 +1,5 @@
 import { TeachingPoint } from '../..';
-import { endWeave, setWeaveParams, startWeave, arcOn, arcOff, isApiSuccess } from '../../../../lib';
+import { endWeave, setWeaveParams, startWeave, arcOn, arcOff, isApiSuccess, markArcOff } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { getWeaveTypeCode } from './moveStopCheck';
@@ -95,6 +95,8 @@ export async function safeArcOn(
 export async function safeArcOff(gasPostFlowMs: number): Promise<void> {
   try {
     await arcOff(0, 0, 1000, gasPostFlowMs);
+    // v1.1.218: 수동 송급 프로파일(식은/뜨거운) 선택에 쓸 시각만 남긴다.
+    markArcOff();
     log_weaveHelpers.info('safeArcOff', '아크 OFF 완료');
   } catch (error) {
     log_weaveHelpers.warn('safeArcOff.error', '아크 OFF 오류 (무시됨)', { error: String(error) });

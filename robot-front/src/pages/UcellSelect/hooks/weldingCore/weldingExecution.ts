@@ -1,5 +1,5 @@
 import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo } from '../..';
-import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, findDx, pulseWireFeedMs, wireFeedDurationMs, WireDirection, splineMove } from '../../../../lib';
+import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, findDx, pulseWireFeedMs, wireFeedDurationMs, WireDirection, splineMove, markArcOff } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { setWeldingPartOrder } from '../..';
@@ -1329,8 +1329,10 @@ export async function executeWelding(
       await endWeave();
       await new Promise(resolve => setTimeout(resolve, 500));
     }
-    if (hasWelding && !simMode && !isWeldingTest)
+    if (hasWelding && !simMode && !isWeldingTest) {
       await arcOff(0, 0, 1000, safetySettings.gasPostFlowTime);
+      markArcOff();  // v1.1.218: 수동 송급 프로파일 선택용 시각
+    }
     arcMayBeOn = false;
     if (arcTrackingActive) await arcTraceControl({ flag: 0 }).catch(() => {});
     if (!stopRef.current) {
@@ -1350,10 +1352,40 @@ export async function executeWelding(
           lastWeldPoint.userNum ?? 0,
           0,
         );
-        if (retreatResult?.status_code !== 200)
-          log_weldingExecution.warn('welding.retract.failed', '최종 후퇴 이동 실패 (용접 자체는 완료됨)', {
-            status: retreatResult?.status_code,
-          });
+        // v1.1.217: 토치축 -Z 100mm 가 거부되면 base +X 로 거리를 줄여가며 다시 시도한다.
+        //
+        // 2026-10-01 15:03 로그: 수직 끝점(P1, z=539.7)에서
+        //   MoveL() -> code=112 | 직선이동 실패
+        // 가 나고 경고만 남긴 채 홈으로 MoveJ 했다. 물러나지 않은 자리에서 팔이
+        // 움직이니 와이어가 모재를 스친다(현장 확인).
+        // 토치축 -Z 100mm 는 2026-09-22 에도 P1 에서 같은 112 로 거부된 방향이다.
+        // P1 에서 실제로 도달하는 것은 base +X 쪽이고, 터치센싱 접근이 매 사이클
+        // 그 자리를 쓴다. v1.1.212 의 파트 전환 후퇴와 같은 사다리를 여기에도 쓴다.
+        //
+        // 토치축 -Z 가 되는 끝점(P7/P12 등)은 종전대로 그쪽을 쓴다. 실패했을 때만
+        // 대체 경로로 넘어간다.
+        if (retreatResult?.status_code !== 200) {
+          log_weldingExecution.warn(
+            'welding.retract.failed',
+            `최종 후퇴(토치축 -Z 100mm) 실패 (status=${retreatResult?.status_code}) - base +X 로 재시도`,
+          );
+          const fallbackMm = await retreatBaseX(
+            lastWeldPoint,
+            sequenceSettings.touchHomeRetractOffset,
+            30,
+          );
+          if (fallbackMm === 0) {
+            log_weldingExecution.warn(
+              'welding.retract.none',
+              `최종 후퇴 실패 - 그 자리에서 홈으로 간다. 와이어가 모재에 닿을 수 있다`,
+            );
+          } else {
+            log_weldingExecution.info(
+              'welding.retract.fallback',
+              `최종 후퇴: base +X ${fallbackMm}mm 적용`,
+            );
+          }
+        }
       }
     }
     if (!stopRef.current && homePoint?.joints) {

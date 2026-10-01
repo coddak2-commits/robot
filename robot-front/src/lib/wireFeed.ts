@@ -38,10 +38,54 @@ export type WireDirection = 'forward' | 'reverse';
 // 160 때는 과송급이었는데 지금은 부족하다. 송급 롤러 압력·라이너·스풀이 바뀌면
 // 다시 틀어진다는 뜻이므로, 값이 안 맞으면 같은 방식으로 두 점 재실측한다.
 // 당기기는 이번에 재지 않아 160 값 그대로 둔다.
-export const WIRE_FEED_PROFILE: Record<WireDirection, { deadTimeMs: number; speedMmPerSec: number }> = {
+//
+// v1.1.218 밀기 프로파일 2개로 분리 (2026-10-01, 현장 실측).
+// 208 값(식은 상태 기준)으로 용접 직후 재보니 요청 5mm→실제 8mm, 25mm→31mm.
+// 해당 명령 시간은 1068ms와 4117ms이므로,
+//   속도 = (31 - 8)mm / (4117 - 1068)ms = 7.54mm/s
+//   지연 = 1068ms - (8 / 7.54)*1000 = 7ms
+// 뜨거우면 라이너 마찰이 줄어 모터가 바로 돌고 더 빨리 나간다.
+// 한 프로파일로는 못 덮는다. 식은 값으로 맞추면 뜨거울 때 25mm가 31mm,
+// 뜨거운 값으로 맞추면 식었을 때 25mm가 20mm로 나온다.
+// 송급에 엔코더가 없어 실제 길이를 되먹임할 방법이 없으므로 상태로 나눈다.
+// 당기기는 두 상태 모두 안 쟀다. 160 값을 양쪽에 그대로 쓴다.
+type WireProfile = Record<WireDirection, { deadTimeMs: number; speedMmPerSec: number }>;
+export const WIRE_FEED_PROFILE_COLD: WireProfile = {
   forward: { deadTimeMs: 306, speedMmPerSec: 6.56 },
   reverse: { deadTimeMs: 220, speedMmPerSec: 23.4 },
 };
+export const WIRE_FEED_PROFILE_HOT: WireProfile = {
+  forward: { deadTimeMs: 7, speedMmPerSec: 7.54 },
+  reverse: { deadTimeMs: 220, speedMmPerSec: 23.4 },
+};
+// 마지막 아크 OFF 로부터 이 시간 안이면 뜨거운 값을 쓴다.
+// 5분은 임의로 잡은 값이다. 실제로 몇 분이면 식는지 확인되면 바꾼다.
+export const WIRE_HOT_WINDOW_MS = 5 * 60 * 1000;
+const ARC_OFF_AT_KEY = 'wire_last_arc_off_at';
+/** 아크를 끌 때 호출한다. 송급 프로파일 선택에만 쓴다. */
+export const markArcOff = (): void => {
+  try {
+    localStorage.setItem(ARC_OFF_AT_KEY, String(Date.now()));
+  } catch {
+    /* 저장 못 해도 식은 값으로 동작한다 */
+  }
+};
+export const isWireHot = (): boolean => {
+  try {
+    const raw = localStorage.getItem(ARC_OFF_AT_KEY);
+    if (!raw) return false;
+    const at = Number(raw);
+    if (!Number.isFinite(at)) return false;
+    const elapsed = Date.now() - at;
+    return elapsed >= 0 && elapsed < WIRE_HOT_WINDOW_MS;
+  } catch {
+    return false;
+  }
+};
+export const getWireFeedProfile = (): WireProfile =>
+  isWireHot() ? WIRE_FEED_PROFILE_HOT : WIRE_FEED_PROFILE_COLD;
+/** 이전 이름 호환. 지금 상태에 맞는 프로파일을 돌려준다. */
+export const WIRE_FEED_PROFILE: WireProfile = WIRE_FEED_PROFILE_COLD;
 
 // 정지 명령이 실패하면 와이어가 계속 송급된다. 반드시 재시도한다.
 export const WIRE_STOP_RETRY_COUNT = 3;
@@ -52,7 +96,7 @@ export const wireFeedDurationMs = (
   direction: WireDirection = 'forward',
 ): number => {
   if (amountMm <= 0) return 0;
-  const { deadTimeMs, speedMmPerSec } = WIRE_FEED_PROFILE[direction];
+  const { deadTimeMs, speedMmPerSec } = getWireFeedProfile()[direction];
   return Math.round(deadTimeMs + (amountMm / speedMmPerSec) * 1000);
 };
 
