@@ -301,6 +301,50 @@ async function retreatBaseX(
   }
   return 0;
 }
+// v1.1.215: 용접 중 화면의 "현재 포인트" 표시를 시간으로 따라가게 한다.
+//
+// 배치 이동은 블로킹 호출 하나라, 시작할 때 첫 포인트를 찍고 끝난 뒤에 나머지를
+// 몰아서 갱신했다. 그래서 수직 200초 내내 중간 포인트로 표시되다가 끝나는 순간
+// 끝 포인트로 건너뛰었다. v1.1.209 에서 경유점을 없애며 배치 하나가 용접부 전체가
+// 되어 더 두드러졌다.
+//
+// 실제 좌표를 읽어서 맞추는 방법은 안 된다. 블로킹 이동 중에는 getState() 가
+// 캐시값을 돌려주므로 ZMQ 로 나가는 위치도 멈춰 있다([AnalogIn] 이 한 값으로
+// 고정되는 것과 같은 이유).
+//
+// 그래서 명령 속도와 포인트 간 거리로 통과 시각을 계산해 타이머로 넘긴다.
+// 표시 전용이고 로봇에 아무것도 보내지 않는다. 추정이므로 트래킹 보정이나
+// 감속으로 실제와 조금 어긋날 수 있고, 속도 오버라이드(default_ovl)는 반영하지
+// 않는다. 정확한 추종이 필요해지면 getState() 락 분리가 전제다.
+function tcpDistanceMm(a: number[], b: number[]): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const dz = b[2] - a[2];
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+function scheduleBatchPointIndex(
+  fromTcp: number[] | null,
+  batchPoints: BatchMovePoint[],
+  batchIndices: number[],
+  weldPct: number,
+  mark: (index: number) => void,
+): () => void {
+  const mmPerSec = weldPct * SPEED_MM_PER_SEC_PER_PCT;
+  if (!fromTcp || !(mmPerSec > 0) || batchPoints.length < 2) return () => {};
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  let acc = 0;
+  let from = fromTcp;
+  for (let k = 0; k < batchPoints.length - 1; k++) {
+    const to = batchPoints[k].tcp;
+    acc += tcpDistanceMm(from, to);
+    from = to;
+    const atMs = (acc / mmPerSec) * 1000;
+    if (!Number.isFinite(atMs) || atMs <= 0) continue;
+    const nextIndex = batchIndices[k + 1];
+    timers.push(setTimeout(() => mark(nextIndex), atMs));
+  }
+  return () => timers.forEach(t => clearTimeout(t));
+}
 function partWirePlan(point: TeachingPoint): { retractMm: number; feedMm: number } | null {
   const id = (point.id ?? '').toLowerCase();
   const n = parseInt(id.replace(/\D/g, ''), 10);
@@ -1221,6 +1265,22 @@ export async function executeWelding(
           indices: batchIndices.map(idx => weldingPoints[idx].id),
         },
       );
+      // v1.1.215: 배치가 도는 동안 화면 표시를 시간으로 넘긴다. 표시 전용이다.
+      const batchFromPoint = i > 0 ? weldingPoints[i - 1] : undefined;
+      const batchFromTcp = batchFromPoint?.tcp
+        ? [batchFromPoint.tcp.x, batchFromPoint.tcp.y, batchFromPoint.tcp.z]
+        : null;
+      const batchRawSpeed = batchPoints[0].speed ?? 15;
+      const batchWeldPct = (batchPoints[0].vel_mode ?? 1) === 1
+        ? (batchRawSpeed / 15) * WELD_BATCH_SPEED_SCALE
+        : batchRawSpeed;
+      const cancelBatchIndexTimers = scheduleBatchPointIndex(
+        batchFromTcp,
+        batchPoints,
+        batchIndices,
+        batchWeldPct,
+        markPointIndex,
+      );
       try {
         const batchResult = useSpline
           ? await splineMove(batchPoints, {
@@ -1253,6 +1313,8 @@ export async function executeWelding(
       } catch (batchError) {
         log_weldingExecution.error('welding.batch.error', 'Batch MoveL 실패', { error: String(batchError) });
         throw batchError;
+      } finally {
+        cancelBatchIndexTimers();
       }
       i += batchPoints.length;
     }
