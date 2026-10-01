@@ -336,16 +336,14 @@ int runService() {
                     " AI1=" + std::to_string(state.cl_analog_input[1]) +
                     " AO0=" + std::to_string(state.cl_analog_output[0]) +
                     " AO1=" + std::to_string(state.cl_analog_output[1]) + " (raw)");
-                // v1.1.207: 상태 패킷의 용접 실측값. AI0/AI1은 가공 안 된 원시값이지만
-                // 이 셋은 SDK가 A/V/mm-s 단위로 채워준다(robot_types.h 408~410행).
-                // weldTrackVel은 이음매 추적 보정 속도다. 한 방향으로 계속 값이 나오면
-                // 아크 트래킹이 한계까지 밀고 있는 것이고, 0 근처를 오가면 수렴 중이다.
-                // 주의: getState()가 블로킹 이동 중에는 캐시값을 돌려주므로(587행)
-                // 구간 내내 같은 값이 찍힌다. 구간이 바뀌는 순간의 값만 신선하다.
-                FLOG_INFO("WeldFeedback",
-                    "current=" + std::to_string(state.weldCurrent) + "A" +
-                    " voltage=" + std::to_string(state.weldVoltage) + "V" +
-                    " trackVel=" + std::to_string(state.weldTrackVel) + "mm/s");
+                // v1.1.207에서 상태 패킷의 weldCurrent/weldVoltage/weldTrackVel을
+                // [WeldFeedback]으로 찍어봤으나, 2026-09-30 로그 전체에서 예외 없이
+                // 0.000000 이었다. 아크 트래킹을 켠 수직 용접 200초 동안에도 0이다.
+                // 이 컨트롤러는 그 세 필드를 채우지 않는다. 용접기와 아날로그 입출력으로
+                // 붙어 있어 컨트롤러가 A/V 단위값을 모르는 것으로 보인다.
+                // 트래킹 동작 여부와는 무관하다. 계산은 컨트롤러 내부에서 아날로그
+                // 입력을 읽어 돌고, 이 필드는 보고용일 뿐이다.
+                // 다시 넣지 말 것. 전류를 보려면 AI0을 암페어로 환산하는 쪽이다. (v1.1.216)
             }
         }
     });
@@ -7070,7 +7068,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.215"
+#define APP_VERSION_STRING "1.1.216"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
