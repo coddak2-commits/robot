@@ -1356,8 +1356,18 @@ export interface CraterFillOptions {
 }
 export const CRATER_FILL_MS = 900;
 export const CRATER_FILL_STEPS = 5;
-export const CRATER_END_CURRENT_RATIO = 0.55;
-export const CRATER_END_VOLTAGE_RATIO = 0.85;
+// [v1.1.226] 0.55/0.85 -> 0.50/0.82 (사용자 요청 2026-10-07).
+// 크레이터를 조금 더 깊게 채우려고 한 단계만 내린다.
+//   수평 290A/32V -> 끝 145A/26.2V (이전 160A/27.2V)
+//   수직 250A/28V -> 끝 125A/23.0V (이전 138A/23.8V)
+// 전류만 내리면 안 된다. 이 용접기는 전류 지령에 송급이 연동되고,
+// 전압을 그대로 두면 전류 대비 아크가 길어져 램프 끝에서 꺼질 수 있다.
+// 전압을 전류만큼 내리지 않는 것(0.50 vs 0.82)은 의도된 것으로, 아크 길이를
+// 유지해 종단에서 아크가 끊기지 않게 하기 위함이다.
+// 더 내릴 때도 한 번에 5%p 씩, 두 값을 같이 내릴 것.
+// 900ms / 5단계(CRATER_FILL_MS, CRATER_FILL_STEPS)는 그대로 둔다.
+export const CRATER_END_CURRENT_RATIO = 0.50;
+export const CRATER_END_VOLTAGE_RATIO = 0.82;
 export const buildCraterFill = (
   weldCurrent?: number | null,
   weldVoltage?: number | null,
