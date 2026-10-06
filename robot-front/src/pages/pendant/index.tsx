@@ -955,7 +955,8 @@ const PendantInner: React.FC = () => {
 
       {/* 우측 세로 용접 실행 도크 */}
       <div style={{
-        position: 'fixed', right: 8, top: '50%', transform: 'translateY(-50%)', zIndex: 20, maxHeight: '96vh', overflowY: 'auto',
+        // [v1.1.223] 우하단 비상 정지 버튼과 겹치지 않도록 높이 상한을 줄였다.
+        position: 'fixed', right: 8, top: '46%', transform: 'translateY(-50%)', zIndex: 20, maxHeight: '72vh', overflowY: 'auto',
         display: 'flex', flexDirection: 'column', gap: 8,
         background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(6px)',
         border: '1px solid #334155', borderRadius: 12, padding: 10, minWidth: 140,
@@ -986,14 +987,24 @@ const PendantInner: React.FC = () => {
             borderRadius: 8, cursor: isWelding || isRobotMoving ? 'not-allowed' : 'pointer',
           }}
         >용접 계속</button>
-        <button onClick={handleGlobalEmergencyStop}
-          style={{
-            padding: '18px', fontSize: 16, fontWeight: 'bold',
-            background: '#dc2626', color: '#fff', border: 'none',
-            borderRadius: 8, cursor: 'pointer',
-          }}
-        >■ 비상 정지</button>
       </div>
+
+      {/* [v1.1.223] 비상 정지를 실행 도크에서 분리해 우하단에 따로 고정한다.
+          도크 안에 있으면 위에 버튼을 하나 추가할 때마다 자리가 한 칸씩 밀린다.
+          실제로 v1.1.220에서 터치센싱 버튼을 추가하면서 약 56px 내려갔고,
+          현장에서 예전 자리를 누르다가 바로 위의 '용접 계속'(용접 중 비활성)을
+          눌러 비상 정지가 안 걸린 적이 있다. 여기 두면 도크에 뭘 더 넣어도
+          자리가 변하지 않고, 도크가 스크롤돼도 항상 화면에 남는다.
+          위치를 옮기거나 다른 버튼을 이 블록 안에 추가하지 말 것. */}
+      <button onClick={handleGlobalEmergencyStop}
+        style={{
+          position: 'fixed', right: 8, bottom: 8, zIndex: 40,
+          minWidth: 160, padding: '22px 18px', fontSize: 18, fontWeight: 'bold',
+          background: '#dc2626', color: '#fff',
+          border: '2px solid #fca5a5', borderRadius: 12,
+          boxShadow: '0 4px 14px rgba(0,0,0,0.5)', cursor: 'pointer',
+        }}
+      >■ 비상 정지</button>
 
       {/* [v1.1.220] 작업 저장 모달 */}
       {saveModalOpen && (
