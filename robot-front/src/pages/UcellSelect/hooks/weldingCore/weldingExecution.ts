@@ -687,11 +687,15 @@ export async function executeWelding(
     if (startFromClosest && closestCenterlineResult) {
       const centerlineTcp = closestCenterlineResult.centerlineTcp;
       const closestTeachingPt = weldingPoints[closestCenterlineResult.closestTeachingPointIndex];
+      // [v1.1.225] 교시 원좌표가 아니라 터치 보정이 적용된 실제 위치와 비교한다.
+      // currentTcp 는 보정된 경로 위에 있으므로 원좌표와 비교하면 보정량만큼
+      // 거리가 부풀어, 바로 그 포인트에 서 있어도 5mm 분기에 안 걸린다.
+      const closestPtOff = closestTeachingPt?.touchOffset;
       const distToTeachingPoint = closestTeachingPt?.tcp
         ? Math.sqrt(
-            Math.pow(currentTcp![0] - closestTeachingPt.tcp.x, 2) +
-              Math.pow(currentTcp![1] - closestTeachingPt.tcp.y, 2) +
-              Math.pow(currentTcp![2] - closestTeachingPt.tcp.z, 2),
+            Math.pow(currentTcp![0] - (closestTeachingPt.tcp.x + (closestPtOff?.dx ?? 0)), 2) +
+              Math.pow(currentTcp![1] - (closestTeachingPt.tcp.y + (closestPtOff?.dy ?? 0)), 2) +
+              Math.pow(currentTcp![2] - (closestTeachingPt.tcp.z + (closestPtOff?.dz ?? 0)), 2),
           )
         : Infinity;
       if (distToTeachingPoint < 5) {
@@ -702,14 +706,25 @@ export async function executeWelding(
       } else {
         const approachSpeed = options?.manualMoveSpeed || 10;
         const { rx, ry, rz } = centerlineTcp;
+        // [v1.1.225] 복귀 이동에도 용접 본체와 같은 터치 보정을 적용한다.
+        // 이전에는 offsetFlag=0, 오프셋 0으로 교시 원좌표에 복귀한 뒤 아크를 켰다.
+        // 용접 배치는 offsetFlag=1 로 보정을 적용하므로, 보정이 큰 작업에서는
+        // 보정량만큼 떨어진 자리에서 아크가 붙어 비드가 비스듬히 들어갔다.
+        // (2026-10-06 현장: 보정 [-12.7, -15.8, 0], 약 20mm 어긋나 불량)
+        const cOff = closestCenterlineResult.centerlineOffset;
+        const hasCenterlineOffset = cOff.dx !== 0 || cOff.dy !== 0 || cOff.dz !== 0;
+        log_weldingExecution.info(
+          'welding.continue.approach',
+          `센터라인 복귀 이동 (보정 ${hasCenterlineOffset ? `[${cOff.dx.toFixed(1)}, ${cOff.dy.toFixed(1)}, ${cOff.dz.toFixed(1)}]` : '없음'})`,
+        );
         const moveLResult = await moveToCartesianPosition(
           { x: centerlineTcp.x, y: centerlineTcp.y, z: centerlineTcp.z, rx, ry, rz },
           approachSpeed,
           100,
           100,
           -1,
-          0,
-          [0, 0, 0, 0, 0, 0],
+          hasCenterlineOffset ? 1 : 0,
+          [cOff.dx, cOff.dy, cOff.dz, 0, 0, 0],
           undefined,
           paramPoint.toolNum ?? 3,
           paramPoint.userNum ?? 0,

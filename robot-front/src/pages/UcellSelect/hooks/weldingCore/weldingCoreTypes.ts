@@ -85,7 +85,11 @@ export interface TouchSensingOptions {
   skipHomeReturn?: boolean;  // 터치센싱 후 자동 홈복귀 스킵 (자동용접 흐름용)
 }
 export interface ClosestCenterlineResult {
+  // 교시 원좌표 기준 센터라인 점. 실제 개선선은 여기에 centerlineOffset 을 더한 자리다.
   centerlineTcp: { x: number; y: number; z: number; rx: number; ry: number; rz: number };
+  // [v1.1.225] 그 지점의 터치 보정값(양 끝 포인트의 touchOffset 을 구간 비율로 보간).
+  // '용접 계속' 복귀 이동에 offsetFlag=1 로 그대로 넘긴다. 보정이 없으면 모두 0.
+  centerlineOffset: { dx: number; dy: number; dz: number };
   segmentStartIndex: number;
   closestTeachingPointIndex: number;
   distance: number;
