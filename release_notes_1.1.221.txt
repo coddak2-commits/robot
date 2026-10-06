@@ -1,0 +1,40 @@
+﻿v1.1.221 - [긴급] 펜던트 Dry Run이 아크를 막지 못하던 버그 수정
+
+■ 증상
+펜던트에서 "Dry Run (아크 OFF)"을 체크하고 "경로 확인 시작"을 눌러도
+실제로 아크가 점화됐다.
+
+■ 원인
+pendant/index.tsx의 startWithGapLookup이 startWelding을 부를 때
+3번째 인자 simMode에 false가 박혀 있었다.
+
+  await startWelding(updated, teachingRobotState, false, ..., {
+    partWeldEnabled,
+    isDryRun: dryRun,      <- 이건 아크를 막지 않는다
+  });
+
+weldingExecution.ts의 아크 점화 조건(798행)은 simMode만 본다.
+
+  if (hasWelding && !simMode && !isStartAtPartEnd && !isWeldingTest) {
+      await safeArcOn(...)
+
+options.isDryRun은 로그 이름(DryRun/시뮬레이션), 경로 추적, 시작 갭 검증,
+결과 operationType 표시에만 쓰이고 아크 점화에는 관여하지 않는다.
+
+UcellSelect는 simulationMode || dryRunMode를 simMode로 넘기고 있었다.
+펜던트 화면만 이 연결이 빠져 있었다.
+
+■ 수정
+pendant/index.tsx
+  startWelding(..., false, ...) -> startWelding(..., dryRun, ...)
+  UcellSelect와 같은 동작이 된다. Dry Run 체크 시 로봇은 경로대로 움직이고
+  아크만 나가지 않는다.
+
+■ 확인 방법
+Dry Run을 체크하고 "경로 확인 시작"을 눌렀을 때
+robot_core 로그에 ArcStart / "Arc ON" 계열 기록이 없어야 한다.
+있으면 아직 아크가 나가는 것이다.
+
+■ 적용 범위
+이 버그는 펜던트 화면(/pendant)에만 있었다. UcellSelect(메인 작업 화면)의
+Dry Run은 영향 없다.

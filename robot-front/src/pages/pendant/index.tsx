@@ -583,7 +583,11 @@ const PendantInner: React.FC = () => {
       const currentJob = jobList.find(j => j.id === currentJobId);
       try {
         const partWeldEnabled = { 0: partEnabled[0], 1: partEnabled[1], 2: partEnabled[2], 3: partEnabled[3] };
-        await startWelding(updated, teachingRobotState, false, currentJobId ?? undefined, currentJob?.name, {
+        // [v1.1.221] 3번째 인자(simMode)에 false가 박혀 있어서 Dry Run을 켜도 아크가 나갔다.
+        // weldingExecution.ts의 아크 점화 조건은 simMode만 본다(798행 hasWelding && !simMode).
+        // options.isDryRun은 로그 이름/경로추적/갭검증에만 쓰이고 아크를 막지 않는다.
+        // UcellSelect는 simulationMode || dryRunMode를 넘기고 있었는데 펜던트만 빠져 있었다.
+        await startWelding(updated, teachingRobotState, dryRun, currentJobId ?? undefined, currentJob?.name, {
           partWeldEnabled,
           isDryRun: dryRun,
         });
