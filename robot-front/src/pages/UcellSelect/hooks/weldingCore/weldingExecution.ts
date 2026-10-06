@@ -44,8 +44,13 @@ const VERTICAL_POINT_NUMBERS = [1, 2, 3, 7, 8, 9];
 // 체류는 파트 시작점에서만 실행되므로, 수직 양끝(P1·P3, P7·P9)을 모두 등록해 두면
 // 파트 순서가 바뀌어도(3-2-1 이든 1-2-3 이든) 실제 시작점 한 곳에서만 걸린다.
 // v1.1.204: 수직 시작 체류를 1000 -> 500ms로 줄인다(사용자 요청). 수평은 1000 유지.
+// [v1.1.224] 수직 시작 체류를 0으로 둔다(사용자 요청 2026-10-06).
+// 0이면 dwellAtPartStart가 바로 반환하므로 제자리 정지도, 기어가기도 하지 않는다.
+// 아크를 켜고 곧바로 배치 이동으로 들어간다. 수평(P4/P10) 1000ms는 그대로다.
+// 되돌리려면 p1/p3/p7/p9 를 500으로 되돌리면 된다(그때는 제자리 정지).
+// 기어가기까지 되살리려면 아래 PART_START_CREEP_ENABLED 도 같이 켤 것.
 const PART_START_DWELL_MS: Record<string, number> = {
-  p1: 500, p3: 500, p7: 500, p9: 500,
+  p1: 0, p3: 0, p7: 0, p9: 0,
   p4: 1000, p10: 1000,
 };
 // v1.1.205: 체류를 '제자리 정지'에서 '아주 짧은 거리를 아주 느리게 이동'으로 바꾼다.
@@ -71,6 +76,14 @@ const PART_START_DWELL_MS: Record<string, number> = {
 // 5mm/0.7 이면 0.32%(1.86mm/s), 2.7초로 샘플링 시작 전에 끝난다.
 // 거리를 다시 늘리려면 arc_tracking_refer_sample_start_ud 도 같이 밀어야 한다.
 // (2026-09-30 기준 실측 용접 속도: 수직 0.4597%=2.66mm/s, 수평 0.7471%=4.33mm/s)
+// [v1.1.224] 기어가기 해제(사용자 요청 2026-10-06).
+// 기어가기는 수직에서만 쓰였는데 위에서 수직 체류를 0으로 뒀으므로 어차피
+// 도달하지 않는다. 체류만 되살리고 기어가기는 끈 상태로 두고 싶을 때를 위해
+// 플래그를 남긴다. 아래 기어가기 코드도 지우지 않고 그대로 둔다.
+// 주의: 정지 상태에서는 위빙 궤적이 안 나온다(2026-09-29 현장 확인).
+// 시작점 위빙이 필요해지면 이 값을 다시 켜고, 그때는 아크 트래킹의
+// arc_tracking_refer_sample_start_ud 와 겹치지 않는지 같이 볼 것.
+const PART_START_CREEP_ENABLED = false;
 const PART_START_CREEP_MM = 5;
 const PART_START_CREEP_SPEED_RATIO = 0.7;
 const SPEED_MM_PER_SEC_PER_PCT = 5.795;
@@ -92,6 +105,14 @@ async function dwellAtPartStart(
   // 물렸다. v1.1.209에서 수평 블렌드를 없애 조건 자체는 사라졌지만, 시작점에 MoveL을
   // 하나 더 얹는 구조를 검증된 쪽(수직)에만 남긴다. 수직은 같은 기어가기로 정상
   // 동작이 확인된 상태다(2026-09-30 현장).
+  if (!PART_START_CREEP_ENABLED) {
+    log_weldingExecution.info(
+      'welding.partStart.dwell',
+      `파트 시작 체류: ${point.name} ${ms}ms (제자리 정지 - 기어가기 해제됨)`,
+    );
+    await holdStill();
+    return;
+  }
   const pointNum = parseInt((point.id ?? '').replace(/\D/g, ''), 10);
   if (!VERTICAL_POINT_NUMBERS.includes(pointNum)) {
     log_weldingExecution.info(
