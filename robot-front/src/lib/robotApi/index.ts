@@ -36,9 +36,19 @@ export const checkRobotConnection = async (): Promise<RobotConnectionStatus> => 
     };
   }
 };
-export const getRealtimeRobotStatus = async (): Promise<RealtimeRobotStatus> => {
+// [v1.1.220] 상태 폴링 요청 공유 + 짧은 타임아웃
+// 헤더 상태표시(components/layout), 교시 폴링(useRobotControl), 경로 추적(usePathTracking),
+// 공구좌표 확인(UcellSelect)이 각자 /robot_sdk/realtime를 폴링한다. 로봇이 느리게 응답하면
+// 이 요청들이 전부 pending으로 쌓여 브라우저 동시 연결(출처당 6개)을 점유하고, 터치센싱이나
+// 이동 명령을 보낼 연결이 남지 않아 작업이 통째로 멈춘다. 2026-10-06 펜던트에서 실제로 발생했다.
+// - STATUS_TIMEOUT_MS: 기본 60초를 쓰면 막힌 요청 하나가 연결을 1분간 붙잡는다.
+// - inFlight 공유: 이미 날아간 요청이 있으면 새로 보내지 않고 같은 응답을 나눠 쓴다.
+//   호출부를 건드리지 않고도 동시 요청 수가 항상 1개로 제한된다.
+const STATUS_TIMEOUT_MS = 4000;
+let realtimeInFlight: Promise<RealtimeRobotStatus> | null = null;
+const fetchRealtimeStatus = async (): Promise<RealtimeRobotStatus> => {
   try {
-    const response = await api.get('/robot_sdk/realtime');
+    const response = await api.get('/robot_sdk/realtime', { timeout: STATUS_TIMEOUT_MS });
     return response.data;
   } catch (error) {
     return {
@@ -48,6 +58,21 @@ export const getRealtimeRobotStatus = async (): Promise<RealtimeRobotStatus> => 
       reason: error instanceof Error ? error.message : '연결 실패',
     };
   }
+};
+export const getRealtimeRobotStatus = async (): Promise<RealtimeRobotStatus> => {
+  if (realtimeInFlight) return realtimeInFlight;
+  const request = fetchRealtimeStatus().then(
+    result => {
+      realtimeInFlight = null;
+      return result;
+    },
+    error => {
+      realtimeInFlight = null;
+      throw error;
+    },
+  );
+  realtimeInFlight = request;
+  return request;
 };
 export const connectRobotSDK = async (ip?: string) => {
   try {
@@ -593,13 +618,31 @@ export const updateRobotSettings = async (settings: Partial<RobotSettingsData>):
     throw error;
   }
 };
-export const getRobotError = async (): Promise<RobotErrorData | null> => {
+// [v1.1.220] 위 realtime과 같은 이유로 요청 공유 + 짧은 타임아웃.
+// 이 엔드포인트는 헤더(components/layout)와 UcellSelect 두 곳에서 각각 폴링한다.
+let robotErrorInFlight: Promise<RobotErrorData | null> | null = null;
+const fetchRobotError = async (): Promise<RobotErrorData | null> => {
   try {
-    const response = await api.get('/robot_sdk/robot/error');
+    const response = await api.get('/robot_sdk/robot/error', { timeout: STATUS_TIMEOUT_MS });
     return response.data.data;
   } catch {
     return null;
   }
+};
+export const getRobotError = async (): Promise<RobotErrorData | null> => {
+  if (robotErrorInFlight) return robotErrorInFlight;
+  const request = fetchRobotError().then(
+    result => {
+      robotErrorInFlight = null;
+      return result;
+    },
+    error => {
+      robotErrorInFlight = null;
+      throw error;
+    },
+  );
+  robotErrorInFlight = request;
+  return request;
 };
 export const resetRobotError = async () => {
   try {

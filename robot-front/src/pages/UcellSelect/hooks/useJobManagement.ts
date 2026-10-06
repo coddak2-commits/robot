@@ -1,6 +1,32 @@
 import { TeachingPoint, DEFAULT_WEAVE_PARAMS } from '..';
-import { TeachingPointData, createTeachingJob, getTeachingJobs, getTeachingJob, deleteTeachingJob, updateTeachingJobName, TeachingJob } from '../../../lib';
+import { TeachingPointData, createTeachingJob, updateTeachingJob, getTeachingJobs, getTeachingJob, deleteTeachingJob, updateTeachingJobName, TeachingJob } from '../../../lib';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+// [v1.1.220] saveJob(새 작업)과 overwriteJob(덮어쓰기)이 같은 변환을 쓰도록 분리.
+// 둘 중 한쪽만 고쳐서 필드가 어긋나는 일을 막는다.
+const buildPointsData = (savedPoints: TeachingPoint[]): TeachingPointData[] =>
+  savedPoints.map(pt => ({
+    point_id: pt.id,
+    name: pt.name,
+    order: pt.order,
+    tcp_x: pt.tcp?.x ?? 0,
+    tcp_y: pt.tcp?.y ?? 0,
+    tcp_z: pt.tcp?.z ?? 0,
+    tcp_rx: pt.tcp?.rx ?? 0,
+    tcp_ry: pt.tcp?.ry ?? 0,
+    tcp_rz: pt.tcp?.rz ?? 0,
+    joints: pt.joints ?? [],
+    is_saved: true,
+    tool_num: pt.toolNum ?? 0,
+    user_num: pt.userNum ?? 0,
+    move_speed: pt.moveSpeed,
+    vel_mode: pt.velMode ?? 0,
+    weld_voltage: pt.weldVoltage ?? undefined,
+    weld_current: pt.weldCurrent ?? undefined,
+    weaving_type: pt.weavingType ?? undefined,
+    weave_params: pt.weaveParams,
+    gap: pt.gap ?? 0,
+  }));
 
 export interface UseJobManagementReturn {
   jobList: TeachingJob[];
@@ -16,6 +42,9 @@ export interface UseJobManagementReturn {
   setEditingJobName: (name: string) => void;
   fetchJobList: () => Promise<void>;
   saveJob: (teachingPoints: TeachingPoint[], cellType: string, cellId: number, height: number, width: number, jobName?: string) => Promise<boolean>;
+  // [v1.1.220] 기존 작업에 덮어쓰기. saveJob은 항상 새 작업을 만들기 때문에
+  // 펜던트에서 불러온 작업을 고쳐 저장할 방법이 없었다.
+  overwriteJob: (jobId: number, teachingPoints: TeachingPoint[], cellType: string, cellId: number, height: number, width: number, jobName: string) => Promise<boolean>;
   loadJob: (jobId: number) => Promise<{
     points: TeachingPoint[];
     cellType?: string;
@@ -62,28 +91,7 @@ export function useJobManagement(): UseJobManagementReturn {
     }
     setIsSavingJob(true);
     try {
-      const pointsData: TeachingPointData[] = savedPoints.map(pt => ({
-        point_id: pt.id,
-        name: pt.name,
-        order: pt.order,
-        tcp_x: pt.tcp?.x ?? 0,
-        tcp_y: pt.tcp?.y ?? 0,
-        tcp_z: pt.tcp?.z ?? 0,
-        tcp_rx: pt.tcp?.rx ?? 0,
-        tcp_ry: pt.tcp?.ry ?? 0,
-        tcp_rz: pt.tcp?.rz ?? 0,
-        joints: pt.joints ?? [],
-        is_saved: true,
-        tool_num: pt.toolNum ?? 0,
-        user_num: pt.userNum ?? 0,
-        move_speed: pt.moveSpeed,
-        vel_mode: pt.velMode ?? 0,
-        weld_voltage: pt.weldVoltage ?? undefined,
-        weld_current: pt.weldCurrent ?? undefined,
-        weaving_type: pt.weavingType ?? undefined,
-        weave_params: pt.weaveParams,
-        gap: pt.gap ?? 0,
-      }));
+      const pointsData: TeachingPointData[] = buildPointsData(savedPoints);
       const result = await createTeachingJob({
         name: jobName?.trim() || `작업_${new Date().toLocaleString('ko-KR')}`,
         cell_type: cellType,
@@ -101,6 +109,41 @@ export function useJobManagement(): UseJobManagementReturn {
       return false;
     } catch (error) {
       console.error('작업 저장 실패:', error);
+      return false;
+    } finally {
+      setIsSavingJob(false);
+    }
+  }, [fetchJobList]);
+  // [v1.1.220] 기존 작업 덮어쓰기. PUT /teaching/jobs/{id}
+  // 펜던트에서 작업을 불러와 포인트를 다시 잡은 뒤 같은 작업에 저장할 때 쓴다.
+  // 작업을 새로 만들지 않으므로 목록이 늘어나지 않는다.
+  const overwriteJob = useCallback(async (
+    jobId: number,
+    teachingPoints: TeachingPoint[],
+    cellType: string,
+    cellId: number,
+    height: number,
+    width: number,
+    jobName: string
+  ): Promise<boolean> => {
+    const savedPoints = teachingPoints.filter(pt => pt.isSaved);
+    if (savedPoints.length === 0) {
+      return false;
+    }
+    setIsSavingJob(true);
+    try {
+      await updateTeachingJob(jobId, {
+        name: jobName,
+        cell_type: cellType,
+        cell_id: cellId,
+        height,
+        width,
+        points: buildPointsData(savedPoints),
+      });
+      await fetchJobList();
+      return true;
+    } catch (error) {
+      console.error('작업 덮어쓰기 실패:', error);
       return false;
     } finally {
       setIsSavingJob(false);
@@ -247,6 +290,7 @@ export function useJobManagement(): UseJobManagementReturn {
     setEditingJobName,
     fetchJobList,
     saveJob,
+    overwriteJob,
     loadJob,
     pendingDeleteJobIds,
     requestDeleteJob,

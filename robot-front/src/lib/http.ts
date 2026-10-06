@@ -135,7 +135,14 @@ api.interceptors.response.use(
       }
       return Promise.reject(error);
     }
-    if (isNetworkError && config) {
+    // [v1.1.220] 타임아웃은 포트 재감지 대상에서 제외한다.
+    // 타임아웃은 "포트가 바뀌었다"가 아니라 "서버 응답이 늦다"는 신호인데, 여기로 들어오면
+    // 타임아웃 1건마다 /system/version 요청이 최대 3개 더 나간다. 상태 폴링이 밀리는 상황에서는
+    // 그 추가 요청이 브라우저 동시 연결(출처당 6개)을 더 잡아먹어 악화만 시킨다.
+    // (2026-10-06 펜던트: realtime 요청이 pending으로 10개 이상 쌓여 터치센싱 명령을 보낼
+    //  연결이 남지 않았고, Network 탭에 version 요청이 함께 쌓여 있었음)
+    const isTimeout = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
+    if (isNetworkError && !isTimeout && config) {
       if (API_DEBUG) console.log('[API] 연결 실패, 포트 재감지 시도...', error.code || error.message);
       const detectedUrl = await detectBackendPort();
       if (detectedUrl && detectedUrl !== api.defaults.baseURL) {

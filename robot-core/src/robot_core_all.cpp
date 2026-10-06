@@ -5987,7 +5987,14 @@ void registerSdkRoutes(
             return;
         }
         try {
-            ROBOT_STATE_PKG state = robotService.getState();
+            // [v1.1.220] getState() -> getCachedState()
+            // getState()는 m_mutex를 잡고 GetRobotRealTimeState()를 직접 호출한다. 컨트롤러가
+            // 응답을 늦추면 그 SDK 호출이 m_mutex를 쥔 채 매달려, 뒤따르는 이동/터치센싱
+            // 명령이 전부 그 뒤에 줄을 선다. 이 엔드포인트는 프론트 두 곳에서 주기적으로
+            // 폴링하므로 그만큼 자주 mutex를 건드린다. (2026-10-06 펜던트에서 터치센싱이
+            //  3분간 멈추고, mutex를 안 쓰는 비상정지만 통했던 건이 이 모양이었다)
+            // 캐시는 monitorLoop가 50ms 주기로 갱신하므로 에러코드 신선도에는 문제가 없다.
+            ROBOT_STATE_PKG state = robotService.getCachedState();
             json data;
             data["main_code"] = state.main_code;
             data["sub_code"] = state.sub_code;
@@ -7133,7 +7140,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.219"
+#define APP_VERSION_STRING "1.1.220"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

@@ -123,9 +123,10 @@ const PendantInner: React.FC = () => {
 
   const { teachingRobotState, isRobotMoving, moveToPoint, startTeachingPolling, stopTeachingPolling } = useRobotControl();
 
-  const { currentJobId, jobList, fetchJobList, loadJob } = useJobManagement();
+  const { currentJobId, jobList, fetchJobList, loadJob, saveJob, overwriteJob, isSavingJob } = useJobManagement();
   const {
     isWelding,
+    isTouchSensing,
     currentPointIndex,
     startWelding,
     stopWelding,
@@ -178,6 +179,46 @@ const PendantInner: React.FC = () => {
     if (result) loadPointsFromJob(result.points);
     setJobPickerOpen(false);
   };
+  // [v1.1.220] 작업 저장. 펜던트에는 불러오기만 있고 저장이 없어서, 여기서 포인트를
+  // 다시 잡아도 DB에 남길 방법이 없었다. 작업을 불러온 상태면 덮어쓰기/새로 저장을
+  // 고르게 하고, 고른 작업이 없으면 바로 새 작업으로 저장한다.
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const openSaveDialog = () => {
+    if (savedCount === 0) {
+      showAlert('저장된 포인트가 없습니다. 포인트를 먼저 교시하세요.', { type: 'warning' });
+      return;
+    }
+    if (currentJobId == null) {
+      void doSaveAsNew();
+      return;
+    }
+    setSaveModalOpen(true);
+  };
+  const doSaveAsNew = async () => {
+    setSaveModalOpen(false);
+    // 펜던트는 터치 전용이라 이름 입력이 번거롭다. saveJob의 기본 이름(작업_날짜시간)을 쓴다.
+    const ok = await saveJob(teachingPoints, CELL_CONFIG.type, 1, CELL_CONFIG.height, CELL_CONFIG.width);
+    if (ok) {
+      playSaveOkBeep();
+      showAlert('새 작업으로 저장했습니다', { type: 'success' });
+    } else {
+      playErrorBeep();
+      showAlert('작업 저장 실패', { type: 'error' });
+    }
+  };
+  const doOverwrite = async () => {
+    setSaveModalOpen(false);
+    if (currentJobId == null) return;
+    const name = currentJobName ?? `작업_${currentJobId}`;
+    const ok = await overwriteJob(currentJobId, teachingPoints, CELL_CONFIG.type, 1, CELL_CONFIG.height, CELL_CONFIG.width, name);
+    if (ok) {
+      playSaveOkBeep();
+      showAlert(`'${name}'에 덮어썼습니다`, { type: 'success' });
+    } else {
+      playErrorBeep();
+      showAlert('덮어쓰기 실패', { type: 'error' });
+    }
+  };
   const {
     startTracking,
     stopTracking,
@@ -189,6 +230,7 @@ const PendantInner: React.FC = () => {
   const {
     handleStartWelding,
     handleContinueWelding,
+    handleStartTouchSensing,
     handleGlobalEmergencyStop,
   } = useWeldingHandlers({
     teachingPoints,
@@ -803,6 +845,14 @@ const PendantInner: React.FC = () => {
         >
           작업: {currentJobName ?? '선택 안 됨'}
         </button>
+        <button onClick={openSaveDialog} disabled={isSavingJob || isWelding || isTouchSensing}
+          style={{
+            padding: '10px 16px', fontSize: 14, fontWeight: 'bold',
+            background: isSavingJob || isWelding || isTouchSensing ? '#334155' : '#1e40af',
+            color: '#fff', border: '1px solid #334155', borderRadius: 10,
+            cursor: isSavingJob || isWelding || isTouchSensing ? 'not-allowed' : 'pointer',
+          }}
+        >{isSavingJob ? '저장 중...' : '작업 저장'}</button>
         <span style={{ fontSize: 12, color: '#cbd5e1' }}>
           {savedCount}/{teachingPoints.length - 1} 저장됨
         </span>
@@ -903,6 +953,14 @@ const PendantInner: React.FC = () => {
           <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer' }} />
           Dry Run (아크 OFF)
         </label>
+        {/* [v1.1.220] 펜던트에도 터치센싱 버튼 추가. 훅에는 이미 있었는데 화면에만 없었다. */}
+        <button onClick={handleStartTouchSensing} disabled={isWelding || isTouchSensing || isRobotMoving}
+          style={{
+            padding: '14px', fontSize: 15, fontWeight: 'bold',
+            background: isWelding || isTouchSensing || isRobotMoving ? '#334155' : '#7c3aed', color: '#fff', border: 'none',
+            borderRadius: 8, cursor: isWelding || isTouchSensing || isRobotMoving ? 'not-allowed' : 'pointer',
+          }}
+        >{isTouchSensing ? '터치센싱 중...' : '터치센싱'}</button>
         <button onClick={startWithGapLookup} disabled={isWelding || isRobotMoving}
           style={{
             padding: '14px', fontSize: 15, fontWeight: 'bold',
@@ -925,6 +983,53 @@ const PendantInner: React.FC = () => {
           }}
         >■ 비상 정지</button>
       </div>
+
+      {/* [v1.1.220] 작업 저장 모달 */}
+      {saveModalOpen && (
+        <div onClick={() => setSaveModalOpen(false)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: '#0f172a', border: '1px solid #334155', borderRadius: 16,
+            padding: 20, width: 460, maxWidth: '90vw', display: 'flex', flexDirection: 'column',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 style={{ margin: 0, fontSize: 20 }}>작업 저장</h2>
+              <button onClick={() => setSaveModalOpen(false)} style={{ background: 'none', color: '#94a3b8', border: 'none', fontSize: 24, cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 14 }}>
+              저장된 포인트 {savedCount}개를 어디에 저장할까요?
+            </div>
+            <button onClick={doOverwrite} disabled={isSavingJob}
+              style={{
+                padding: 16, marginBottom: 8, fontSize: 15, fontWeight: 'bold',
+                background: isSavingJob ? '#334155' : '#1e40af', color: '#fff',
+                border: '1px solid #334155', borderRadius: 8,
+                cursor: isSavingJob ? 'not-allowed' : 'pointer', textAlign: 'left',
+              }}
+            >현재 작업에 덮어쓰기<br />
+              <span style={{ fontSize: 12, fontWeight: 'normal', color: '#cbd5e1' }}>{currentJobName}</span>
+            </button>
+            <button onClick={doSaveAsNew} disabled={isSavingJob}
+              style={{
+                padding: 16, marginBottom: 8, fontSize: 15, fontWeight: 'bold',
+                background: isSavingJob ? '#334155' : '#1e293b', color: '#fff',
+                border: '1px solid #334155', borderRadius: 8,
+                cursor: isSavingJob ? 'not-allowed' : 'pointer', textAlign: 'left',
+              }}
+            >새 작업으로 저장<br />
+              <span style={{ fontSize: 12, fontWeight: 'normal', color: '#cbd5e1' }}>이름은 자동으로 작업_날짜시간</span>
+            </button>
+            <button onClick={() => setSaveModalOpen(false)}
+              style={{
+                padding: 12, fontSize: 14, background: 'none', color: '#94a3b8',
+                border: '1px solid #334155', borderRadius: 8, cursor: 'pointer',
+              }}
+            >취소</button>
+          </div>
+        </div>
+      )}
 
       {/* 작업 선택 모달 */}
       {jobPickerOpen && (
