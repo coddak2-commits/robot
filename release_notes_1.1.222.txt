@@ -1,0 +1,41 @@
+﻿v1.1.222 - 펜던트 "용접 계속"이 Dry Run과 파트 패스를 무시하던 문제 수정
+
+■ 증상
+1.1.221에서 "용접 시작"의 Dry Run은 고쳤지만, 같은 화면의
+"용접 계속" 버튼은 여전히 Dry Run을 체크해도 아크가 나갔다.
+파트별 패스(skip) 체크박스도 "용접 계속"에는 반영되지 않았다.
+
+■ 원인
+pendant/index.tsx가 useWeldingHandlers를 부를 때 두 값을 상수로 넘기고 있었다.
+
+  dryRunMode: false,                          // 실제 체크박스는 dryRun state
+  partWeldEnabled: DEFAULT_PART_WELD_ENABLED, // 실제 체크박스는 partEnabled state
+
+handleContinueWelding은 simMode로 simulationMode || dryRunMode를 넘긴다.
+펜던트에서는 그 값이 항상 false였다.
+
+"용접 시작"은 startWithGapLookup이 startWelding을 직접 부르는 별도 경로라
+1.1.221에서 고쳐졌지만, "용접 계속"은 훅의 핸들러를 그대로 쓰기 때문에
+남아 있었다.
+
+상수를 넣어둔 이유는 선언 순서다. dryRun과 partEnabled가 파일 아래쪽
+(약 367행)에 선언돼 있는데 훅 호출은 229행이라 참조할 수 없었다.
+
+■ 수정
+pendant/index.tsx
+- dryRun / partEnabled 선언을 useWeldingHandlers 호출 위로 이동.
+- dryRunMode: false -> dryRunMode: dryRun
+- partWeldEnabled: DEFAULT_PART_WELD_ENABLED -> partWeldEnabled: partWeldEnabledMap
+  (partEnabled 배열을 PartWeldEnabled 형태로 바꾼 useMemo)
+- startWithGapLookup이 따로 만들던 맵도 같은 partWeldEnabledMap을 쓰게 통일.
+  "용접 시작"과 "용접 계속"이 같은 값을 본다.
+- 쓰지 않게 된 DEFAULT_PART_WELD_ENABLED import 제거.
+
+■ 확인 방법
+Dry Run 체크 후 "용접 계속"을 눌렀을 때 robot_core 로그에
+ArcStart / Arc ON 계열 기록이 없어야 한다.
+파트 체크박스를 하나 풀고 "용접 계속"을 눌렀을 때 그 파트를 건너뛰어야 한다.
+
+■ 적용 범위
+펜던트 화면(/pendant)만이다. UcellSelect는 처음부터 state를 그대로
+넘기고 있었으므로 영향 없다.

@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useTeachingPoints, useRobotControl, useSchematicCalculations, useJobManagement, useWeldingOperations, usePathTracking, useWeldingHandlers } from '../UcellSelect/hooks';
-import { DEFAULT_PART_WELD_ENABLED } from '../UcellSelect';
 import { UnifiedWorkspaceCanvas, TorchOrientationIndicator, UCellConfig } from '../UcellSelect/components';
 import { paramApi, Posture, WeldingParam, ParamLookupResult, deviationApi, overrideApi } from '../../lib/gapApi';
 import { isMockMode, mockCheckConnection } from '../../lib';
@@ -227,6 +226,16 @@ const PendantInner: React.FC = () => {
 
   const MANUAL_SPEED_FOR_WELD = 40;
 
+  // [v1.1.222] dryRun / partEnabled 선언을 useWeldingHandlers 호출 위로 올렸다.
+  // 원래는 아래쪽(약 367행)에 선언돼 있어서 훅에 상수를 넣을 수밖에 없었고,
+  // 그 결과 '용접 계속'이 Dry Run 체크와 파트 패스 체크박스를 둘 다 무시했다.
+  const [dryRun, setDryRun] = useState(false);
+  const [partEnabled, setPartEnabled] = useState<[boolean, boolean, boolean, boolean]>([true, true, true, true]);
+  const partWeldEnabledMap = useMemo(
+    () => ({ 0: partEnabled[0], 1: partEnabled[1], 2: partEnabled[2], 3: partEnabled[3] }),
+    [partEnabled],
+  );
+
   const {
     handleStartWelding,
     handleContinueWelding,
@@ -236,10 +245,10 @@ const PendantInner: React.FC = () => {
     teachingPoints,
     teachingRobotState,
     simulationMode: false,
-    dryRunMode: false,
+    dryRunMode: dryRun,
     manualMoveSpeed: MANUAL_SPEED_FOR_WELD,
     autoTouchSensing: false,
-    partWeldEnabled: DEFAULT_PART_WELD_ENABLED,
+    partWeldEnabled: partWeldEnabledMap,
     currentJobId,
     jobList,
     showAlert,
@@ -364,8 +373,6 @@ const PendantInner: React.FC = () => {
   const [gapEditValue, setGapEditValue] = useState<string>('');
   const [teachPointId, setTeachPointId] = useState<string | null>(null);
   const [teachBusy, setTeachBusy] = useState(false);
-  const [dryRun, setDryRun] = useState(false);
-  const [partEnabled, setPartEnabled] = useState<[boolean, boolean, boolean, boolean]>([true, true, true, true]);
   const [thickness, setThickness] = useState<number>(() => {
     const v = typeof localStorage !== 'undefined' ? localStorage.getItem('gap_thickness_mm') : null;
     return v ? Number(v) : 20;
@@ -582,7 +589,7 @@ const PendantInner: React.FC = () => {
       startTracking(!dryRun);
       const currentJob = jobList.find(j => j.id === currentJobId);
       try {
-        const partWeldEnabled = { 0: partEnabled[0], 1: partEnabled[1], 2: partEnabled[2], 3: partEnabled[3] };
+        const partWeldEnabled = partWeldEnabledMap;
         // [v1.1.221] 3번째 인자(simMode)에 false가 박혀 있어서 Dry Run을 켜도 아크가 나갔다.
         // weldingExecution.ts의 아크 점화 조건은 simMode만 본다(798행 hasWelding && !simMode).
         // options.isDryRun은 로그 이름/경로추적/갭검증에만 쓰이고 아크를 막지 않는다.
