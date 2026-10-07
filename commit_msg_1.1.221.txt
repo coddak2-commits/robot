@@ -1,0 +1,19 @@
+v1.1.221: [긴급] 펜던트 Dry Run이 아크를 막지 못하던 버그 수정
+
+펜던트에서 Dry Run을 체크하고 "경로 확인 시작"을 눌러도 아크가 점화됐다.
+
+원인
+  pendant/index.tsx의 startWithGapLookup이 startWelding의 3번째 인자
+  simMode에 false를 하드코딩하고 있었다. weldingExecution.ts의 아크 점화
+  조건(798행 hasWelding && !simMode)은 simMode만 보고, options.isDryRun은
+  로그 이름/경로추적/갭검증/결과 표시에만 쓰여 아크를 막지 않는다.
+  UcellSelect는 simulationMode || dryRunMode를 넘기고 있었고 펜던트만
+  이 연결이 빠져 있었다.
+
+수정
+  startWelding(..., false, ...) -> startWelding(..., dryRun, ...)
+
+영향 범위는 펜던트 화면(/pendant)뿐이다. UcellSelect는 영향 없다.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01L5JX4AfN9o4HC49i9TzVH4

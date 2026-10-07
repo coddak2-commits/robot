@@ -42,10 +42,19 @@ const VERTICAL_POINT_NUMBERS = [1, 2, 3, 7, 8, 9];
 // 거기서 램프를 돌면 그 자리에 1.6초를 더 머물며 쌓기만 한다.
 // buildCraterFill 에 전류를 안 넘기면 undefined 가 되고, robot-core 는
 // v1.1.218 과 같은 경로(전류 유지 500ms -> arcEnd -> 번백)로 간다.
-const isVerticalPointId = (pointId?: string): boolean => {
-  const n = parseInt((pointId ?? '').replace(/\D/g, ''), 10);
-  return VERTICAL_POINT_NUMBERS.includes(n);
-};
+//
+// [v1.1.228] 판정 기준을 '수직 포인트'에서 '비드가 실제로 끊기는 자리'로 바꾼다.
+// 227 의 번호 목록(1,2,3,7,8,9)은 수직 파트가 P1/P7 에서 끝나던 구성에서만 맞았다.
+// 모서리 파트(P4->P3, P10->P9)를 넣으면 그 파트 끝 P3/P9 가 목록에 걸려 크레이터가
+// 돌고, 수직이 같은 자리에서 바로 이어받는데 거기 1.6초를 더 쌓아 개선선 중간에
+// 덩어리가 생긴다. 한 셀에서 비드가 끊기는 자리는 수직 위쪽 끝 둘뿐이다.
+//   수평 끝 P6/P12  : 바닥 중앙에서 서로 만난다
+//   모서리 끝 P3/P9 : 수직 파트가 같은 자리에서 이어받는다
+//   수직 끝 P1/P7   : 여기만 끊긴다
+// 파트 구성을 또 바꿀 때는 이 목록만 보면 된다.
+const CRATER_END_POINT_IDS = ['p1', 'p7'];
+const isCraterEndPointId = (pointId?: string): boolean =>
+  CRATER_END_POINT_IDS.includes((pointId ?? '').toLowerCase());
 // 파트 시작 체류 (v1.1.158). 아크를 켠 자리에서 잠깐 머물러 시작부를 채운다.
 // 수평 시작(P4/P10)은 수직 비드와 만나는 지점이라 틈이 남아 수동 보강이 필요했다(2026-09-18 사진).
 // 아크 ON 시퀀스 안에 이미 점화 후 500ms 대기가 있으므로 실제 체류는 이 값만큼 더해진다.
@@ -59,9 +68,14 @@ const isVerticalPointId = (pointId?: string): boolean => {
 // 아크를 켜고 곧바로 배치 이동으로 들어간다. 수평(P4/P10) 1000ms는 그대로다.
 // 되돌리려면 p1/p3/p7/p9 를 500으로 되돌리면 된다(그때는 제자리 정지).
 // 기어가기까지 되살리려면 아래 PART_START_CREEP_ENABLED 도 같이 켤 것.
+// [v1.1.228] 모서리 파트 도입으로 수평 시작점이 P4/P10 -> P5/P11 로 옮겨간다.
+// P4/P10 은 1000ms 를 그대로 둔다. 이제 모서리 파트의 시작점이고, 그 자리가 바로
+// 채우려는 모서리다. 결과적으로 모서리에는 수평 시작 체류 1초 + 모서리 시작 체류
+// 1초가 들어간다. 과하게 쌓이면 P4/P10 쪽을 먼저 줄일 것.
 const PART_START_DWELL_MS: Record<string, number> = {
   p1: 0, p3: 0, p7: 0, p9: 0,
   p4: 1000, p10: 1000,
+  p5: 1000, p11: 1000,
 };
 // v1.1.205: 체류를 '제자리 정지'에서 '아주 짧은 거리를 아주 느리게 이동'으로 바꾼다.
 // 위빙은 이동 궤적에 겹쳐서 나오는 기능이라 정지 상태에서는 위빙 모양이 안 나온다
@@ -688,7 +702,11 @@ export async function executeWelding(
     const approachOffset = sequenceSettings.touchApproachOffset;
     // p9/p10: 같은 위치(우측 수평 코너)에 티칭되어 있고, U셀 구조물과의 간섭으로
     // base +X 접근 시 충돌(code=185) 확인됨 (터치센싱에서 확인, 시작점으로 선택될 때도 동일 적용).
-    const NEAR_UCELL_CORNER = ['p9', 'p10'];
+    // [v1.1.228] p11 추가. 모서리 파트 도입으로 우측 수평 시작점이 p10 자리로
+    // 옮겨간다(p10 은 모서리 파트 시작점이 된다). 그 자리가 충돌 나는 자리이므로
+    // 새 시작점 p11 도 -Y 로 접근해야 한다. 빼면 우측 수평 시작에서 185 가 난다.
+    // p9 는 모서리에서 20mm 위로 올라가 -Y 가 꼭 필요하진 않으나 그대로 둔다.
+    const NEAR_UCELL_CORNER = ['p9', 'p10', 'p11'];
     const getStartApproachOffsetPos = (pointId: string, offset: number): number[] =>
       NEAR_UCELL_CORNER.includes(pointId.toLowerCase()) ? [0, -offset, 0, 0, 0, 0] : [offset, 0, 0, 0, 0, 0];
     markPointIndex(startPointIndex);
@@ -871,12 +889,12 @@ export async function executeWelding(
       if (isPartStart && currentPartIndex !== prevPartIndex) {
         setArcActive?.(false);
         // v1.1.219: 방금 끝낸 파트의 용접 조건으로 크레이터를 채운다.
-        // [v1.1.227] 단, 수직 파트 끝에서만. 수평이면 전류를 안 넘겨 크레이터를 끈다.
+        // [v1.1.228] 비드가 끊기는 자리(P1/P7)에서만. 그 외는 전류를 안 넘겨 끈다.
         const endedPt = weldingPoints[i - 1];
-        const craterOnPartEnd = isVerticalPointId(endedPt?.id);
+        const craterOnPartEnd = isCraterEndPointId(endedPt?.id);
         log_weldingExecution.info(
           'welding.partEnd.crater',
-          `파트 종료: ${endedPt?.id ?? '?'} 크레이터 ${craterOnPartEnd ? '적용' : '생략(수평)'}`,
+          `파트 종료: ${endedPt?.id ?? '?'} 크레이터 ${craterOnPartEnd ? '적용' : '생략(이어짐)'}`,
         );
         await endPartWelding(
           hasWeaving,
@@ -1387,12 +1405,12 @@ export async function executeWelding(
     }
     if (hasWelding && !simMode && !isWeldingTest) {
       // v1.1.219: 마지막 파트도 전류 다운슬로프로 크레이터를 채운다.
-      // [v1.1.227] 단, 마지막 파트가 수직일 때만.
+      // [v1.1.228] 비드가 끊기는 자리(P1/P7)에서만.
       const lastPt = weldingPoints[weldingPoints.length - 1];
-      const craterOnFinal = isVerticalPointId(lastPt?.id);
+      const craterOnFinal = isCraterEndPointId(lastPt?.id);
       log_weldingExecution.info(
         'welding.final.crater',
-        `전체 종료: ${lastPt?.id ?? '?'} 크레이터 ${craterOnFinal ? '적용' : '생략(수평)'}`,
+        `전체 종료: ${lastPt?.id ?? '?'} 크레이터 ${craterOnFinal ? '적용' : '생략(이어짐)'}`,
       );
       await arcOff(
         0,

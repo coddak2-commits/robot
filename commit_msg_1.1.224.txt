@@ -1,0 +1,19 @@
+v1.1.224: 수직 파트 시작 체류 제거 (기어가기 + 제자리 정지)
+
+수직 파트(P1/P3/P7/P9) 시작점의 체류를 없앤다. 아크를 켜고 곧바로
+배치 이동으로 들어간다. 수평(P4/P10) 1000ms 제자리 정지는 그대로다.
+
+  PART_START_DWELL_MS: p1/p3/p7/p9 500 -> 0
+
+기어가기는 수직에서만 쓰이던 기능이라 체류가 0이 되면 실행되지 않는다.
+체류만 되살리고 기어가기는 끈 채로 두고 싶을 때를 위해
+PART_START_CREEP_ENABLED = false 플래그를 남기고 코드는 보존했다.
+
+되돌리기: p1/p3/p7/p9 를 500으로(제자리 정지), 기어가기까지 되살리려면
+PART_START_CREEP_ENABLED 도 true 로. 그때는 welding_config 의
+arc_tracking_refer_sample_start_ud 와 구간이 겹치는지 확인할 것.
+
+weldingExecution.ts 는 펜던트와 셀 선택 화면이 함께 쓰므로 양쪽 다 바뀐다.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01L5JX4AfN9o4HC49i9TzVH4

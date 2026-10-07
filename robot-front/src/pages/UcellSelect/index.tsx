@@ -722,6 +722,13 @@ export function CellSelectionCore({
   );
 }
 export const CellSelectionCore_CellSelectionCore = CellSelectionCore;
+// 실행할 파트 목록의 기본값. welding_part_order 테이블이 비어 있을 때만 쓰인다
+// (getWeldingParts 가 _dynamicParts ?? DEFAULT_WELDING_PARTS 를 돌려준다).
+// [v1.1.228] 실제 구성은 이제 DB 쪽 6파트다(migrations/012_corner_part_split.sql).
+// 이 기본값은 012 이전의 4파트 그대로다. DB 읽기가 실패하면 모서리 파트가 빠진
+// 경로로 돌아 바닥 20mm 가 안 깔린다(충돌은 나지 않는다). 로그 welding.partOrder
+// 에 파트가 6개로 찍히는지 매번 확인할 것.
+// 체크박스 묶음은 아래 PART_ENABLE_GROUPS 가 따로 정한다. 여기를 건드리지 말 것.
 export const DEFAULT_WELDING_PARTS = [
   { name: '파트1 (하단 좌측)', points: ['p4', 'p5', 'p6'] },
   { name: '파트2 (좌측)', points: ['p3', 'p2', 'p1'] },
@@ -765,6 +772,31 @@ export const DEFAULT_PART_WELD_ENABLED: PartWeldEnabled = {
   2: true,
   3: true,
 };
+// [v1.1.228] 패스(skip) 체크박스 4개에 어떤 포인트가 묶이는지. 화면의 체크박스는
+// 4개로 고정이고 실행 파트는 DB 에서 6개가 올 수 있으므로, 파트 -> 체크박스 키를
+// 여기서 역산한다.
+//
+// 227 까지는 이 역산을 DEFAULT_WELDING_PARTS 로 했는데, 그것은 welding_part_order
+// 가 비었을 때의 '실행 기본값'이기도 하다. 체크박스 묶음을 바꾸려고 그쪽을 손대면
+// 실행 경로가 같이 바뀐다. 두 역할을 분리한다.
+//
+// 모서리 파트는 수직과 같은 묶음에 넣는다(사용자 요청 2026-10-07). 모서리는
+// 수직선을 타는 용접이라 작업자가 수직과 한 덩어리로 생각한다.
+//   0: 수평 좌 (P5-P6)
+//   1: 수직 좌 + 모서리 좌 (P1-P3, P4)
+//   2: 수평 우 (P11-P12)
+//   3: 수직 우 + 모서리 우 (P7-P9, P10)
+// 주의: 수평 좌만 끄고 돌리면 모서리 파트가 아크를 켜는 자리(P4)에 수평 비드가
+// 없다. 차가운 맨 모서리에서 시작하므로 시작부가 얇게 깔린다. 수평을 건너뛸 때는
+// 그걸 감안할 것.
+// 한 포인트는 한 묶음에만 들어간다. every 로 판정하므로 파트가 두 묶음에 걸치면
+// -1 이 되고 index 로 떨어져 그 파트는 항상 실행된다(안전한 쪽).
+const PART_ENABLE_GROUPS: readonly (readonly string[])[] = [
+  ['p5', 'p6'],
+  ['p1', 'p2', 'p3', 'p4'],
+  ['p11', 'p12'],
+  ['p7', 'p8', 'p9', 'p10'],
+];
 export const getExecutableParts = (
   teachingPoints: TeachingPoint[],
   partWeldEnabled?: PartWeldEnabled,
@@ -777,8 +809,8 @@ export const getExecutableParts = (
         (pt): pt is TeachingPoint =>
           pt !== undefined && pt.isSaved && pt.joints !== null && pt.joints.length > 0,
       );
-    const physicalIndex = DEFAULT_WELDING_PARTS.findIndex(dp =>
-      dp.points.some(p => part.points.includes(p)),
+    const physicalIndex = PART_ENABLE_GROUPS.findIndex(g =>
+      part.points.every(p => g.includes(p)),
     );
     const enableKey = physicalIndex >= 0 ? physicalIndex : index;
     const isEnabled = partWeldEnabled?.[enableKey] ?? true;

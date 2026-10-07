@@ -172,3 +172,95 @@ v1.1.34로 롤백하면서, v1.1.61에서 이미 고쳤던 버그가 다시 되�
 2. 실제 용접(아크 ON)을 비상정지 없이 깨끗하게 1회 돌려서 실측 시간 확보 — 지금까지 실측은 전부 용접 실패로 인한 비상정지가 섞여 있어 신뢰 불가.
 3. v1.1.126 mutex 제거가 실제로 용접 도중 Wire In/Out 버튼을 반응하게 하는지 필드 테스트. 안 되면 mutex 되돌리기(git revert).
 4. v1.1.128의 0.2mm 축소가 용접 중 기준으로 적당한지 실측 후 조정.
+
+
+## 9. 2026-10-02 펜던트(현장 기계) 환경 정보
+
+펜던트는 노트북과 완전히 별개의 기계다. 앱과 MariaDB가 각각 돌아가고, 작업/포인트/로그/설정이 동기화되지 않는다.
+양쪽 `teaching_jobs` id가 각자 증가하므로 한쪽 DB를 다른 쪽에 덮어쓰는 것은 병합이 아니라 한쪽을 버리는 작업이다.
+수정은 각 기계 안에서 하고 덮어쓰기는 하지 않는다.
+
+### 경로
+
+기계가 **셋**이다. 2026-10-07 에 실측으로 확인했다. 초판에는 펜던트와 노트북
+둘만 적혀 있었고 `robotback` 을 공통 계정처럼 써놨는데, 사무실 PC 는 계정이 다르고
+노트북은 MariaDB 가 두 개 깔려 있다. 명령을 쓸 때 기계를 먼저 확인할 것.
+
+| 항목 | 사무실 PC (`hfaa00-06`) | 노트북 (`book-r4rd2vkiof`) | 펜던트 |
+| --- | --- | --- | --- |
+| 로그인 사용자 | `D113964` | `Administrator` | - |
+| 소스 레포 | `C:\Users\D113964\Desktop\git\robot` | 미확인 | 없음 |
+| 앱 설치 경로 | (레포에서 직접 실행) | 미확인 | `C:\Program Files (x86)\Robot Welding Control` |
+| 로그 폴더 | - | 미확인 | `...\Robot Welding Control\logs` (`robot_core_YYYY-MM-DD.log`) |
+| MariaDB 설치 | 11.4 | **12.2 와 12.3 둘 다** | 11.4 |
+| 실제 서비스 서버 | 미확인 | **12.2.2** (`SELECT VERSION()`) | 미확인 |
+| 쓸 클라이언트 | `C:\Program Files\MariaDB 11.4\bin\` | `C:\Program Files\MariaDB 12.2\bin\` | `C:\Program Files\MariaDB 11.4\bin\` |
+| DB | `robot_welding` | `robot_welding` | `robot_welding` |
+
+**노트북의 12.3 은 쓰지 않는 설치다.** 서비스(`MariaDB`, Automatic)가 띄우는 서버는
+12.2.2 다. 클라이언트는 어느 쪽을 써도 localhost:3306 에 붙으므로 12.3 클라이언트로
+접속해도 응답은 12.2 서버가 한다. 다만 혼동을 막으려고 12.2 쪽을 쓴다.
+**엉뚱한 서버라고 착각해 다른 포트를 지정하면 조용히 빈 DB 를 만지게 된다.**
+작업 전에 항상 확인한다.
+
+```powershell
+Get-Service | ? { $_.Name -match 'maria|mysql' } | Select Name, Status, StartType
+& "C:\Program Files\MariaDB 12.2\bin\mysql.exe" -u root -p -e "SELECT VERSION(); SHOW DATABASES;"
+```
+
+경로를 모를 때는 이렇게 찾는다.
+
+```powershell
+Get-ChildItem "C:\Program Files","C:\Program Files (x86)" -Filter mysql.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+```
+
+### DB 계정
+
+**기계마다 다르다.** `robotback` 은 배포(펜던트) 계정이고, 개발 기계는 `root` 를 쓴다.
+
+| 기계 | 계정 | 비밀번호 | 근거 |
+| --- | --- | --- | --- |
+| 사무실 PC | `root` | `guru2sun1!` 또는 `2607` | `robot-core/config.ini` 는 `guru2sun1!`, `robot-back/.env` 는 `2607` 로 서로 다르다. DB 의 root 비밀번호는 하나이므로 한쪽은 낡은 값이다. 붙어봐야 안다 |
+| 노트북 | `root` (접속 확인됨) | 미기록 | `mysql.user` 에 `root@localhost` 와 `robotback@localhost` 가 모두 있다. 앱이 쓰는 계정은 `config.ini` 를 봐야 확정된다 (2026-10-07 미확인) |
+| 펜던트 | `robotback` | `RwcBack2026!` | `env.deploy.ini` 배포값 |
+
+노트북 `mysql.user` 실측 (2026-10-07):
+`root@localhost`, `root@127.0.0.1`, `root@::1`, `root@192.168.58.%`,
+`root@book-r4rd2vkiof`, `robotback@localhost`, `robotback@192.168.58.%`,
+`mariadb.sys@localhost`, `PUBLIC`
+
+- 설치 함정: `config.ini.example`은 `user=root`로, `env.deploy.ini`는 `DB_USER=robotback`으로 배포된다.
+  설치 시 비밀번호만 채우면 `root` + `robotback의 비밀번호` 조합이 되어 접속이 거부된다.
+  `config.ini`의 `user`를 `robotback`으로 고쳐야 한다.
+- 이 상태에서 `/teaching/jobs`는 DB가 끊겨도 200 + 빈 배열을 돌려주기 때문에 화면에도 콘솔에도 에러가 안 뜬다.
+  작업 목록이 비어 있으면 DB 연결부터 의심할 것.
+- DB 연결 여부 판별: `/teaching/jobs/{id}`는 미연결 시 500 `Database not connected`, 연결 시 404를 반환한다.
+  브라우저 F12 콘솔에서 `t = JSON.parse(localStorage.token).accessToken` → `fetch('/teaching/jobs/1', { headers: { Authorization: 'Bearer ' + t } }).then(r => r.text()).then(console.log)`
+- robot-core의 DB 연결은 시작 시 `dbService.connect()` 1회뿐이고 재시도가 없다.
+
+### PowerShell에서 mysql 쓰기
+
+쿼리를 작은따옴표 변수에 넣고 넘긴다. 큰따옴표 안에서 `<`는 리디렉션 연산자라 `ParserError`가 난다.
+
+```powershell
+$q = 'SELECT id, job_id, point_id, name, tcp_x, tcp_y, tcp_z, move_speed, weaving_type FROM teaching_points WHERE job_id = 450 ORDER BY id;'
+& "C:\Program Files\MariaDB 11.4\bin\mysql.exe" -u robotback -p robot_welding -e $q
+```
+
+`teaching_points` 컬럼: `id, job_id, point_id, name, order, tcp_x~tcp_rz, joints, tool_num, user_num, move_speed, vel_mode, weld_voltage, weld_current, actual_voltage, actual_current, weaving_type, weave_params, gap, is_saved, is_completed, completed_at`
+(`point_name`이 아니라 `point_id`/`name`이다. `order`는 예약어라 백틱이 필요한데 PowerShell 큰따옴표 안에서는 백틱이 이스케이프 문자이므로 `id`로 정렬할 것.)
+
+### 로그 권한
+
+설치 경로가 `Program Files (x86)` 아래라 기본 권한으로는 새 로그 파일을 못 만든다(2026-09-28 이후 로그가 안 쌓여 있었음).
+관리자 PowerShell에서 한 번 풀어주면 이후에는 일반 권한으로도 쌓인다.
+
+```powershell
+icacls "C:\Program Files (x86)\Robot Welding Control\logs" /grant "Users:(OI)(CI)M" /T
+```
+
+### 기타
+
+- 갭 파라미터 화면은 `gapApi`가 :8000에 직접 붙고 `gap_token`을 따로 쓴다. robot-core와 무관하게 동작한다.
+- 설치 스크립트는 `.env`와 `config.ini`를 `onlyifdoesntexist`로 넣으므로 한 번 자리잡은 파일을 덮어쓰지 않는다.
+- PowerShell 5.1의 `Invoke-RestMethod`는 charset 없는 JSON을 latin-1로 읽어 한글이 깨져 보인다. DB 손상이 아니다.

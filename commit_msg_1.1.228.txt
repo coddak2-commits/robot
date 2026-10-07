@@ -1,0 +1,40 @@
+v1.1.228: 모서리 파트 분리 (한 변당 3파트)
+
+모서리 비드 아래쪽 미충전 문제. 체류(1.1.202~204)와 기어가기(1.1.205~213)로
+해결되지 않았다. 원인은 위빙 폭이 파트 단위로만 설정된다는 것이다.
+setupAndStartWeave 는 파트 시작 시 한 번만 호출되고 파트 중간에 WeaveSetPara
+를 다시 보내지 않으며, WeldBatch 가 파트를 끝점까지 MoveL 하나로 접기 때문에
+같은 파트에 포인트를 더 넣어도 통과점이 될 뿐이다. 모서리 20mm 만 위빙 폭을
+따로 주려면 별도 파트여야 한다.
+
+포인트 수는 12개 유지. 수평 중간점을 없애고 번호를 모서리로 옮긴다.
+  P3 모서리 위 20mm (재티칭) / P4 모서리 / P5 모서리=기존 P4 자리 (재티칭)
+  우측은 P9, P11 재티칭
+실행 순서: 수평 -> 모서리(올라가기) -> 수직(올라가기), 변 단위로.
+이 순서라야 모든 아크 시작이 기존 비드 위에 떨어지고 복귀 이동도 안 늘어난다.
+
+변경:
+- weldingExecution.ts 크레이터 판정을 수직 번호 목록에서
+  CRATER_END_POINT_IDS=['p1','p7'] 로 좁힘. 227 식은 모서리 파트 끝 P3/P9 를
+  크레이터 대상으로 잡아 개선선 중간에 덩어리를 만든다.
+- weldingExecution.ts NEAR_UCELL_CORNER 에 p11 추가. 우측 수평 시작점이 p10
+  자리로 옮겨가므로 -Y 접근이 필요하다. 빼면 code=185.
+- weldingExecution.ts PART_START_DWELL_MS 에 p5/p11 1000ms 추가.
+- pendant/index.tsx SEGMENTS 에 모서리 구간 추가, 수평을 P5-P6 / P11-P12 로.
+- pendant/index.tsx PART_GAP_MAP 6개로. 모서리 항목에서 P3/P9 제외하고 수직을
+  모서리보다 앞에 둠(P3/P9 는 수직 파트 첫 포인트라 수직 파라미터가 와야 한다).
+- pendant/index.tsx getPosture 에 4/10 추가.
+- database/migrations/012_corner_part_split.sql 및 rollback 추가.
+  robot-core 의 updateWeldingPartOrder 는 execution_order 만 UPDATE 하므로
+  UI 로는 파트를 추가할 수 없어 DB 에 직접 넣는다.
+
+- UcellSelect/index.tsx 에 PART_ENABLE_GROUPS 추가. 패스 체크박스 키 역산을
+  DEFAULT_WELDING_PARTS 에서 떼어냈다. 그쪽은 welding_part_order 가 비었을 때의
+  실행 기본값이기도 해서 묶음과 실행 경로가 엉켜 있었다. 판정은 some -> every.
+  묶음: 0 수평 좌 / 1 수직 좌+모서리 좌 / 2 수평 우 / 3 수직 우+모서리 우.
+
+DEFAULT_WELDING_PARTS(4개)는 유지. welding_part_order 가 비었을 때의 실행
+기본값이다. DB 읽기가 실패하면 모서리가 빠진 4파트로 돌아 바닥 20mm 가 안
+깔린다(충돌은 없다). 로그 welding.partOrder 로 파트 수를 확인할 것.
+
+펜던트와 노트북 DB 는 별개라 마이그레이션과 재티칭을 각 기계에서 따로 해야 한다.

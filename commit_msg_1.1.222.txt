@@ -1,0 +1,21 @@
+v1.1.222: 펜던트 "용접 계속"이 Dry Run과 파트 패스를 무시하던 문제 수정
+
+1.1.221에서 "용접 시작"의 Dry Run은 고쳤지만 "용접 계속"은 남아 있었다.
+
+원인
+  pendant/index.tsx가 useWeldingHandlers에 dryRunMode: false와
+  partWeldEnabled: DEFAULT_PART_WELD_ENABLED를 상수로 넘기고 있었다.
+  handleContinueWelding은 simMode로 simulationMode || dryRunMode를 넘기므로
+  펜던트에서는 항상 false였다. 상수를 넣어둔 이유는 선언 순서로,
+  dryRun과 partEnabled가 훅 호출보다 아래(약 367행)에 있었다.
+
+수정
+  두 state 선언을 훅 호출 위로 옮기고 실제 값을 넘긴다.
+  partEnabled 배열은 useMemo로 PartWeldEnabled 맵을 만들어,
+  startWithGapLookup("용접 시작")과 훅 핸들러("용접 계속")가 같은 값을 본다.
+  쓰지 않게 된 DEFAULT_PART_WELD_ENABLED import 제거.
+
+영향 범위는 펜던트 화면(/pendant)뿐이다. UcellSelect는 영향 없다.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01L5JX4AfN9o4HC49i9TzVH4

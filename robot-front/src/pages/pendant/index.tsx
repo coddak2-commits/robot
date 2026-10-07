@@ -22,13 +22,19 @@ const STEP_OPTIONS = [1.0, 5.0, 25.0]; // v1.1.178: 와이어 조정 화면(/gap
 // 송급 속도 상수는 lib/wireFeed.ts로 통합됨 (v1.1.136). 여기서 따로 정의하지 말 것.
 const LOOKUP_DEBOUNCE_MS = 400;
 
+// [v1.1.228] 모서리 파트(P4->P3, P10->P9)를 세그먼트로 추가한다.
+// 갭은 세그먼트 startId 포인트에 저장되므로 모서리 갭은 P4/P10 에 들어간다.
+// 수평은 P5-P6 / P11-P12 로 줄어든다(시작점이 모서리로 옮겨갔다).
+// 모서리 구간은 20mm 라 라벨이 수직 2-3 과 겹친다. offset 으로 벽 쪽으로 밀어둔다.
 const SEGMENTS: { key: string; startId: string; endId: string; label: string; offsetX?: number; offsetY?: number }[] = [
   { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -25 },
   { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -25 },
-  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 105 },
+  { key: 'p4-p3', startId: 'p4', endId: 'p3', label: '4-3', offsetX: -70 },
+  { key: 'p5-p6', startId: 'p5', endId: 'p6', label: '5-6', offsetY: 105 },
   { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 25 },
   { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 25 },
-  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 105 },
+  { key: 'p10-p9', startId: 'p10', endId: 'p9', label: '10-9', offsetX: 70 },
+  { key: 'p11-p12', startId: 'p11', endId: 'p12', label: '11-12', offsetY: 105 },
 ];
 
 // 파트별 "패스(skip)" 체크박스 배치 (U-셀 안쪽)
@@ -42,11 +48,20 @@ const PART_CHECKBOXES: { partIdx: number; refPoint: string; offsetX?: number; of
 
 // 파트별 대표 gap 소스 매핑
 // 파트 실행 순서상 사용될 gap을 어느 세그먼트에서 가져올지 (수직 파트는 세그먼트 2개 평균)
+// [v1.1.228] 모서리 파트 2개 추가. 수평 대표 갭 소스는 P4/P10 -> P5/P11 로 옮겨간다.
+// 주의: 아래 points 는 '이 파라미터를 적용할 포인트' 목록이고, findIndex 로 먼저
+// 걸리는 항목이 이긴다. 모서리 파트의 끝점 P3/P9 는 수직 파트의 시작점이기도 한데,
+// weldingExecution 은 파트 파라미터를 그 파트 '첫 포인트'에서 읽으므로 P3/P9 에는
+// 반드시 수직 파라미터가 들어가야 한다. 그래서 모서리 항목에서 P3/P9 를 빼고,
+// 수직 항목을 모서리보다 앞에 둔다. 순서를 바꾸면 수직 전체가 모서리 조건으로 돈다.
+// (여기 순서는 파라미터 매핑용이고 실행 순서는 welding_part_order 가 정한다.)
 const PART_GAP_MAP: { points: string[]; gapPoints: string[] }[] = [
-  { points: ['p4', 'p5', 'p6'], gapPoints: ['p4'] },       // 파트1 (하단 좌) - 세그먼트 p4-p6
-  { points: ['p3', 'p2', 'p1'], gapPoints: ['p1', 'p2'] }, // 파트2 (좌측 수직) - 세그먼트 p1-p2, p2-p3 평균
-  { points: ['p10', 'p11', 'p12'], gapPoints: ['p10'] },   // 파트3 (하단 우) - 세그먼트 p10-p12
-  { points: ['p9', 'p8', 'p7'], gapPoints: ['p7', 'p8'] }, // 파트4 (우측 수직) - 세그먼트 p7-p8, p8-p9 평균
+  { points: ['p5', 'p6'], gapPoints: ['p5'] },             // 수평 좌 - 세그먼트 p5-p6
+  { points: ['p3', 'p2', 'p1'], gapPoints: ['p1', 'p2'] }, // 수직 좌 - 세그먼트 p1-p2, p2-p3 평균
+  { points: ['p4'], gapPoints: ['p4'] },                   // 모서리 좌 - 세그먼트 p4-p3
+  { points: ['p11', 'p12'], gapPoints: ['p11'] },          // 수평 우 - 세그먼트 p11-p12
+  { points: ['p9', 'p8', 'p7'], gapPoints: ['p7', 'p8'] }, // 수직 우 - 세그먼트 p7-p8, p8-p9 평균
+  { points: ['p10'], gapPoints: ['p10'] },                 // 모서리 우 - 세그먼트 p10-p9
 ];
 
 // v1.1.176: 캔버스 크기를 창 크기에 맞춰 계산한다(펜던트 1024x600 대응).
@@ -68,7 +83,9 @@ const getPosture = (pointId: string): Posture => {
   const m = pointId.match(/^p(\d+)$/i);
   if (!m) return 'vertical';
   const n = Number(m[1]);
-  if ([1, 2, 3, 7, 8, 9].includes(n)) return 'vertical';
+  // [v1.1.228] 4/10 추가. 모서리 파트(P4->P3, P10->P9)는 수직선을 타는 용접이라
+  // 갭 파라미터도 수직 테이블을 조회해야 한다. 수평 시작점은 P5/P11 로 옮겨갔다.
+  if ([1, 2, 3, 4, 7, 8, 9, 10].includes(n)) return 'vertical';
   return 'horizontal';
 };
 

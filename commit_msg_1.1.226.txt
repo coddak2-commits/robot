@@ -1,0 +1,19 @@
+v1.1.226: 크레이터 채움 하강 폭 확대 (0.55/0.85 -> 0.50/0.82)
+
+CRATER_END_CURRENT_RATIO  0.55 -> 0.50
+CRATER_END_VOLTAGE_RATIO  0.85 -> 0.82
+
+  수평 290A/32V -> 끝 145A/26.2V (이전 160A/27.2V)
+  수직 250A/28V -> 끝 125A/23.0V (이전 138A/23.8V)
+
+CRATER_FILL_MS(900), CRATER_FILL_STEPS(5) 는 그대로. 깊이만 깊어진다.
+
+전압도 같이 내린 이유: 이 용접기는 전류 지령에 송급이 연동되고, 전류만
+내리면 전류 대비 아크가 길어져 램프 끝에서 꺼질 수 있다. 전압을 전류와
+같은 비율로 내리지 않는 것(0.50 vs 0.82)은 아크 길이 유지를 위한 것으로
+v1.1.219부터 의도된 설계다.
+
+더 내릴 때는 한 번에 5%p 씩, 두 값을 같이 내릴 것.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01L5JX4AfN9o4HC49i9TzVH4

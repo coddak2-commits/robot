@@ -98,7 +98,9 @@ import하므로 모듈 자체는 살아 있다. 어떤 함수를 쓰는지 확�
 
 **`global.d.ts`** — 어디서도 import되지 않지만 tsconfig가 읽는 앰비언트 선언이다.
 
-**`__tests__/index.ts` 세 개 (52KB)** — 진짜 테스트가 202개 들어 있다.
+**`__tests__/index.ts` 세 개 (52KB)** — 테스트가 202개 들어 있다.
+테스트는 다른 코드가 import하지 않고 jest가 파일명 규칙으로 직접 찾아 실행하므로,
+미사용 분석기에 "도달 안 됨"으로 잡힌다. 죽은 코드가 아니다.
 
 | 파일 | 테스트 수 |
 |---|---|
@@ -106,8 +108,27 @@ import하므로 모듈 자체는 살아 있다. 어떤 함수를 쓰는지 확�
 | `pages/UcellSelect/__tests__/index.ts` | 60 |
 | `pages/UcellSelect/hooks/weldingCore/__tests__/index.ts` | 63 |
 
-`package.json`의 `test`가 `react-scripts test`라 `npm test`로 돌아간다.
-안 쓰는 코드가 아니라 **안 돌리고 있는 테스트**다.
+### 실제로 돌려본 결과 (2026-10-06)
+
+`npm test -- --watchAll=false` 실행. **3개 스위트 전부 실행 실패, 통과한 테스트 0개.**
+이전 판에 적어둔 "안 돌리고 있는 테스트"는 낙관적인 표현이었다.
+정확히는 **코드가 테스트를 앞질러 간 뒤 아무도 손대지 않은 테스트**다.
+
+| 파일 | 실패 원인 | 성격 |
+|---|---|---|
+| `lib/robotApi/__tests__` | `jest.mock('../client')` — `lib/robotApi/client`가 없다. 지금은 `lib/http.ts`의 `Axios`를 쓴다 | 구조 변경 미반영 |
+| `weldingCore/__tests__` | `jest.mock('.../lib/logger')` — `lib/logger`가 없다. `createLogger`는 `lib/index.ts`에 있다 | 구조 변경 미반영 |
+| `UcellSelect/__tests__` | axios v1이 ESM이라 jest가 변환 못 함 (`Cannot use import statement outside a module`) | 설정 문제 |
+
+세 번째는 `package.json`의 jest 설정에 `transformIgnorePatterns`로 axios를 넣으면 풀린다.
+앞의 두 개는 mock 경로를 고치면 일단 실행은 된다. 다만 모듈 경로가 저만큼 틀어져 있으면
+함수 시그니처도 같이 틀어졌을 가능성이 크다. 경로만 고친 뒤 몇 개가 실제로 통과하는지는
+돌려봐야 알 수 있고, 내용까지 낡았으면 테스트를 다시 쓰는 작업이 된다.
+
+**결론: 지우지는 말고, 되살리는 것도 현장 검증이 끝난 뒤에 한다.**
+이 테스트들은 지금 안전망 역할을 못 한다. 되살릴 때까지는 없는 셈 치고 작업할 것.
+(2026-10-06 시점에 찾은 버그 세 건 — robot/error의 mutex 점유, 상태 폴링 연결 고갈,
+ 펜던트 Dry Run의 simMode 누락 — 은 모두 로그와 코드 읽기로 나왔다.)
 
 **타입 / 인터페이스 export** (`...Props`, `...Return`) — 미사용으로 잡히지만
 지워도 용량만 줄고 위험만 생긴다.

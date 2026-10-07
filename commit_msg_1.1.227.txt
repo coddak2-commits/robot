@@ -1,0 +1,20 @@
+v1.1.227: 크레이터 채움을 수직 파트에만 적용
+
+v1.1.219 에서 크레이터 채움을 넣을 때 파트 종류를 구분하지 않고 모든 파트
+끝에 넣었다. 요청은 수직 한정이었다.
+
+수평 파트의 마지막 포인트는 다음 파트와 이어지는 자리라 크레이터가 생길
+자리가 아니고, 거기서 램프를 돌면 그 자리에 1.6초를 더 머물며 쌓기만 한다.
+
+수정
+  weldingExecution.ts 에 isVerticalPointId() 추가(기존 VERTICAL_POINT_NUMBERS
+  재사용). 파트 전환(endPartWelding)과 전체 종료(arcOff) 두 호출부에서
+  방금 끝낸 파트가 수직일 때만 전류/전압을 넘긴다. 수평이면 undefined.
+  buildCraterFill 이 undefined 를 반환하면 robot-core 는 v1.1.218 경로
+  (전류 유지 500ms -> arcEnd -> 번백)로 간다. 새 분기를 만들지 않았다.
+  어느 쪽으로 갔는지 프런트 로그로 남긴다.
+
+크레이터 비율(0.50/0.82)은 건드리지 않았다.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01L5JX4AfN9o4HC49i9TzVH4
