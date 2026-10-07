@@ -36,6 +36,16 @@ const HORIZONTAL_WIRE_PLAN: Record<string, { retractMm: number; feedMm: number }
 const HORIZONTAL_WIRE_DEFAULT = { retractMm: 0, feedMm: 0 };
 const VERTICAL_WIRE_PLAN = { retractMm: 0, feedMm: 0 };
 const VERTICAL_POINT_NUMBERS = [1, 2, 3, 7, 8, 9];
+// [v1.1.227] 크레이터 채움은 수직 파트 끝에서만 한다(사용자 요청 2026-10-07).
+// v1.1.219에서 분기 없이 모든 파트 끝에 넣었던 것을 좁힌다.
+// 수평(P4-P6, P10-P12) 끝은 다음 파트와 이어지는 자리라 크레이터가 생기지 않는다.
+// 거기서 램프를 돌면 그 자리에 1.6초를 더 머물며 쌓기만 한다.
+// buildCraterFill 에 전류를 안 넘기면 undefined 가 되고, robot-core 는
+// v1.1.218 과 같은 경로(전류 유지 500ms -> arcEnd -> 번백)로 간다.
+const isVerticalPointId = (pointId?: string): boolean => {
+  const n = parseInt((pointId ?? '').replace(/\D/g, ''), 10);
+  return VERTICAL_POINT_NUMBERS.includes(n);
+};
 // 파트 시작 체류 (v1.1.158). 아크를 켠 자리에서 잠깐 머물러 시작부를 채운다.
 // 수평 시작(P4/P10)은 수직 비드와 만나는 지점이라 틈이 남아 수동 보강이 필요했다(2026-09-18 사진).
 // 아크 ON 시퀀스 안에 이미 점화 후 500ms 대기가 있으므로 실제 체류는 이 값만큼 더해진다.
@@ -860,15 +870,22 @@ export async function executeWelding(
       const prevPartIndex = partBoundaryInfo.pointPartIndices[i - 1];
       if (isPartStart && currentPartIndex !== prevPartIndex) {
         setArcActive?.(false);
+        // v1.1.219: 방금 끝낸 파트의 용접 조건으로 크레이터를 채운다.
+        // [v1.1.227] 단, 수직 파트 끝에서만. 수평이면 전류를 안 넘겨 크레이터를 끈다.
+        const endedPt = weldingPoints[i - 1];
+        const craterOnPartEnd = isVerticalPointId(endedPt?.id);
+        log_weldingExecution.info(
+          'welding.partEnd.crater',
+          `파트 종료: ${endedPt?.id ?? '?'} 크레이터 ${craterOnPartEnd ? '적용' : '생략(수평)'}`,
+        );
         await endPartWelding(
           hasWeaving,
           hasWelding,
           simMode && !isWeldingTest,
           safetySettings.gasPostFlowTime,
           weaveTypeCode,
-          // v1.1.219: 방금 끝낸 파트의 용접 조건으로 크레이터를 채운다.
-          weldingPoints[i - 1]?.weldCurrent ?? firstWeldPoint?.weldCurrent,
-          weldingPoints[i - 1]?.weldVoltage ?? firstWeldPoint?.weldVoltage,
+          craterOnPartEnd ? (endedPt?.weldCurrent ?? firstWeldPoint?.weldCurrent) : undefined,
+          craterOnPartEnd ? (endedPt?.weldVoltage ?? firstWeldPoint?.weldVoltage) : undefined,
         );
         arcMayBeOn = false;
         // v1.1.201: 파트 종료 직후 트래킹을 끈다. 문서 4.3.1 예제와 예전 Lua 모두
@@ -1370,16 +1387,24 @@ export async function executeWelding(
     }
     if (hasWelding && !simMode && !isWeldingTest) {
       // v1.1.219: 마지막 파트도 전류 다운슬로프로 크레이터를 채운다.
+      // [v1.1.227] 단, 마지막 파트가 수직일 때만.
       const lastPt = weldingPoints[weldingPoints.length - 1];
+      const craterOnFinal = isVerticalPointId(lastPt?.id);
+      log_weldingExecution.info(
+        'welding.final.crater',
+        `전체 종료: ${lastPt?.id ?? '?'} 크레이터 ${craterOnFinal ? '적용' : '생략(수평)'}`,
+      );
       await arcOff(
         0,
         0,
         1000,
         safetySettings.gasPostFlowTime,
-        buildCraterFill(
-          lastPt?.weldCurrent ?? firstWeldPoint?.weldCurrent,
-          lastPt?.weldVoltage ?? firstWeldPoint?.weldVoltage,
-        ),
+        craterOnFinal
+          ? buildCraterFill(
+              lastPt?.weldCurrent ?? firstWeldPoint?.weldCurrent,
+              lastPt?.weldVoltage ?? firstWeldPoint?.weldVoltage,
+            )
+          : undefined,
       );
       markArcOff();  // v1.1.218: 수동 송급 프로파일 선택용 시각
     }
