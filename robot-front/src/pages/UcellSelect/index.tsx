@@ -212,11 +212,14 @@ export function CellSelectionCore({
     () => teachingPoints.filter(pt => pt.isSaved).length,
     [teachingPoints],
   );
+  // [v1.1.229] 체크박스 활성 판정(포인트 2개 이상)은 PART_ENABLE_GROUPS 기준으로
+  // 센다. WELDING_PARTS(=DEFAULT_WELDING_PARTS) 를 쓰면 묶음이 둘로 갈려 드리프트한다.
+  // 예전 기준은 묶음 0 에 P4 를 함께 세고 있었다.
   const partSavedPointCounts = useMemo<Record<number, number>>(() => {
     const counts: Record<number, number> = {};
-    WELDING_PARTS.forEach((part, index) => {
+    PART_ENABLE_GROUPS.forEach((group, index) => {
       let savedCount = 0;
-      for (const pointId of part.points) {
+      for (const pointId of group) {
         const pt = teachingPoints.find(p => p.id === pointId);
         if (pt?.isSaved) savedCount++;
       }
@@ -799,11 +802,18 @@ export const DEFAULT_PART_WELD_ENABLED: PartWeldEnabled = {
 // 그걸 감안할 것.
 // 한 포인트는 한 묶음에만 들어간다. every 로 판정하므로 파트가 두 묶음에 걸치면
 // -1 이 되고 index 로 떨어져 그 파트는 항상 실행된다(안전한 쪽).
-const PART_ENABLE_GROUPS: readonly (readonly string[])[] = [
+// [v1.1.230] 수직 묶음을 용접 방향(아래->위)으로 적는다.
+// useSchematicCalculations 가 이 배열 순서대로 중심선을 누적하므로, 위->아래로
+// 적어두면 거리 숫자가 반대 끝에서 세어지고 구간 라벨도 뒤집혀 보인다.
+// 이동 좌표와 터치 보정 보간은 start/end/ratio 가 서로 맞아떨어져 영향이 없었으나,
+// 화면 숫자가 실제와 반대라 혼동된다.
+// 다른 소비처(getExecutableParts 의 every, partSavedPointCounts, partOrderMap)는
+// 전부 순서를 보지 않으므로 뒤집어도 안전하다.
+export const PART_ENABLE_GROUPS: readonly (readonly string[])[] = [
   ['p5', 'p6'],
-  ['p1', 'p2', 'p3', 'p4'],
+  ['p4', 'p3', 'p2', 'p1'],
   ['p11', 'p12'],
-  ['p7', 'p8', 'p9', 'p10'],
+  ['p10', 'p9', 'p8', 'p7'],
 ];
 export const getExecutableParts = (
   teachingPoints: TeachingPoint[],

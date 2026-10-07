@@ -1,6 +1,10 @@
 import { TeachingPoint, PART_ENABLE_GROUPS } from '..';
 import { useCallback, useMemo } from 'react';
 
+// [v1.1.228] 도식 눈금자에서 중간점이 끝점과 유지할 최소 간격(도식 좌표 단위).
+// 포인트 동그라미 지름에 여유를 더한 값이다. 자세한 이유는 calcMiddlePosition 주석.
+const SCHEMATIC_MIN_GAP = 30;
+
 export interface CenterlinePoint {
   schematic: { x: number; y: number };
   tcp: { x: number; y: number; z: number };
@@ -66,6 +70,20 @@ export function useSchematicCalculations({
     }
     // [v1.1.228] fallbackRatio 추가. 한 눈금자에 중간점이 둘(P2·P3)이 되면서,
     // 아직 티칭 안 된 상태에서 둘 다 0.5 로 떨어지면 겹쳐 보인다.
+    //
+    // 그리고 끝점과 겹치지 않게 최소 간격(SCHEMATIC_MIN_GAP)을 둔다.
+    // 포인트 동그라미는 장식이 아니라 클릭·드래그 대상이다(useDragAndDrop 이
+    // 포인트 선택과 순서 변경을 그 점에서 받는다). 겹치면 원하는 쪽을 집을 수 없다.
+    // 모서리 20mm 는 눈금자 550mm 의 3.6% 라 그대로 두면 P3 가 P4 를 덮는다.
+    //
+    // '고정 위치'가 아니라 '최소 간격'인 점이 중요하다.
+    //   P3 를 제대로 모서리+20mm 로 교시 -> 비율 0.96, 이 간격까지만 밀려난다
+    //   P3 를 실수로 모서리+200mm 로 교시 -> 비율 0.64, 손대지 않고 그대로 그린다
+    // 그래서 그림이 교시 실수를 보여주는 역할은 그대로 남는다.
+    // 실제 거리는 DimensionLinesLayer 의 치수선이 보여주므로 값은 잃지 않는다.
+    //
+    // 이 눈금자는 애초에 축척 그림이 아니다. U셀 바깥에 오프셋으로 그린 도식이고
+    // 좌표도 실제 TCP 가 아니라 셀 치수에서 만든 가상 좌표다. 비율만 실제를 따랐다.
     const calcMiddlePosition = (
       startId: string,
       middleId: string,
@@ -77,27 +95,32 @@ export function useSchematicCalculations({
       const startPt = teachingPoints.find(pt => pt.id === startId);
       const middlePt = teachingPoints.find(pt => pt.id === middleId);
       const endPt = teachingPoints.find(pt => pt.id === endId);
-      if (!startPt?.tcp || !middlePt?.tcp || !endPt?.tcp) {
-        return {
-          x: startPos.x + (endPos.x - startPos.x) * fallbackRatio,
-          y: startPos.y + (endPos.y - startPos.y) * fallbackRatio,
-        };
+      let ratio = fallbackRatio;
+      if (startPt?.tcp && middlePt?.tcp && endPt?.tcp) {
+        const d1 = Math.sqrt(
+          Math.pow(middlePt.tcp.x - startPt.tcp.x, 2) +
+          Math.pow(middlePt.tcp.y - startPt.tcp.y, 2) +
+          Math.pow(middlePt.tcp.z - startPt.tcp.z, 2)
+        );
+        const d2 = Math.sqrt(
+          Math.pow(endPt.tcp.x - middlePt.tcp.x, 2) +
+          Math.pow(endPt.tcp.y - middlePt.tcp.y, 2) +
+          Math.pow(endPt.tcp.z - middlePt.tcp.z, 2)
+        );
+        const totalDist = d1 + d2;
+        if (totalDist > 0) ratio = d1 / totalDist;
       }
-      const d1 = Math.sqrt(
-        Math.pow(middlePt.tcp.x - startPt.tcp.x, 2) +
-        Math.pow(middlePt.tcp.y - startPt.tcp.y, 2) +
-        Math.pow(middlePt.tcp.z - startPt.tcp.z, 2)
+      const rulerLength = Math.sqrt(
+        Math.pow(endPos.x - startPos.x, 2) + Math.pow(endPos.y - startPos.y, 2)
       );
-      const d2 = Math.sqrt(
-        Math.pow(endPt.tcp.x - middlePt.tcp.x, 2) +
-        Math.pow(endPt.tcp.y - middlePt.tcp.y, 2) +
-        Math.pow(endPt.tcp.z - middlePt.tcp.z, 2)
-      );
-      const totalDist = d1 + d2;
-      const ratio = totalDist > 0 ? d1 / totalDist : 0.5;
+      // 눈금자가 비정상적으로 짧으면 간격이 커져 중간점이 가운데로 몰린다. 0.4 로 막는다.
+      const minRatio = rulerLength > 0
+        ? Math.min(0.4, SCHEMATIC_MIN_GAP / rulerLength)
+        : 0;
+      const drawRatio = Math.min(1 - minRatio, Math.max(minRatio, ratio));
       return {
-        x: startPos.x + (endPos.x - startPos.x) * ratio,
-        y: startPos.y + (endPos.y - startPos.y) * ratio,
+        x: startPos.x + (endPos.x - startPos.x) * drawRatio,
+        y: startPos.y + (endPos.y - startPos.y) * drawRatio,
       };
     };
     // [v1.1.228] 수직 눈금자가 P1 -> P4 로 길어졌고 그 위에 중간점이 둘이다.

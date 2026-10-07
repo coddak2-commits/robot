@@ -991,8 +991,20 @@ export async function executeWelding(
           const n = parseInt(id.replace(/\D/g, ''), 10);
           return n >= 1 && n <= 6 ? 'L' : 'R';
         };
+        // [v1.1.230] 목표가 U셀 코너 포인트면 '같은 쪽 전환'으로 치지 않는다.
+        // 아래 ②에서 isSameSide 분기가 NEAR_UCELL_CORNER 분기보다 먼저 걸리기 때문에,
+        // 같은 쪽 전환이면 코너여도 base +X 로 진입한다. 227 까지는 p10 진입이
+        // p1->p10 횡단뿐이라 그 경로를 안 탔는데, v1.1.228 에서 수평을 앞으로 빼면서
+        // p12->p10 이 같은 쪽 전환이 됐다. 703행 주석대로 p10 의 +X 진입은 code=185 다.
+        // 여기서 빼면 p12->p10 과 p9->p9 가 '후퇴 -> 홈 경유 -> -Y 직선 진입'으로 가는데,
+        // 둘 다 227 에서 실제로 돌던 경로다(p10 은 횡단 진입, p9 는 시작점 진입).
+        // 홈을 두 번 더 들르므로 셀당 사이클이 조금 늘어난다.
+        const targetNeedsCornerApproach =
+          NEAR_UCELL_CORNER.includes((point?.id ?? '').toLowerCase());
         const isSameSide =
-          !!prevPoint?.id && !!point?.id && pointSide(prevPoint.id) === pointSide(point.id);
+          !!prevPoint?.id && !!point?.id
+          && pointSide(prevPoint.id) === pointSide(point.id)
+          && !targetNeedsCornerApproach;
         // v1.1.174: 횡단 전환 정면 이격 approachOffset -> 100mm 고정. approachOffset(현장 25mm)은 홈에서 MoveJ로 들어가기엔 가까워 쓰지 않는다.
         const CROSS_CLEARANCE_X = 100;
         const CROSS_LIFT_Z = 100;
@@ -1287,6 +1299,41 @@ export async function executeWelding(
       if (batchPoints.length === 0) {
         i++;
         continue;
+      }
+      // [v1.1.230] 배치 첫 포인트의 speed/vel_mode 를 '그 파트의 첫 포인트' 값으로 맞춘다.
+      // robot-core 의 WeldBatch 는 배치 첫 포인트의 speed 만 읽는다(robot_core_all.cpp
+      // 의 `float speedRaw = firstPt.value("speed", ...)`). 그런데 파트 시작점은 위쪽
+      // 전환 분기에서 따로 처리하고 i++ 하므로, 배치는 항상 파트의 '두 번째' 포인트부터
+      // 만들어진다. 즉 아크 조건(전류·전압·위빙)은 파트 첫 포인트에서, 이동 속도는
+      // 두 번째 포인트에서 읽히고 있었다.
+      // 파트 안의 포인트가 모두 같은 속도면(갭 조회가 파트 단위로 넣으므로 보통 그렇다)
+      // 아무것도 바뀌지 않는다. 다를 때만 의도대로 돈다.
+      //
+      // v1.1.228 의 모서리 파트([P4,P3])에서 이게 드러났다. 배치가 [P3] 하나뿐인데
+      // P3 는 수직 파트의 시작점이기도 해서 갭 조회가 수직 파라미터를 넣는다. 그래서
+      // P4 에 모서리용 느린 속도를 넣어도 안 먹고 모서리 20mm 가 수직 속도로 돌았다.
+      //
+      // weaving_type 은 건드리지 않는다. robot-core 가 그걸로 고르는 두 계수
+      // (WELD_BATCH_SPEED_SCALE_VERTICAL / _HORIZONTAL)가 지금 둘 다 0.431 로 같다.
+      let partStartIdx = i;
+      while (
+        partStartIdx > 0 &&
+        partBoundaryInfo.pointPartIndices[partStartIdx - 1] === partBoundaryInfo.pointPartIndices[i]
+      ) {
+        partStartIdx--;
+      }
+      const partFirstPoint = weldingPoints[partStartIdx];
+      if (partFirstPoint && batchIndices[0] !== partStartIdx) {
+        const prevSpeed = batchPoints[0].speed;
+        batchPoints[0].speed = partFirstPoint.moveSpeed;
+        batchPoints[0].vel_mode = partFirstPoint.velMode ?? 1;
+        if (prevSpeed !== partFirstPoint.moveSpeed) {
+          log_weldingExecution.info(
+            'welding.batch.speedFromPartStart',
+            `배치 속도를 파트 시작점 기준으로 교정: ${weldingPoints[batchIndices[0]]?.id ?? '?'} `
+            + `${prevSpeed} -> ${partFirstPoint.id} ${partFirstPoint.moveSpeed}`,
+          );
+        }
       }
       // v1.1.156: 설정에서 스플라인 이동을 켜면 티칭점을 모두 지나가는 경로로 바꾼다.
       // v1.1.167: 끄면 실제 용접도 드라이런과 같은 경유점 방식(per_point, 블렌드 10mm)으로 간다.
