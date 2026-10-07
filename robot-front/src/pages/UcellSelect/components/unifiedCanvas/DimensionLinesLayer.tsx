@@ -4,11 +4,15 @@ const DimensionLinesLayer: React.FC<{
   points: WeldPoint[];
   transform: TransformFn;
 }> = memo(({ points, transform }) => {
+  // [v1.1.228] 모서리(P4/P10)가 수직의 끝으로 옮겨가고 수평은 P5/P11 에서 시작한다.
+  // 치수선 묶음도 같이 바꾼다. 순서(partIdx)는 그대로 둔다. 아래에서
+  // 0=바닥 좌, 1=좌측, 2=바닥 우, 3=우측으로 치수선 위치를 정하기 때문이다.
+  // 방향은 기존 관례대로 아래에서 위로 적는다.
   const partSegments = [
-    ['p4', 'p5', 'p6'],
-    ['p3', 'p2', 'p1'],
-    ['p10', 'p11', 'p12'],
-    ['p9', 'p8', 'p7'],
+    ['p5', 'p6'],
+    ['p4', 'p3', 'p2', 'p1'],
+    ['p11', 'p12'],
+    ['p10', 'p9', 'p8', 'p7'],
   ];
   const pointMap = new Map(points.map(p => [p.id, p]));
   const dimensions: {

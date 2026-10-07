@@ -1,0 +1,23 @@
+v1.1.229: 모서리 파트 후속 (블록 파라미터 · 모서리 기본값 · 화면 표시)
+
+228 exe 를 빌드한 뒤에 고친 것들이다. 구조(파트 6개, 포인트 역할, 크레이터 판정,
+p11 접근 방향)는 228 그대로이고 DB 마이그레이션도 추가로 없다.
+
+- UcellSelect/index.tsx getBlockPointIds/getBlockName 이 '그 포인트가 시작점인
+  파트'를 우선 찾게 바꿨다. 모서리 끝 P3/P9 가 수직 파트의 시작점이기도 해서
+  배열 순서에 따라 엉뚱한 블록이 잡혔다. getPartStartPointIds 추가.
+- useWeldingHandlers.ts applyParamsToBlock 이 다른 파트의 시작점을 덮지 않게
+  했다. P4 에서 모서리 블록을 적용하면 P3 도 모서리 조건이 되어 수직 파트 전체가
+  모서리 조건으로 돌았다. 건너뛴 포인트는 알림에 표시한다.
+  228 에 이 버그가 들어가 있으므로 228 에서는 블록 적용을 쓰지 말 것.
+- UcellSelect/index.tsx CORNER_WEAVE_PARAMS 추가, P4/P10 기본값을
+  plane_triangle/수평위빙/26cpm 에서 vertical_triangle/CORNER/16cpm 으로 교체.
+  P3/P4/P5/P9/P10/P11 이름을 새 역할에 맞게 수정.
+- useSchematicCalculations 눈금자를 P1-P4 세로 / P5-P6 바닥으로 재배치,
+  중심선을 PART_ENABLE_GROUPS 로, 중간점에 끝점 최소 간격(30) 적용.
+  포인트 동그라미는 클릭·드래그 대상이라 P3 가 P4 를 덮으면 집을 수 없다.
+  고정이 아닌 최소 간격이라 크게 잘못 교시한 경우는 그대로 보인다.
+- DimensionLinesLayer 치수선 묶음 교체(세로 3구간 / 바닥 1구간).
+- UnifiedWorkspaceCanvas 실행 순서 배지를 묶음 순위로. part_index ->
+  execution_order 를 그대로 써서 1·3·4·6 으로 건너뛰었다. 이제 1·2·3·4.
+- partSavedPointCounts 를 PART_ENABLE_GROUPS 기준으로.

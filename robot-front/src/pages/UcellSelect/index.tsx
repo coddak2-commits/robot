@@ -743,21 +743,29 @@ export function setWeldingPartOrder(order: { part_name: string; points: string[]
 export function getWeldingParts(): readonly { name: string; points: readonly string[] }[] {
   return _dynamicParts ?? DEFAULT_WELDING_PARTS;
 }
+// [v1.1.228] 한 포인트가 두 파트에 들어갈 수 있게 됐다. 모서리 파트의 끝점
+// P3/P9 가 수직 파트의 시작점이기도 하다(이어지는 자리라 좌표를 공유한다).
+// 그냥 includes 로 훑으면 배열에서 먼저 나오는 파트가 이기므로, 실행 순서상
+// 모서리가 앞에 있는 지금 구성에서는 P3 를 집어도 모서리 블록이 잡혔다.
+// 파트의 용접 조건은 그 파트 '첫 포인트'에서 읽히므로, 포인트를 집었을 때는
+// 그 포인트가 시작점인 파트를 우선 돌려준다. 없으면 기존처럼 훑는다.
+const findPartForPoint = (pointId: string) => {
+  const parts = getWeldingParts();
+  return (
+    parts.find(part => part.points[0] === pointId) ??
+    parts.find(part => part.points.includes(pointId))
+  );
+};
 export function getBlockPointIds(pointId: string): string[] {
-  for (const part of getWeldingParts()) {
-    if (part.points.includes(pointId)) {
-      return [...part.points];
-    }
-  }
-  return [];
+  const part = findPartForPoint(pointId);
+  return part ? [...part.points] : [];
 }
 export function getBlockName(pointId: string): string {
-  for (const part of getWeldingParts()) {
-    if (part.points.includes(pointId)) {
-      return part.name;
-    }
-  }
-  return '';
+  return findPartForPoint(pointId)?.name ?? '';
+}
+/** 어느 파트든 시작점인 포인트 id 집합. 블록 적용이 덮어쓰면 안 되는 자리다. */
+export function getPartStartPointIds(): Set<string> {
+  return new Set(getWeldingParts().map(part => part.points[0]));
 }
 export interface ExecutablePart {
   name: string;
@@ -892,7 +900,28 @@ export const VERTICAL_WEAVE_PARAMS: WeaveParams = {
   weaveYawAngle: 0,
   weaveRotAngle: 0,
 };
-// 좌측 수평 파트(P4~P6) 기본 위빙 — 평면 삼각파
+// [v1.1.228] 모서리 파트(P4->P3, P10->P9) 기본 위빙 — 수직 삼각파, 폭만 넓힘.
+// 수직선을 타는 용접이라 평면 삼각파가 아니라 수직 삼각파다. P4/P10 은 227 까지
+// 수평 파트의 시작점이었으므로 기본값이 plane_triangle + 수평 위빙이었다. 그대로
+// 두면 모서리 20mm 를 엉뚱한 평면으로 흔든다.
+// 아래 폭 5.0 은 수직 기본 3.0 보다 넓힌 출발값일 뿐이고 실측으로 맞춰야 한다.
+// 실제로 쓰이는 값은 teaching_points 에 저장된 값이다(작업 불러오기가 이 기본값을
+// 덮는다). 여기 값은 새로 티칭을 시작할 때만 들어간다.
+// 참고: robot_settings.min_weaving_distance 가 50mm 인데 모서리 구간은 20mm 라
+// welding.weaving.shortSegment 경고가 로그에 찍힌다. 경고만 남기고 위빙은 그대로
+// 진행하며(weldingExecution 629행), robot-core 도 이 값을 SDK 로 넘기지 않는다.
+export const CORNER_WEAVE_PARAMS: WeaveParams = {
+  weaveFrequency: 2.0,
+  weaveRange: 5.0,
+  weaveLeftRange: 5.0,
+  weaveRightRange: 5.0,
+  weaveLeftStayTime: 300,
+  weaveRightStayTime: 300,
+  weaveCircleRadio: 50,
+  weaveYawAngle: 0,
+  weaveRotAngle: 0,
+};
+// 좌측 수평 파트(P5~P6) 기본 위빙 — 평면 삼각파
 export const HORIZONTAL_LEFT_WEAVE_PARAMS: WeaveParams = {
   weaveFrequency: 2.0,
   weaveRange: 1.5,
@@ -1008,7 +1037,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
   },
   {
     id: 'p3',
-    name: 'P3 (좌측 하단)',
+    name: 'P3 (좌측 하단, 모서리+20mm)',
     order: 3,
     toolNum: 3,
     userNum: 0,
@@ -1024,23 +1053,25 @@ export const UCELL_POINT_DEFINITIONS: Omit<
   },
   {
     id: 'p4',
-    name: 'P4 (하단 좌측)',
+    // [v1.1.228] P4 는 모서리 파트(P4->P3)의 시작점이다. 수직 조건으로 바꿨다.
+    name: 'P4 (좌측 모서리)',
     order: 4,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 26,
+    moveSpeed: 16,
     velMode: 1,
-    weldVoltage: 32,
-    weldCurrent: 290,
-    weavingType: 'plane_triangle',
-    weaveParams: { ...HORIZONTAL_LEFT_WEAVE_PARAMS },
+    weldVoltage: 28,
+    weldCurrent: 250,
+    weavingType: 'vertical_triangle',
+    weaveParams: { ...CORNER_WEAVE_PARAMS },
     gap: 0,
     touchDirection: 1,
     touchBottom: false,
   },
   {
     id: 'p5',
-    name: 'P5 (하단 중앙)',
+    // [v1.1.228] 수평 파트의 시작점이 P4 에서 여기로 옮겨왔다. 자리는 모서리다.
+    name: 'P5 (하단 좌측 시작)',
     order: 5,
     toolNum: 3,
     userNum: 0,
@@ -1104,7 +1135,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
   },
   {
     id: 'p9',
-    name: 'P9 (우측 하단)',
+    name: 'P9 (우측 하단, 모서리+20mm)',
     order: 9,
     toolNum: 3,
     userNum: 0,
@@ -1120,23 +1151,25 @@ export const UCELL_POINT_DEFINITIONS: Omit<
   },
   {
     id: 'p10',
-    name: 'P10 (하단 우측)',
+    // [v1.1.228] P10 은 모서리 파트(P10->P9)의 시작점이다. 수직 조건으로 바꿨다.
+    name: 'P10 (우측 모서리)',
     order: 10,
     toolNum: 3,
     userNum: 0,
-    moveSpeed: 26,
+    moveSpeed: 16,
     velMode: 1,
-    weldVoltage: 32,
-    weldCurrent: 290,
-    weavingType: 'plane_triangle',
-    weaveParams: { ...HORIZONTAL_RIGHT_WEAVE_PARAMS },
+    weldVoltage: 28,
+    weldCurrent: 250,
+    weavingType: 'vertical_triangle',
+    weaveParams: { ...CORNER_WEAVE_PARAMS },
     gap: 0,
     touchDirection: -1,
     touchBottom: false,
   },
   {
     id: 'p11',
-    name: 'P11 (하단 중앙우)',
+    // [v1.1.228] 우측 수평 파트의 시작점이 P10 에서 여기로 옮겨왔다. 자리는 모서리다.
+    name: 'P11 (하단 우측 시작)',
     order: 11,
     toolNum: 3,
     userNum: 0,

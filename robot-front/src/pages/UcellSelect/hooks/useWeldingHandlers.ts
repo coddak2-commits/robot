@@ -2,7 +2,7 @@ import { TeachingPoint, WeaveParams, PartWeldEnabled } from '..';
 import { RealtimeRobotStatus, emergencyStop } from '../../../lib';
 import { createLogger } from '../../../lib';
 import { useCallback } from 'react';
-import { getBlockPointIds, getBlockName } from '..';
+import { getBlockPointIds, getBlockName, getPartStartPointIds } from '..';
 import { TouchSensingOptions, TouchSensingResult, WeldingStartOptions, WeldingResult, ClosestCenterlineResult, UseWeldingOperationsReturn } from './weldingCore';
 
 const log_useWeldingHandlers = createLogger('WeldingHandlers');
@@ -269,7 +269,19 @@ export function useWeldingHandlers({
       const blockPointIds = getBlockPointIds(sourcePointId);
       if (blockPointIds.length === 0) return;
       const blockName = getBlockName(sourcePointId);
+      // [v1.1.228] 이어지는 자리의 포인트는 두 파트에 함께 들어간다(모서리 파트의
+      // 끝점 P3/P9 가 수직 파트의 시작점이다). 파트의 용접 조건은 그 파트 첫
+      // 포인트에서 읽히므로, 다른 파트의 시작점을 덮으면 그 파트 전체가 엉뚱한
+      // 조건으로 돈다. 예: P4 에서 모서리 블록을 적용하면 P3 도 모서리 조건이 되어
+      // 수직 파트가 모서리 조건으로 돌아버린다. 그 자리는 건너뛴다.
+      // 자기 블록의 시작점은 당연히 적용 대상이다.
+      const partStartIds = getPartStartPointIds();
+      const skipped: string[] = [];
       blockPointIds.forEach(pid => {
+        if (pid !== sourcePointId && pid !== blockPointIds[0] && partStartIds.has(pid)) {
+          skipped.push(pid.toUpperCase());
+          return;
+        }
         if (pid !== sourcePointId) {
           updatePointSpeed(pid, sourcePoint.moveSpeed, sourcePoint.velMode);
           updatePointWeldParams(pid, sourcePoint.weldVoltage, sourcePoint.weldCurrent);
@@ -278,8 +290,15 @@ export function useWeldingHandlers({
           updatePointGap(pid, sourcePoint.gap);
         }
       });
+      const applied = blockPointIds
+        .filter(id => !skipped.includes(id.toUpperCase()))
+        .map(id => id.toUpperCase())
+        .join(', ');
       showAlert(
-        `${blockName} (${blockPointIds.map(id => id.toUpperCase()).join(', ')})에 파라미터가 적용되었습니다.`,
+        skipped.length > 0
+          ? `${blockName} (${applied})에 파라미터가 적용되었습니다.\n`
+            + `${skipped.join(', ')}은(는) 다른 파트의 시작점이라 건너뛰었습니다.`
+          : `${blockName} (${applied})에 파라미터가 적용되었습니다.`,
         { type: 'success' },
       );
     },

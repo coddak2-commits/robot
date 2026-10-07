@@ -4,7 +4,7 @@ import { WeldingLogData, getWeldingLogs, deleteWeldingLogs, updateWeldingLog, Re
 import Modal from 'react-modal';
 import { useAlert } from '../../../contexts';
 import { useGapAuth } from '../../../contexts/gapAuth';
-import { TeachingPoint, WeaveParams, WEAVING_TYPE_OPTIONS, UCellData, HEIGHT_OPTIONS } from '..';
+import { TeachingPoint, WeaveParams, WEAVING_TYPE_OPTIONS, UCellData, HEIGHT_OPTIONS, PART_ENABLE_GROUPS } from '..';
 import { Button } from '../../../components/common';
 import { RobotMoveData } from '../../../types/RobotData';
 import { useSortable, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -98,11 +98,32 @@ const UnifiedWorkspaceCanvasComponent: React.FC<UnifiedWorkspaceCanvasProps> = (
     handleSvgMouseUp,
     handleSvgMouseLeave,
   } = useDragAndDrop(weldPoints, transform, onReorderPoints, onWeldPointClick);
+  // [v1.1.228] 체크박스에 붙는 실행 순서 배지.
+  // 227 까지는 part_index -> execution_order 를 그대로 썼다. 파트와 체크박스가
+  // 1:1 이던 시절의 식이다. 모서리 파트가 생겨 파트는 6개, 체크박스는 4개가 되면서
+  // 배지가 1, 3, 4, 6 처럼 건너뛰었다(2와 5는 화면에 없는 모서리 파트).
+  // 배지는 '이 묶음이 몇 번째로 도는가'를 뜻해야 하므로, 묶음별 최소 execution_order
+  // 로 정렬해 순위를 매긴다. 결과는 1, 2, 3, 4.
+  // DB 가 예전 4파트여도 points 가 묶음에 안 맞으면 part_index 로 떨어져 그대로 돈다.
   const [partOrderMap, setPartOrderMap] = useState<Record<number, number>>({});
   useEffect(() => {
     getWeldingPartOrder().then((order: WeldingPartOrderItem[]) => {
+      const minOrderByGroup: Record<number, number> = {};
+      order.forEach(o => {
+        const points = Array.isArray(o.points) ? o.points : [];
+        const groupIdx = PART_ENABLE_GROUPS.findIndex(
+          g => points.length > 0 && points.every(p => g.includes(p)),
+        );
+        const key = groupIdx >= 0 ? groupIdx : o.part_index;
+        const prev = minOrderByGroup[key];
+        if (prev === undefined || o.execution_order < prev) {
+          minOrderByGroup[key] = o.execution_order;
+        }
+      });
       const map: Record<number, number> = {};
-      order.forEach(o => { map[o.part_index] = o.execution_order; });
+      Object.entries(minOrderByGroup)
+        .sort((a, b) => a[1] - b[1])
+        .forEach(([key], rank) => { map[Number(key)] = rank; });
       setPartOrderMap(map);
     }).catch(() => {});
   }, []);

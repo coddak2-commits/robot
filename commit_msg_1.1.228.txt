@@ -33,6 +33,16 @@ setupAndStartWeave 는 파트 시작 시 한 번만 호출되고 파트 중간�
   실행 기본값이기도 해서 묶음과 실행 경로가 엉켜 있었다. 판정은 some -> every.
   묶음: 0 수평 좌 / 1 수직 좌+모서리 좌 / 2 수평 우 / 3 수직 우+모서리 우.
 
+- UcellSelect/index.tsx getBlockPointIds/getBlockName 이 '그 포인트가 시작점인
+  파트'를 우선 찾게 바꿨다. 모서리 끝 P3/P9 가 수직 파트의 시작점이기도 해서
+  배열 순서에 따라 엉뚱한 블록이 잡혔다. getPartStartPointIds 추가.
+- useWeldingHandlers.ts applyParamsToBlock 이 다른 파트의 시작점을 덮지 않게
+  했다. P4 에서 모서리 블록을 적용하면 P3 도 모서리 조건이 되어 수직 파트가
+  모서리 조건으로 돌았다. 건너뛴 포인트는 알림에 표시한다.
+- UcellSelect/index.tsx CORNER_WEAVE_PARAMS 추가, P4/P10 기본값을
+  plane_triangle/수평위빙/26cpm 에서 vertical_triangle/CORNER/16cpm 으로 교체.
+  P3/P4/P5/P9/P10/P11 이름을 새 역할에 맞게 수정.
+
 DEFAULT_WELDING_PARTS(4개)는 유지. welding_part_order 가 비었을 때의 실행
 기본값이다. DB 읽기가 실패하면 모서리가 빠진 4파트로 돌아 바닥 20mm 가 안
 깔린다(충돌은 없다). 로그 welding.partOrder 로 파트 수를 확인할 것.
