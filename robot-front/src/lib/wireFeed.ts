@@ -54,8 +54,31 @@ export const WIRE_FEED_PROFILE_COLD: WireProfile = {
   forward: { deadTimeMs: 306, speedMmPerSec: 6.56 },
   reverse: { deadTimeMs: 220, speedMmPerSec: 23.4 },
 };
+//
+// v1.1.233 뜨거운 쪽 재보정 (2026-10-08, 현장 실측).
+// 218 값(지연 7ms, 7.54mm/s)으로 용접 전후 두 번 쟀다. 두 번 모두 마지막 아크에서
+// 5분 안이라 뜨거운 프로파일로 돌았고, 같은 명령 시간에 대한 두 측정의 평균은
+//   요청 1mm -> 140ms -> 실제 2.5mm
+//   요청 5mm -> 670ms -> 실제 7.5mm
+//   요청 25mm -> 3323ms -> 실제 35mm
+// 세 점을 최소제곱으로 맞추면 L(mm) = 0.86 + 10.26 * t(s) 이다(오차 0.3mm 이내).
+// 즉 속도가 7.54 -> 10.26mm/s 로 빨라졌고, 길이와 무관한 +0.9mm 가 늘 붙는다.
+// 이 +0.9mm 는 모터를 끈 뒤 와이어가 관성으로 더 나가는 양으로 보인다.
+// 지연(deadTime)이 양수면 짧은 펄스에서 '덜' 나가야 하는데 실측은 반대였다.
+//
+// 지금 공식이 duration = deadTime + (mm/speed)*1000 이므로, 그 +0.9mm 를
+// 음수 지연 -84ms 로 환산해 넣는다(0.86 / 10.26 * 1000). 공식은 그대로 두고
+// 상수만 바꾼다. 검산:
+//   25mm -> 2353ms -> 0.86 + 24.1 = 25.0mm
+//    5mm ->  403ms -> 0.86 +  4.1 =  5.0mm
+//    1mm ->   13ms -> 0.86 +  0.1 =  1.0mm
+// 1mm 는 펄스가 13ms 라 사실상 '모터 ON 후 바로 OFF' 이고, 실제로 나가는 양은
+// HTTP 왕복 시간이 정한다. 종전과 같이 1mm 는 ±1mm 가 한계다.
+//
+// 식은 쪽(COLD)은 이번에 재지 않았다. 208 값(306ms, 6.56mm/s)이 그대로 남아
+// 있으므로, 5분 넘게 쉰 뒤 첫 조그는 여전히 안 맞을 수 있다.
 export const WIRE_FEED_PROFILE_HOT: WireProfile = {
-  forward: { deadTimeMs: 7, speedMmPerSec: 7.54 },
+  forward: { deadTimeMs: -84, speedMmPerSec: 10.26 },
   reverse: { deadTimeMs: 220, speedMmPerSec: 23.4 },
 };
 // 마지막 아크 OFF 로부터 이 시간 안이면 뜨거운 값을 쓴다.
