@@ -21,6 +21,7 @@ async function performRealTouchSensing(
   point: TeachingPoint,
   sequenceSettings: WeldingSequenceSettings,
   depthOffset: number,
+  zOffset: number,
   touchBottom: boolean,
   stopRef: React.MutableRefObject<boolean>,
 ): Promise<PointTouchResult> {
@@ -156,6 +157,21 @@ async function performRealTouchSensing(
     log_touchSensing.error('touchSensing.point.error', `${point.name} 터치 센싱 오류`, { error: String(error) });
     return { dx, dy, dz, stopped: false, error: String(error) };
   }
+  // [v1.1.232] Z 전용 여유값. depthOffset 은 X/Y 에만 붙어서 토치가 '와이어 끝이
+  // 모재에 닿던 높이'에 그대로 섰다. 그래서 CTWD 가 터치 당시 와이어 길이에
+  // 그대로 끌려다녔고, 와이어가 1mm 짧으면 스틱아웃도 1mm 짧아졌다.
+  // 여기서 dz 를 양수 방향으로 밀면 토치만 그만큼 높이 서고 스틱아웃이 길어진다.
+  // Z 탐색을 실제로 한 포인트에만 적용한다. 안 한 포인트는 dz 가 0 이고,
+  // 거기에 여유값을 더하면 없던 보정이 생긴다.
+  if ((hasTop || hasBottomDir) && zOffset !== 0) {
+    const beforeZ = dz;
+    dz += zOffset;
+    log_touchSensing.info('touchSensing.findDz.zOffset', `Z 여유값 적용`, {
+      rawDz: beforeZ,
+      zOffset,
+      dz,
+    });
+  }
   return { dx, dy, dz, stopped: stopRef.current };
 }
 export async function executeTouchSensing(
@@ -175,6 +191,17 @@ export async function executeTouchSensing(
   const onUpdatePoint = options?.onUpdatePoint;
   const { sequence: sequenceSettings } = await loadWeldingSettings();
   const depthOffset = options?.depthOffset ?? sequenceSettings.touchOffsetDepth;
+  // [v1.1.232] 0~30mm 로 막는다. 오타로 큰 값이 들어가면 토치가 그만큼 떠서
+  // 아크가 안 붙는다.
+  const Z_OFFSET_MAX = 30;
+  const rawZOffset = sequenceSettings.touchOffsetDepthZ ?? 0;
+  const zOffset = Math.min(Z_OFFSET_MAX, Math.max(0, rawZOffset));
+  if (rawZOffset !== zOffset) {
+    log_touchSensing.warn('touchSensing.zOffset.clamped', 'Z 여유값이 0~30mm 범위를 벗어나 제한했습니다', {
+      rawZOffset,
+      zOffset,
+    });
+  }
   log_touchSensing.info('touchSensing.settings', '설정 로드 완료', {
     touchSensingEnabled: sequenceSettings.touchSensingEnabled,
     touchSpeed: sequenceSettings.touchSpeed,
@@ -182,6 +209,7 @@ export async function executeTouchSensing(
     touchApproachOffset: sequenceSettings.touchApproachOffset,
     touchBottom,
     depthOffset,
+    zOffset,
   });
   const partWeldEnabled = options?.partWeldEnabled;
   const executableParts = getExecutableParts(teachingPoints, partWeldEnabled);
@@ -376,6 +404,7 @@ export async function executeTouchSensing(
           point,
           sequenceSettings,
           depthOffset,
+          zOffset,
           touchBottom,
           stopRef,
         );

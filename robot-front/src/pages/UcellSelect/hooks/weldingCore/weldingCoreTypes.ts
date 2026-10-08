@@ -7,6 +7,8 @@ export interface WeldingSequenceSettings {
   touchSpeed: number;
   touchDistance: number;
   touchOffsetDepth: number;
+  /** [v1.1.232] 터치 결과 dz 에 더하는 Z 전용 여유값(mm). 0 = 종전과 동일. */
+  touchOffsetDepthZ: number;
   touchApproachOffset: number;
   touchHomeRetractOffset: number;
   touchSensingPointSpeed: number;

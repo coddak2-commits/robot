@@ -394,6 +394,12 @@ struct WeldingConfig {
     double touch_speed = 10.0;
     double touch_distance = 100.0;
     double touch_offset_depth = 5.0;
+    // [v1.1.232] 터치 결과 dz 에 더하는 Z 전용 여유값(mm). 기본 0 = 종전과 동일.
+    // touch_offset_depth 는 X/Y 에만 붙고 Z 에는 안 붙는다. 그래서 용접 토치가
+    // '와이어 끝이 모재에 닿던 높이'에 그대로 서고, CTWD 가 터치 당시 와이어
+    // 길이에 끌려다녔다. 이 값을 올리면 토치만 그만큼 높이 서서 스틱아웃이 길어진다.
+    // 설정 화면은 없다. welding_config 테이블에서 직접 바꾼다.
+    double touch_offset_depth_z = 0.0;
     double touch_approach_angle = 20.0;
     double touch_sensing_velocity = 1.0;
     double touch_sensing_acceleration = 3.0;

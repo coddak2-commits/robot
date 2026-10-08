@@ -1713,6 +1713,7 @@ export interface WeldingConfigData {
   touch_speed: number;
   touch_distance: number;
   touch_offset_depth: number;
+  touch_offset_depth_z: number;
   touch_approach_angle: number;
   touch_sensing_velocity: number;
   touch_sensing_acceleration: number;

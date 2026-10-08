@@ -6132,6 +6132,7 @@ void registerSdkRoutes(
             if (body.contains("touch_speed")) config.touch_speed = body["touch_speed"].get<double>();
             if (body.contains("touch_distance")) config.touch_distance = body["touch_distance"].get<double>();
             if (body.contains("touch_offset_depth")) config.touch_offset_depth = body["touch_offset_depth"].get<double>();
+            if (body.contains("touch_offset_depth_z")) config.touch_offset_depth_z = body["touch_offset_depth_z"].get<double>();
             if (body.contains("touch_approach_angle")) config.touch_approach_angle = body["touch_approach_angle"].get<double>();
             if (body.contains("touch_sensing_velocity")) config.touch_sensing_velocity = body["touch_sensing_velocity"].get<double>();
             if (body.contains("touch_sensing_acceleration")) config.touch_sensing_acceleration = body["touch_sensing_acceleration"].get<double>();
@@ -7140,7 +7141,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.231"
+#define APP_VERSION_STRING "1.1.232"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -9096,7 +9097,7 @@ WeldingConfig DatabaseService::getWeldingConfig() {
     std::lock_guard<std::mutex> lock(m_mutex);
     WeldingConfig config;
     MYSQL_RES* result = executeSelect(
-        "SELECT touch_sensing_enabled, touch_speed, touch_distance, touch_offset_depth, "
+        "SELECT touch_sensing_enabled, touch_speed, touch_distance, touch_offset_depth, touch_offset_depth_z, "
         "touch_approach_angle, touch_sensing_velocity, touch_sensing_acceleration, touch_sensing_step_size, "
         "touch_sensing_retract_distance, touch_sensing_approach_offset, touch_sensing_home_retract_offset, arc_end_burnback_ms, touch_sensing_move_distance, "
         "touch_sensing_point_speed, touch_sensing_search_speed, "
@@ -9132,6 +9133,7 @@ WeldingConfig DatabaseService::getWeldingConfig() {
         config.touch_speed = row[col] ? std::stod(row[col]) : 10.0; col++;
         config.touch_distance = row[col] ? std::stod(row[col]) : 100.0; col++;
         config.touch_offset_depth = row[col] ? std::stod(row[col]) : 5.0; col++;
+        config.touch_offset_depth_z = row[col] ? std::stod(row[col]) : 0.0; col++;
         config.touch_approach_angle = row[col] ? std::stod(row[col]) : 20.0; col++;
         config.touch_sensing_velocity = row[col] ? std::stod(row[col]) : 1.0; col++;
         config.touch_sensing_acceleration = row[col] ? std::stod(row[col]) : 3.0; col++;
@@ -9216,6 +9218,7 @@ bool DatabaseService::updateWeldingConfig(const WeldingConfig& config) {
           << "touch_speed = " << config.touch_speed << ", "
           << "touch_distance = " << config.touch_distance << ", "
           << "touch_offset_depth = " << config.touch_offset_depth << ", "
+          << "touch_offset_depth_z = " << config.touch_offset_depth_z << ", "
           << "touch_approach_angle = " << config.touch_approach_angle << ", "
           << "touch_sensing_velocity = " << config.touch_sensing_velocity << ", "
           << "touch_sensing_acceleration = " << config.touch_sensing_acceleration << ", "
@@ -9297,6 +9300,7 @@ json DatabaseService::weldingConfigToJson(const WeldingConfig& config) {
         {"touch_speed", config.touch_speed},
         {"touch_distance", config.touch_distance},
         {"touch_offset_depth", config.touch_offset_depth},
+        {"touch_offset_depth_z", config.touch_offset_depth_z},
         {"touch_approach_angle", config.touch_approach_angle},
         {"touch_sensing_velocity", config.touch_sensing_velocity},
         {"touch_sensing_acceleration", config.touch_sensing_acceleration},
@@ -9378,6 +9382,7 @@ WeldingConfig DatabaseService::jsonToWeldingConfig(const json& j) {
     if (j.contains("touch_speed")) config.touch_speed = j["touch_speed"].get<double>();
     if (j.contains("touch_distance")) config.touch_distance = j["touch_distance"].get<double>();
     if (j.contains("touch_offset_depth")) config.touch_offset_depth = j["touch_offset_depth"].get<double>();
+    if (j.contains("touch_offset_depth_z")) config.touch_offset_depth_z = j["touch_offset_depth_z"].get<double>();
     if (j.contains("touch_approach_angle")) config.touch_approach_angle = j["touch_approach_angle"].get<double>();
     if (j.contains("touch_sensing_velocity")) config.touch_sensing_velocity = j["touch_sensing_velocity"].get<double>();
     if (j.contains("touch_sensing_acceleration")) config.touch_sensing_acceleration = j["touch_sensing_acceleration"].get<double>();
