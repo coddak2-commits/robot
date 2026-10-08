@@ -231,9 +231,21 @@ export async function executeTouchSensing(
     const i = TOUCH_SENSING_ORDER.indexOf(id.toLowerCase());
     return i === -1 ? Number.MAX_SAFE_INTEGER : i;
   };
-  const savedPoints = flattenExecutableParts(executableParts).sort(
-    (a, b) => touchRank(a.id) - touchRank(b.id),
-  );
+  // [v1.1.232] 중복 포인트를 거른다.
+  // flattenExecutableParts 는 파트를 그대로 이어붙인다. v1.1.228 에서 모서리를
+  // 별도 파트로 떼면서 P3 와 P9 가 두 파트에 들어갔다(모서리 파트의 끝점이자
+  // 수직 파트의 시작점이라 좌표를 공유한다). 그대로 두면 그 두 포인트를 두 번
+  // 터치한다. 시간도 두 배고, 와이어가 탐침이라 접촉이 늘수록 소모된다.
+  // 두 번째 측정이 첫 번째를 덮어쓰기만 하므로 결과는 같다. 횟수만 낭비였다.
+  const seenPointIds = new Set<string>();
+  const savedPoints = flattenExecutableParts(executableParts)
+    .filter(pt => {
+      const id = pt.id.toLowerCase();
+      if (seenPointIds.has(id)) return false;
+      seenPointIds.add(id);
+      return true;
+    })
+    .sort((a, b) => touchRank(a.id) - touchRank(b.id));
   if (savedPoints.length === 0) {
     log_touchSensing.warn('touchSensing.noPoints', '저장된 티칭 포인트가 없음');
     showAlert('저장된 티칭 포인트가 없습니다. (각 파트에 2개 이상 포인트 필요)', {
