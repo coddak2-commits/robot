@@ -394,12 +394,6 @@ struct WeldingConfig {
     double touch_speed = 10.0;
     double touch_distance = 100.0;
     double touch_offset_depth = 5.0;
-    // [v1.1.232] 터치 결과 dz 에 더하는 Z 전용 여유값(mm). 기본 0 = 종전과 동일.
-    // touch_offset_depth 는 X/Y 에만 붙고 Z 에는 안 붙는다. 그래서 용접 토치가
-    // '와이어 끝이 모재에 닿던 높이'에 그대로 서고, CTWD 가 터치 당시 와이어
-    // 길이에 끌려다녔다. 이 값을 올리면 토치만 그만큼 높이 서서 스틱아웃이 길어진다.
-    // 설정 화면은 없다. welding_config 테이블에서 직접 바꾼다.
-    double touch_offset_depth_z = 0.0;
     double touch_approach_angle = 20.0;
     double touch_sensing_velocity = 1.0;
     double touch_sensing_acceleration = 3.0;
@@ -422,9 +416,20 @@ struct WeldingConfig {
     bool p3_touch_left = true;
     bool p3_touch_right = true;
     bool p3_touch_bottom = true;
+    // [v1.1.235] P4/P10 의 Z 탐색 기본값을 끈다.
+    // 모서리 파트의 끝점(P3/P9)은 Z 탐색을 돌지 않는다. 그래서 P4 만 바닥판까지
+    // 내려가면 20mm 로 교시한 구간이 그만큼 늘어난다. 2026-10-08 좌측 실측:
+    //   P4 교시 Z 17.169, rawDz -17.695 -> 보정 후 -0.526
+    //   P3 교시 Z 38.525, Z 탐색 없음   -> 보정 후 38.525
+    //   교시 간격 21.4mm -> 보정 후 39.1mm
+    // P3 쪽을 켜는 것으로는 못 고친다. P3 에서 -Z 로 내려가면 20mm 아래 바닥판을
+    // 찾아 P3 도 끌려 내려오고 구간이 0 이 된다.
+    // 끈 뒤에는 P4/P10 을 실제 모서리 높이에 다시 교시해야 한다. 지금은 P5/P11 과
+    // 같은 자리(바닥판 위 17mm)에 있는데, 그건 수평 포인트가 Z 탐색으로 내려오려고
+    // 일부러 띄워 교시한 자리다. Z 탐색을 끈 P4 는 처음부터 모서리에 있어야 한다.
     bool p4_touch_center = true;
-    bool p4_touch_top = true;
-    bool p4_touch_bottom = true;
+    bool p4_touch_top = false;
+    bool p4_touch_bottom = false;
     bool p4_touch_side = true;
     bool p5_touch_center = true;
     bool p5_touch_top = true;
@@ -443,8 +448,8 @@ struct WeldingConfig {
     bool p9_touch_right = true;
     bool p9_touch_bottom = true;
     bool p10_touch_center = true;
-    bool p10_touch_top = true;
-    bool p10_touch_bottom = true;
+    bool p10_touch_top = false;   // [v1.1.235] P4 와 같은 사유
+    bool p10_touch_bottom = false; // [v1.1.235] P4 와 같은 사유
     bool p10_touch_side = true;
     bool p11_touch_center = true;
     bool p11_touch_top = true;
