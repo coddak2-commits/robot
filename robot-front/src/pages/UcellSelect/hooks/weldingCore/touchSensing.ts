@@ -41,6 +41,7 @@ async function performRealTouchSensing(
     hasSide,
     sideDirection,
     isHorizontal,
+    applyDepthOffset,
   } = directions;
   let dx = 0,
     dy = 0,
@@ -60,7 +61,10 @@ async function performRealTouchSensing(
   };
   try {
     if (hasCenter && !stopRef.current) {
-      if (isHorizontal) {
+      // [v1.1.235] depthOffset 적용 여부는 applyDepthOffset 이 정한다.
+      // 가로로 분류된 포인트 중 모서리 시작점(P4/P10)은 세로와 같이 5mm 를 붙인다.
+      // 사유는 touchDirections.ts 의 CORNER_START_POINTS 주석에 적었다.
+      if (isHorizontal && !applyDepthOffset) {
         log_touchSensing.info('touchSensing.findDx.center', `${point.name} 중앙 터치 시작 (가로용접 Base -X)`);
         const dxResult = await findDx(-1);
         if (!(dxResult?.status_code === 200 && dxResult.data?.delta_x !== undefined)) return searchFailure('중앙(X)', dxResult);
@@ -124,11 +128,15 @@ async function performRealTouchSensing(
         const dyResult = await findDy(sideDirection);
         if (!(dyResult?.status_code === 200 && dyResult.data?.delta_y !== undefined)) return searchFailure('측면(Y)', dyResult);
         if (dyResult?.status_code === 200 && dyResult.data?.delta_y !== undefined) {
-          dy = dyResult.data.delta_y;
+          // [v1.1.235] 측면 Y 도 depthOffset 을 탐침 방향의 반대로 붙인다.
+          // 세로 쪽과 같은 규칙이다. 좌측(dir=-1)은 +depthOffset, 우측(dir=+1)은
+          // -depthOffset 이라 `- sideDirection * depthOffset` 한 줄로 맞는다.
+          const sideOffset = applyDepthOffset ? -sideDirection * depthOffset : 0;
+          dy = dyResult.data.delta_y + sideOffset;
           log_touchSensing.info(
             'touchSensing.findDy.side.result',
-            `${sideLabel} 터치 완료 (가로: depthOffset 미적용)`,
-            { rawDy: dyResult.data.delta_y, dy },
+            `${sideLabel} 터치 완료`,
+            { rawDy: dyResult.data.delta_y, depthOffset: sideOffset, dy },
           );
         }
       }

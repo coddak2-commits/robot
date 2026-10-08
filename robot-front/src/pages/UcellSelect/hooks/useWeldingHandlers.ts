@@ -2,7 +2,7 @@ import { TeachingPoint, WeaveParams, PartWeldEnabled } from '..';
 import { RealtimeRobotStatus, emergencyStop } from '../../../lib';
 import { createLogger } from '../../../lib';
 import { useCallback } from 'react';
-import { getBlockPointIds, getBlockName, getPartStartPointIds } from '..';
+import { getBlockPointIds, getPartStartPointIds } from '..';
 import { TouchSensingOptions, TouchSensingResult, WeldingStartOptions, WeldingResult, ClosestCenterlineResult, UseWeldingOperationsReturn } from './weldingCore';
 
 const log_useWeldingHandlers = createLogger('WeldingHandlers');
@@ -268,7 +268,6 @@ export function useWeldingHandlers({
       if (!sourcePoint) return;
       const blockPointIds = getBlockPointIds(sourcePointId);
       if (blockPointIds.length === 0) return;
-      const blockName = getBlockName(sourcePointId);
       // [v1.1.228] 이어지는 자리의 포인트는 두 파트에 함께 들어간다(모서리 파트의
       // 끝점 P3/P9 가 수직 파트의 시작점이다). 파트의 용접 조건은 그 파트 첫
       // 포인트에서 읽히므로, 다른 파트의 시작점을 덮으면 그 파트 전체가 엉뚱한
@@ -293,13 +292,15 @@ export function useWeldingHandlers({
       // [v1.1.231] 건너뛴 포인트는 알림에 적지 않는다. 작업자에게는 "어디에
       // 들어갔는지"만 필요하고, "저 포인트는 다른 파트의 시작점이라 뺐다"는
       // 내부 사정이다. 적용된 포인트만 적는다.
-      // 모서리 블록([P4,P3] / [P10,P9])은 끝점이 수직 파트의 시작점이라 늘 빠지므로,
-      // 결과적으로 "모서리 좌 (P4)에 적용되었습니다" 한 줄이 된다.
+      // [v1.1.234] 블록 이름도 뺀다. 모서리 블록([P4,P3] / [P10,P9])은 끝점이
+      // 수직 파트의 시작점이라 늘 빠지므로, 적용 결과가 포인트 하나인데 앞에
+      // 블록 이름이 붙어 "모서리 좌 (P4)에 파라미터가 적용되었습니다" 가 됐다.
+      // 포인트 번호만 남긴다.
       const applied = blockPointIds
         .filter(id => !skipped.includes(id.toUpperCase()))
         .map(id => id.toUpperCase())
         .join(', ');
-      showAlert(`${blockName} (${applied})에 파라미터가 적용되었습니다.`, { type: 'success' });
+      showAlert(`${applied} 저장되었습니다.`, { type: 'success' });
     },
     [
       teachingPoints,

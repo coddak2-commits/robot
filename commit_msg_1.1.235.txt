@@ -1,0 +1,32 @@
+v1.1.235: 모서리 시작점(P4/P10)에 터치 보정 5mm 적용
+
+모서리 20mm 구간의 양 끝이 서로 다른 규칙으로 보정되고 있었다. 로봇이 서는
+자리가 바뀌므로 설치 후 터치 테스트를 먼저 돌릴 것.
+
+touchDirections.ts 의 isHorizontal 하나가 (1) 중앙 X 에 touch_offset_depth 를
+붙일지와 (2) Y 를 좌우로 잴지 측면 한쪽만 잴지를 동시에 정하고 있었다.
+v1.1.228 에서 P4/P10 이 '가로 시작점'에서 '모서리 파트 시작점'으로 바뀌었는데
+분류는 가로에 남아, 모서리 파트의 시작점은 가로 규칙, 끝점은 세로 규칙으로
+보정됐다.
+
+2026-10-08 로그(좌측 10:07:21) 실측:
+  P4 rawDx -18.662 -> dx -18.662, 접촉 X -499.954, 최종 -499.954 (접촉면 그대로)
+  P3 rawDx  -8.185 -> dx  -3.185, 접촉 X -498.816, 최종 -493.816 (5mm 뒤)
+  P4 rawDy -16.292 -> dy -16.292, 접촉 Y -509.677, 최종 -509.677
+  P3 rawDy -14.310 -> dy  -9.310, 접촉 Y -509.307, 최종 -504.307
+접촉 좌표가 1.1mm 안에서 같으니 같은 벽이고, 교시 위치 차이는 터치가 흡수한다.
+결과적으로 모서리 20mm 동안 토치가 X 6.1mm / Y 5.4mm(합성 약 8mm) 쓸렸다.
+
+- touchDirections.ts: TouchDirectionResult 에 applyDepthOffset 추가.
+  !isHorizontal || ['p4','p10'] 이면 true. 수평 본구간(P5/P6/P11/P12)만
+  종전처럼 접촉면 그대로 쓴다.
+- touchSensing.ts: 중앙 X 분기를 applyDepthOffset 기준으로 바꾸고, 측면 Y 에도
+  탐침 반대 방향으로 depthOffset 을 붙인다(delta_y - sideDirection * depthOffset).
+
+(2)는 그대로 둔다. P4/P10 을 세로로 돌리면 모서리에서 반대쪽(U셀 벽)으로 탐침이
+들어가 code=185 가 난다. 측면 한쪽만 재는 방식을 유지한다.
+
+미해결: P4/P10 은 Z 탐색을 돌고 P3/P9 은 돌지 않아 Z 보정도 한쪽만 들어간다.
+touch_offset_depth_z 가 0 이 아니면 그만큼 더 벌어진다. 이번 범위 밖.
+
+robot_core_all.cpp APP_VERSION_STRING 동기화. DB 변경 없음.
