@@ -290,17 +290,16 @@ export function useWeldingHandlers({
           updatePointGap(pid, sourcePoint.gap);
         }
       });
+      // [v1.1.231] 건너뛴 포인트는 알림에 적지 않는다. 작업자에게는 "어디에
+      // 들어갔는지"만 필요하고, "저 포인트는 다른 파트의 시작점이라 뺐다"는
+      // 내부 사정이다. 적용된 포인트만 적는다.
+      // 모서리 블록([P4,P3] / [P10,P9])은 끝점이 수직 파트의 시작점이라 늘 빠지므로,
+      // 결과적으로 "모서리 좌 (P4)에 적용되었습니다" 한 줄이 된다.
       const applied = blockPointIds
         .filter(id => !skipped.includes(id.toUpperCase()))
         .map(id => id.toUpperCase())
         .join(', ');
-      showAlert(
-        skipped.length > 0
-          ? `${blockName} (${applied})에 파라미터가 적용되었습니다.\n`
-            + `${skipped.join(', ')}은(는) 다른 파트의 시작점이라 건너뛰었습니다.`
-          : `${blockName} (${applied})에 파라미터가 적용되었습니다.`,
-        { type: 'success' },
-      );
+      showAlert(`${blockName} (${applied})에 파라미터가 적용되었습니다.`, { type: 'success' });
     },
     [
       teachingPoints,

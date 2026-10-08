@@ -5,7 +5,7 @@ import { useTeachingPoints, useRobotControl, useJobManagement, useWeldingOperati
 import { UnifiedWorkspaceCanvas, UCellConfig, TeachingTabContent, JobListModal, OperationHistoryPanel, LeftSidebar, SecondarySidebar, ToolbarControls } from './components/index';
 import { useRobotWebSocket } from '../../hooks';
 import { createLogger } from '../../lib';
-import { getTeachingJobs, getRealtimeRobotStatus } from '../../lib';
+import { getTeachingJobs, getRealtimeRobotStatus, getWeldingPartOrder } from '../../lib';
 import { getRobotError, resetRobotError } from '../../lib/robotApi/index';
 import { useAlert } from '../../contexts';
 import Ucell01 from './img/Ucell01.png';
@@ -322,6 +322,29 @@ export function CellSelectionCore({
       };
     });
   }, [teachingPoints, getSchematicPosition]);
+  // [v1.1.231] 화면에 들어올 때 DB 파트 구성을 먼저 읽어 둔다.
+  // setWeldingPartOrder 는 그동안 startWelding 안에서만 불렸다. 그래서 용접을 한 번
+  // 돌리기 전에는 getWeldingParts() 가 DEFAULT_WELDING_PARTS(구 4파트)를 돌려줬고,
+  // 거기에 기대는 UI 가 전부 옛 묶음으로 동작했다.
+  // 2026-10-08 현장: P10 에서 '블록 적용'을 눌렀더니 P10·P11·P12 가 같이 바뀌었다.
+  // 새 구성의 모서리 우 파트는 [P10,P9] 인데, 구 4파트의 [P10,P11,P12] 가 잡힌 것이다.
+  // 블록 적용·블록 이름이 영향을 받는다. 실행 경로는 startWelding 이 직접 읽으므로
+  // 무사했다.
+  useEffect(() => {
+    let cancelled = false;
+    getWeldingPartOrder()
+      .then(order => {
+        if (cancelled || order.length === 0) return;
+        setWeldingPartOrder(order.map(o => ({ part_name: o.part_name, points: o.points })));
+        log.info('mount.partOrder', '용접 파트 구성 로드', {
+          parts: order.map(o => `${o.execution_order}:${o.part_name}`),
+        });
+      })
+      .catch(() => {
+        log.warn('mount.partOrder.fail', '파트 구성을 읽지 못했다. 기본 4파트로 동작한다');
+      });
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     log.info('mount', '페이지 진입, 폴링 시작');
     startTeachingPolling();
