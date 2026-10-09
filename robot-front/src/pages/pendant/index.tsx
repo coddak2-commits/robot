@@ -27,14 +27,16 @@ const LOOKUP_DEBOUNCE_MS = 400;
 // 갭은 세그먼트 startId 포인트에 저장되므로 모서리 갭은 P4/P10 에 들어간다.
 // 수평은 P5-P6 / P11-P12 로 줄어든다(시작점이 모서리로 옮겨갔다).
 // 모서리 구간은 20mm 라 라벨이 수직 2-3 과 겹친다. offset 으로 벽 쪽으로 밀어둔다.
+// [v1.1.237] 모서리는 P3->P4, P9->P10(위->아래)로 돈다. 라벨만 방향에 맞췄다.
+// 갭은 그대로 P4/P10 에 저장한다. 모서리 파트의 조건 포인트가 P4/P10 이다.
 const SEGMENTS: { key: string; startId: string; endId: string; label: string; offsetX?: number; offsetY?: number }[] = [
   { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -25 },
   { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -25 },
-  { key: 'p4-p3', startId: 'p4', endId: 'p3', label: '4-3', offsetX: -70 },
+  { key: 'p4-p3', startId: 'p4', endId: 'p3', label: '3-4', offsetX: -70 },
   { key: 'p5-p6', startId: 'p5', endId: 'p6', label: '5-6', offsetY: 105 },
   { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 25 },
   { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 25 },
-  { key: 'p10-p9', startId: 'p10', endId: 'p9', label: '10-9', offsetX: 70 },
+  { key: 'p10-p9', startId: 'p10', endId: 'p9', label: '9-10', offsetX: 70 },
   { key: 'p11-p12', startId: 'p11', endId: 'p12', label: '11-12', offsetY: 105 },
 ];
 
@@ -56,6 +58,8 @@ const PART_CHECKBOXES: { partIdx: number; refPoint: string; offsetX?: number; of
 // 반드시 수직 파라미터가 들어가야 한다. 그래서 모서리 항목에서 P3/P9 를 빼고,
 // 수직 항목을 모서리보다 앞에 둔다. 순서를 바꾸면 수직 전체가 모서리 조건으로 돈다.
 // (여기 순서는 파라미터 매핑용이고 실행 순서는 welding_part_order 가 정한다.)
+// [v1.1.237] 모서리 파트가 [P3,P4] 로 바뀌었지만 이 표는 그대로 맞다. 모서리 조건은
+// P4/P10 에서 읽고(getPartConditionPointId), P3/P9 는 수직 조건 그대로다.
 const PART_GAP_MAP: { points: string[]; gapPoints: string[] }[] = [
   { points: ['p5', 'p6'], gapPoints: ['p5'] },             // 수평 좌 - 세그먼트 p5-p6
   { points: ['p3', 'p2', 'p1'], gapPoints: ['p1', 'p2'] }, // 수직 좌 - 세그먼트 p1-p2, p2-p3 평균

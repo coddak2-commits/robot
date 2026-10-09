@@ -1,4 +1,4 @@
-import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo } from '../..';
+import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo, getPartConditionPointId } from '../..';
 import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, findDx, pulseWireFeedMs, wireFeedDurationMs, WireDirection, splineMove, markArcOff, buildCraterFill } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
@@ -492,6 +492,18 @@ export async function executeWelding(
   const executableParts = getExecutableParts(teachingPoints, partWeldEnabled);
   const weldingPoints = flattenExecutableParts(executableParts);
   const partBoundaryInfo = getPartBoundaryInfo(executableParts);
+  // [v1.1.237] idx 포인트가 속한 파트의 조건(전류·전압·위빙·속도·트래킹)을 읽을 포인트.
+  // 모서리 파트([P3,P4] / [P9,P10])만 P4/P10 을 돌려주고, 그 외에는 idx 포인트 그대로다.
+  // 모서리를 위->아래로 돌리면서 시작점 P3/P9 가 수직 파트의 시작점과 같아졌다.
+  // 첫 포인트에서 읽으면 모서리가 수직 조건으로 돈다. getPartConditionPointId 참고.
+  const conditionPointAt = (idx: number): TeachingPoint | undefined => {
+    const pt = weldingPoints[idx];
+    const part = executableParts[partBoundaryInfo.pointPartIndices[idx]];
+    if (!pt || !part) return pt;
+    const condId = getPartConditionPointId(part.pointIds);
+    if (!condId || condId === part.pointIds[0]) return pt;
+    return part.savedPoints.find(p => p.id === condId) ?? pt;
+  };
   if (weldingPoints.length === 0) {
     showAlert('저장된 용접 포인트가 없습니다. (각 파트에 2개 이상 포인트 필요)', {
       type: 'warning',
@@ -522,7 +534,7 @@ export async function executeWelding(
   let representativeCpm = 0;
   let totalExpectedDurationSec = 0;
   let segments: WeldingLogSegment[] = [];
-  let firstWeldPoint = weldingPoints[paramPointIndex] || weldingPoints[0];
+  let firstWeldPoint = conditionPointAt(paramPointIndex) || weldingPoints[0];
   // 아크가 켜져 있을 가능성. 중단/실패 경로에서 아크를 끄기 위한 플래그다.
   // v1.1.143까지 handleStopped()는 로그만 저장했다. 2026-09-15에 용접 중 MoveL이
   // code=-4로 실패했을 때 아크가 66초 동안 켜진 채 남아 모재가 손상됐다. (v1.1.144)
@@ -581,7 +593,7 @@ export async function executeWelding(
       configuredMinWeavingDistance = rs.min_weaving_distance || 50;
     } catch {
     }
-    firstWeldPoint = weldingPoints[startPointIndex];
+    firstWeldPoint = conditionPointAt(startPointIndex) ?? weldingPoints[startPointIndex];
     const hasWelding = isWeldingTest
       ? false
       : !!(firstWeldPoint.weldVoltage && firstWeldPoint.weldCurrent);
@@ -737,7 +749,7 @@ export async function executeWelding(
         startPointIndex = closestCenterlineResult.closestTeachingPointIndex;
         paramPointIndex = closestCenterlineResult.closestTeachingPointIndex;
         markPointIndex(startPointIndex);
-        firstWeldPoint = weldingPoints[startPointIndex];
+        firstWeldPoint = conditionPointAt(startPointIndex) ?? weldingPoints[startPointIndex];
       } else {
         const approachSpeed = options?.manualMoveSpeed || 10;
         const { rx, ry, rz } = centerlineTcp;
@@ -973,9 +985,10 @@ export async function executeWelding(
           if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
             await feedWireAtPartStart(point);
           if (!stopRef.current) {
-            await armArcTracking(point);
+            const condPoint = conditionPointAt(i) ?? point;
+            await armArcTracking(condPoint);
             await startPartWelding(
-              point,
+              condPoint,
               firstWeldPoint,
               hasWeaving,
               hasWelding,
@@ -1267,9 +1280,17 @@ export async function executeWelding(
         }
         if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
           await feedWireAtPartStart(point);
-        await armArcTracking(point);
+        // [v1.1.237] 아크 조건과 트래킹은 파트의 조건 포인트에서 읽는다(모서리는 P4/P10).
+        const condPoint = conditionPointAt(i) ?? point;
+        if (condPoint !== point) {
+          log_weldingExecution.info(
+            'welding.partStart.conditionPoint',
+            `파트 조건을 ${condPoint.name} 에서 읽는다 (시작점 ${point.name})`,
+          );
+        }
+        await armArcTracking(condPoint);
         await startPartWelding(
-          point,
+          condPoint,
           firstWeldPoint,
           hasWeaving,
           hasWelding,
@@ -1349,8 +1370,11 @@ export async function executeWelding(
       ) {
         partStartIdx--;
       }
-      const partFirstPoint = weldingPoints[partStartIdx];
-      if (partFirstPoint && batchIndices[0] !== partStartIdx) {
+      // [v1.1.237] 파트 첫 포인트 -> 파트 조건 포인트. 모서리([P3,P4])는 배치 첫
+      // 포인트가 곧 조건 포인트 P4 라 교정이 일어나지 않는다. 첫 포인트(P3)로
+      // 덮으면 모서리가 수직 속도로 돈다.
+      const partFirstPoint = conditionPointAt(partStartIdx) ?? weldingPoints[partStartIdx];
+      if (partFirstPoint && weldingPoints[batchIndices[0]]?.id !== partFirstPoint.id) {
         const prevSpeed = batchPoints[0].speed;
         batchPoints[0].speed = partFirstPoint.moveSpeed;
         batchPoints[0].vel_mode = partFirstPoint.velMode ?? 1;

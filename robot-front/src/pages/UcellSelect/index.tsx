@@ -769,16 +769,29 @@ export function setWeldingPartOrder(order: { part_name: string; points: string[]
 export function getWeldingParts(): readonly { name: string; points: readonly string[] }[] {
   return _dynamicParts ?? DEFAULT_WELDING_PARTS;
 }
-// [v1.1.228] 한 포인트가 두 파트에 들어갈 수 있게 됐다. 모서리 파트의 끝점
-// P3/P9 가 수직 파트의 시작점이기도 하다(이어지는 자리라 좌표를 공유한다).
-// 그냥 includes 로 훑으면 배열에서 먼저 나오는 파트가 이기므로, 실행 순서상
-// 모서리가 앞에 있는 지금 구성에서는 P3 를 집어도 모서리 블록이 잡혔다.
-// 파트의 용접 조건은 그 파트 '첫 포인트'에서 읽히므로, 포인트를 집었을 때는
-// 그 포인트가 시작점인 파트를 우선 돌려준다. 없으면 기존처럼 훑는다.
+// [v1.1.237] 파트의 용접 조건(전류·전압·위빙·속도·트래킹)을 읽는 포인트.
+// 기본은 파트 첫 포인트다. 모서리 파트만 예외로 모서리 바닥(P4/P10)에서 읽는다.
+// 모서리를 위에서 아래로(P3->P4, P9->P10) 돌리면 첫 포인트 P3/P9 가 수직 파트의
+// 첫 포인트와 같아진다. 첫 포인트 규칙을 그대로 쓰면 모서리와 수직이 같은 값으로
+// 돌아 모서리 조건을 따로 줄 수 없다.
+// 파트에 P4/P10 이 같이 들어 있을 때만 바꾸므로 수직 파트([P3,P2,P1])는 그대로
+// P3 에서 읽고, 예전 방향([P4,P3])도 첫 포인트가 P4 라 결과가 같다.
+const CORNER_CONDITION_POINT: Record<string, string> = { p3: 'p4', p9: 'p10' };
+export function getPartConditionPointId(partPoints: readonly string[]): string | undefined {
+  const first = partPoints[0];
+  if (!first) return undefined;
+  const cornerId = CORNER_CONDITION_POINT[first.toLowerCase()];
+  return cornerId && partPoints.includes(cornerId) ? cornerId : first;
+}
+// [v1.1.228] 한 포인트가 두 파트에 들어갈 수 있게 됐다. 모서리 파트와 수직 파트가
+// P3/P9 를 함께 쓴다(이어지는 자리라 좌표를 공유한다).
+// 그냥 includes 로 훑으면 배열에서 먼저 나오는 파트가 이기므로, 포인트를 집었을
+// 때는 그 포인트에서 조건을 읽는 파트를 우선 돌려준다. 없으면 기존처럼 훑는다.
+// [v1.1.237] '시작점인 파트' -> '조건 포인트인 파트'. P3 -> 수직, P4 -> 모서리.
 const findPartForPoint = (pointId: string) => {
   const parts = getWeldingParts();
   return (
-    parts.find(part => part.points[0] === pointId) ??
+    parts.find(part => getPartConditionPointId(part.points) === pointId) ??
     parts.find(part => part.points.includes(pointId))
   );
 };
@@ -789,9 +802,14 @@ export function getBlockPointIds(pointId: string): string[] {
 export function getBlockName(pointId: string): string {
   return findPartForPoint(pointId)?.name ?? '';
 }
-/** 어느 파트든 시작점인 포인트 id 집합. 블록 적용이 덮어쓰면 안 되는 자리다. */
-export function getPartStartPointIds(): Set<string> {
-  return new Set(getWeldingParts().map(part => part.points[0]));
+/** 어느 파트든 조건 포인트인 id 집합. 블록 적용이 덮어쓰면 안 되는 자리다. */
+export function getPartConditionPointIds(): Set<string> {
+  const ids = new Set<string>();
+  getWeldingParts().forEach(part => {
+    const id = getPartConditionPointId(part.points);
+    if (id) ids.add(id);
+  });
+  return ids;
 }
 export interface ExecutablePart {
   name: string;
@@ -933,7 +951,8 @@ export const VERTICAL_WEAVE_PARAMS: WeaveParams = {
   weaveYawAngle: 0,
   weaveRotAngle: 0,
 };
-// [v1.1.228] 모서리 파트(P4->P3, P10->P9) 기본 위빙 — 수직 삼각파, 폭만 넓힘.
+// [v1.1.228] 모서리 파트 기본 위빙 — 수직 삼각파, 폭만 넓힘.
+// [v1.1.237] 모서리는 P3->P4, P9->P10(위->아래)로 돌고 조건은 P4/P10 에서 읽는다.
 // 수직선을 타는 용접이라 평면 삼각파가 아니라 수직 삼각파다. P4/P10 은 227 까지
 // 수평 파트의 시작점이었으므로 기본값이 plane_triangle + 수평 위빙이었다. 그대로
 // 두면 모서리 20mm 를 엉뚱한 평면으로 흔든다.

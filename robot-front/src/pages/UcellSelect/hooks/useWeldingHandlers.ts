@@ -2,7 +2,7 @@ import { TeachingPoint, WeaveParams, PartWeldEnabled } from '..';
 import { RealtimeRobotStatus, emergencyStop } from '../../../lib';
 import { createLogger } from '../../../lib';
 import { useCallback } from 'react';
-import { getBlockPointIds, getPartStartPointIds } from '..';
+import { getBlockPointIds, getPartConditionPointIds, getPartConditionPointId } from '..';
 import { TouchSensingOptions, TouchSensingResult, WeldingStartOptions, WeldingResult, ClosestCenterlineResult, UseWeldingOperationsReturn } from './weldingCore';
 
 const log_useWeldingHandlers = createLogger('WeldingHandlers');
@@ -274,10 +274,14 @@ export function useWeldingHandlers({
       // 조건으로 돈다. 예: P4 에서 모서리 블록을 적용하면 P3 도 모서리 조건이 되어
       // 수직 파트가 모서리 조건으로 돌아버린다. 그 자리는 건너뛴다.
       // 자기 블록의 시작점은 당연히 적용 대상이다.
-      const partStartIds = getPartStartPointIds();
+      // [v1.1.237] 기준을 '파트 시작점'에서 '조건 포인트'로 바꾼다. 모서리 블록이
+      // [P3,P4] 가 되면서 시작점 P3 가 수직의 조건 포인트가 됐다. P4 에서 적용하면
+      // P3 는 건너뛰고 P4 에만 들어간다.
+      const conditionIds = getPartConditionPointIds();
+      const ownConditionId = getPartConditionPointId(blockPointIds);
       const skipped: string[] = [];
       blockPointIds.forEach(pid => {
-        if (pid !== sourcePointId && pid !== blockPointIds[0] && partStartIds.has(pid)) {
+        if (pid !== sourcePointId && pid !== ownConditionId && conditionIds.has(pid)) {
           skipped.push(pid.toUpperCase());
           return;
         }
@@ -292,7 +296,7 @@ export function useWeldingHandlers({
       // [v1.1.231] 건너뛴 포인트는 알림에 적지 않는다. 작업자에게는 "어디에
       // 들어갔는지"만 필요하고, "저 포인트는 다른 파트의 시작점이라 뺐다"는
       // 내부 사정이다. 적용된 포인트만 적는다.
-      // [v1.1.234] 블록 이름도 뺀다. 모서리 블록([P4,P3] / [P10,P9])은 끝점이
+      // [v1.1.234] 블록 이름도 뺀다. 모서리 블록([P3,P4] / [P9,P10])은 P3/P9 가
       // 수직 파트의 시작점이라 늘 빠지므로, 적용 결과가 포인트 하나인데 앞에
       // 블록 이름이 붙어 "모서리 좌 (P4)에 파라미터가 적용되었습니다" 가 됐다.
       // 포인트 번호만 남긴다.

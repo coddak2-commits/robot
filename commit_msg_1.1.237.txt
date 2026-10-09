@@ -1,0 +1,17 @@
+v1.1.237: 모서리 파트 방향 뒤집기 (위 -> 아래), 모서리 조건은 P4/P10 에서 읽기
+
+모서리 바닥에서 아크를 켜니 아랫부분이 덜 채워져서, 모서리 파트를
+[P3,P4] / [P9,P10] 으로 뒤집는다(마이그레이션 015). 뒤집으면 모서리와 수직의
+첫 포인트가 둘 다 P3/P9 가 되므로 모서리 파트만 P4/P10 에서 조건을 읽는다.
+
+- UcellSelect/index.tsx: getPartConditionPointId, getPartConditionPointIds 신규.
+  findPartForPoint 를 조건 포인트 기준으로. getPartStartPointIds 제거.
+- weldingExecution.ts: conditionPointAt. 파트 시작 아크/위빙/트래킹, 배치 속도
+  교정, firstWeldPoint(첫 파트, 용접 계속)가 조건 포인트를 쓴다.
+- useWeldingHandlers.ts: 블록 적용 건너뛰기 기준을 조건 포인트로.
+- pendant/index.tsx: 모서리 세그먼트 라벨 3-4 / 9-10.
+- database/migrations/015_corner_part_top_down.sql (+ 롤백).
+- database/DB_STATE.md: 015 행, 노트북 touch_offset_depth_z 0.
+- 버전 1.1.237 (installer.iss, lib/index.ts, robot_core_all.cpp).
+
+크레이터 채움은 넣지 않는다. 015 는 1.1.237 설치 후에 돌릴 것.
