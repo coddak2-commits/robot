@@ -1,0 +1,8 @@
+v1.1.238: 와이어 수동 조그 뜨거운 밀기 재보정
+
+2026-10-09 용접 직후 실측(5mm -> 평균 7.0, 25mm -> 평균 29.0)으로
+WIRE_FEED_PROFILE_HOT.forward 를 지연 121 -> 0ms, 속도 10.93 -> 12.02mm/s 로.
+식은 쪽, 당기기, 뜨거운 판정 시간(5분)은 그대로.
+
+- robot-front/src/lib/wireFeed.ts
+- 버전 1.1.238 (installer.iss, lib/index.ts, robot_core_all.cpp)
