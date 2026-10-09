@@ -1,0 +1,27 @@
+v1.1.236: 모서리 시작점(P4/P10)의 Z 탐색 끄기
+
+235 를 빌드한 뒤에 고친 것이다. 235 와 같은 주제의 Z 축 부분으로, 235 가 X/Y 를
+맞췄고 이 버전이 Z 를 맞춘다. 로봇이 서는 자리가 바뀌므로 설치 후 터치 테스트를
+먼저 돌릴 것.
+
+- robot_core_all.h / sequenceSettings.ts: p4_touch_top / p4_touch_bottom /
+  p10_touch_top / p10_touch_bottom 기본값을 false 로. 조회 폴백(?? )도 false.
+- database/migrations/014_corner_start_no_z_touch.sql (+ 롤백): 기존 DB 반영.
+- database/DB_STATE.md 신규: 기계별 마이그레이션 적용 현황과 바뀐 DB 값 정리.
+
+모서리 파트의 끝점(P3/P9)은 Z 탐색을 돌지 않는다. 그래서 시작점만 바닥판까지
+내려가면 20mm 로 교시한 구간이 늘어난다. 2026-10-08 좌측 실측:
+  P4 교시 Z 17.169, rawDz -17.695 -> 보정 후 -0.526
+  P3 교시 Z 38.525, Z 탐색 없음   -> 보정 후 38.525
+  교시 간격 21.4mm -> 보정 후 39.1mm (touch_offset_depth_z=10 이면 29.1mm)
+
+P3/P9 의 하단 Z 를 켜는 쪽으로는 못 고친다. P3 에서 -Z 로 내려가면 20mm 아래
+바닥판을 찾아 P3 도 끌려 내려오고 구간이 0 이 된다.
+
+중앙 X 와 측면 Y 는 유지한다. 235 에서 거기에 touch_offset_depth 가 붙도록
+고쳤으므로 X/Y 보정은 계속 받는다. P5/P11 은 건드리지 않는다.
+
+교시 작업 필요: P4/P10 을 실제 모서리 높이에 재교시할 것. 지금은 P5/P11 과 같은
+자리(바닥판 위 약 17mm)에 있고, 그건 Z 탐색으로 내려오려고 띄워 교시한 자리다.
+
+robot_core_all.cpp APP_VERSION_STRING 동기화.
