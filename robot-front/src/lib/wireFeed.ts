@@ -82,12 +82,24 @@ type WireProfile = Record<WireDirection, { deadTimeMs: number; speedMmPerSec: nu
 //
 // 1mm 는 어느 방향이든 ±1mm 가 한계다. 펄스가 수백 ms 밖에 안 되고 HTTP 왕복
 // 시간이 그 안에서 차지하는 비중이 크다.
+//
+// v1.1.238 뜨거운 밀기 재보정 (2026-10-09, 현장 실측).
+// 234 값(121ms, 10.93mm/s)으로 용접 직후 반복 측정. 명령 시간 212/578/2408ms.
+//     요청 1mm -> 2, 4, 6mm          (평균 4.0)
+//     요청 5mm -> 6, 7, 7, 8mm       (평균 7.0)
+//     요청 25mm -> 30, 27, 29, 30mm  (평균 29.0)
+//   5·25mm 두 점 -> 속도 (29.0-7.0)/(2.408-0.578) = 12.02mm/s,
+//   지연 0.578 - 7.0/12.02 = -4ms -> 0 으로 둔다.
+//   검산: 25mm -> 2080ms -> 25.0 / 5mm -> 416ms -> 5.0
+//   1mm 는 2~6mm 로 흩어져 계산에서 뺐다. 25mm 자체도 27~30mm 로 흩어져
+//   보정 후에도 매번 ±1.5mm 정도는 차이가 날 수 있다.
+//   식은 쪽과 당기기는 이번에 재지 않았다. 뜨거운 판정 시간(5분)도 그대로다.
 export const WIRE_FEED_PROFILE_COLD: WireProfile = {
   forward: { deadTimeMs: 117, speedMmPerSec: 8.46 },
   reverse: { deadTimeMs: 306, speedMmPerSec: 23.42 },
 };
 export const WIRE_FEED_PROFILE_HOT: WireProfile = {
-  forward: { deadTimeMs: 121, speedMmPerSec: 10.93 },
+  forward: { deadTimeMs: 0, speedMmPerSec: 12.02 },
   reverse: { deadTimeMs: 306, speedMmPerSec: 23.42 },
 };
 // 마지막 아크 OFF 로부터 이 시간 안이면 뜨거운 값을 쓴다.
