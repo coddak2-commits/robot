@@ -1743,6 +1743,7 @@ export interface WeldingConfigData {
   p5_touch_center: boolean;
   p5_touch_top: boolean;
   p5_touch_bottom: boolean;
+  p5_touch_side: boolean;
   p6_touch_center: boolean;
   p6_touch_top: boolean;
   p6_touch_bottom: boolean;
@@ -1763,6 +1764,7 @@ export interface WeldingConfigData {
   p11_touch_center: boolean;
   p11_touch_top: boolean;
   p11_touch_bottom: boolean;
+  p11_touch_side: boolean;
   p12_touch_center: boolean;
   p12_touch_top: boolean;
   p12_touch_bottom: boolean;

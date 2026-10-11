@@ -93,7 +93,7 @@ export async function performDryRunForPoint(
         dy = 10;
       }
     } else if (hasSide && !stopRef.current) {
-      const sideLabel = sideDirection === -1 ? 'P4 좌측(Base -Y)' : 'P10 우측(Base +Y)';
+      const sideLabel = sideDirection === -1 ? '좌측(Base -Y)' : '우측(Base +Y)';
       log_touchDryRun.info('touchSensing.dryRun.y.side', `${point.name} ${sideLabel} 시뮬레이션`);
       const moveResult = await moveToCartesianWithStopCheck(
         tcp, dryRunSpeed, 100, 100, 0,

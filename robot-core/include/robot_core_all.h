@@ -440,6 +440,7 @@ struct WeldingConfig {
     bool p5_touch_center = true;
     bool p5_touch_top = true;
     bool p5_touch_bottom = true;
+    bool p5_touch_side = true;    // [v1.1.239] 수평 시작점 측면 Y (Base -Y)
     bool p6_touch_center = true;
     bool p6_touch_top = true;
     bool p6_touch_bottom = true;
@@ -460,6 +461,7 @@ struct WeldingConfig {
     bool p11_touch_center = true;
     bool p11_touch_top = true;
     bool p11_touch_bottom = true;
+    bool p11_touch_side = true;   // [v1.1.239] 수평 시작점 측면 Y (Base +Y)
     bool p12_touch_center = true;
     bool p12_touch_top = true;
     bool p12_touch_bottom = true;

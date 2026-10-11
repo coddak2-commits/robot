@@ -196,6 +196,7 @@ const TouchSensingDirections: React.FC<TouchSensingSectionProps> = ({ settings, 
             ['p5_touch_center', '중앙 (X방향)'],
             ['p5_touch_top', '상단 (+Z방향)'],
             ['p5_touch_bottom', '하단 (-Z방향)'],
+            ['p5_touch_side', '좌측 (-Y방향)'],
           ])}
           {pointCard('P6 (끝점)', 'orange-400', [
             ['p6_touch_center', '중앙 (X방향)'],
@@ -246,6 +247,7 @@ const TouchSensingDirections: React.FC<TouchSensingSectionProps> = ({ settings, 
             ['p11_touch_center', '중앙 (X방향)'],
             ['p11_touch_top', '상단 (+Z방향)'],
             ['p11_touch_bottom', '하단 (-Z방향)'],
+            ['p11_touch_side', '우측 (+Y방향)'],
           ])}
           {pointCard('P12 (끝점)', 'orange-400', [
             ['p12_touch_center', '중앙 (X방향)'],

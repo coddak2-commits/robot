@@ -1,0 +1,45 @@
+﻿v1.1.239 - 수평 시작점(P5/P11) 측면 Y 터치 추가
+
+[배경]
+v1.1.228 에서 수평 시작점이 P4/P10 자리에서 P5/P11 로 옮겨갔다. 그런데 측면 Y
+터치는 P4/P10 에만 있어서, 수평 시작점은 X(중앙)와 Z(상·하단)만 보정되고 Y 는
+교시 좌표 그대로였다.
+
+[변경]
+1. P5/P11 에 측면 Y 터치 추가
+   - P5: Base -Y (P4 와 같은 쪽 벽), P11: Base +Y (P10 과 같은 쪽 벽)
+   - 결과는 접촉면 그대로 쓴다(touch_offset_depth 미적용). P4/P10 이 수평
+     시작점이던 227 까지와 같은 규칙이다(사용자 결정).
+   - 설정 화면 '포인트별 터치 센싱 방향'의 P5 카드에 '좌측 (-Y방향)',
+     P11 카드에 '우측 (+Y방향)' 체크박스가 생긴다.
+   - 기본값 켜짐.
+
+2. 측면 터치 로그 문구에서 'P4'/'P10' 을 뺐다. P5/P11 도 같은 문구를 쓰므로
+   '좌측(Base -Y)' / '우측(Base +Y)' 로만 찍는다.
+
+[파일]
+- robot-core/include/robot_core_all.h: p5_touch_side, p11_touch_side (기본 true)
+- robot-core/src/robot_core_all.cpp: 조회/저장/JSON 입출력에 두 컬럼 추가
+- robot-front: touchDirections.ts, sequenceSettings.ts, weldingCoreTypes.ts,
+  touchSensing.ts, touchDryRun.ts, TouchSensingSection.tsx,
+  useSystemSettingsData.ts, lib/robotApi/index.ts
+
+[DB]
+database/migrations/016_p5_p11_touch_side.sql (+ 롤백)
+  welding_config 에 p5_touch_side, p11_touch_side 추가 (TINYINT(1), 기본 1)
+※ 반드시 1.1.239 설치 전에 돌릴 것. robot-core 가 두 컬럼을 명시적으로 SELECT
+  하므로 컬럼이 없으면 welding_config 조회가 실패한다(013 과 같은 구조).
+  컬럼을 먼저 추가하고 이전 버전 앱을 써도 문제는 없다.
+database/DB_STATE.md: 016 행 추가.
+
+[동작 변화]
+- 터치센싱이 P5/P11 에서 Y 탐색을 한 번 더 한다(포인트당 몇 초 늘어남).
+- 수평 시작점이 옆벽 접촉면 기준으로 Y 가 맞춰진다. 와이어가 옆벽에 닿은 자리에서
+  아크가 켜진다.
+
+[현장 확인 항목]
+- 016 실행 후 SELECT 결과에 p5_touch_side = 1, p11_touch_side = 1
+- 설정 화면 P5/P11 카드에 측면 체크박스가 보이는지
+- 터치 테스트에서 P5 는 find-dy dir=-1, P11 은 find-dy dir=1 이 찍히는지
+- 측면 탐색 중 노즐·토치가 옆벽이나 지그에 닿지 않는지 (먼저 터치 테스트로)
+- 설정 화면 '시스템 버전'이 1.1.239 인지

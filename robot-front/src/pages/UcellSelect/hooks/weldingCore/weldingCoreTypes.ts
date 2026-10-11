@@ -30,6 +30,7 @@ export interface WeldingSequenceSettings {
   p5TouchCenter: boolean;
   p5TouchTop: boolean;
   p5TouchBottom: boolean;
+  p5TouchSide: boolean;
   p6TouchCenter: boolean;
   p6TouchTop: boolean;
   p6TouchBottom: boolean;
@@ -50,6 +51,7 @@ export interface WeldingSequenceSettings {
   p11TouchCenter: boolean;
   p11TouchTop: boolean;
   p11TouchBottom: boolean;
+  p11TouchSide: boolean;
   p12TouchCenter: boolean;
   p12TouchTop: boolean;
   p12TouchBottom: boolean;

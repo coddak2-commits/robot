@@ -1,0 +1,15 @@
+v1.1.239: 수평 시작점(P5/P11) 측면 Y 터치 추가
+
+228 에서 수평 시작점이 P5/P11 로 옮겨갔는데 측면 Y 터치는 P4/P10 에만 있었다.
+P5(-Y), P11(+Y)에 측면 터치를 붙인다. 결과는 접촉면 그대로(depthOffset 미적용).
+기본값 켜짐.
+
+- robot_core_all.h/.cpp: p5_touch_side, p11_touch_side 조회/저장/JSON
+- touchDirections.ts: P5/P11 hasSide, P11 sideDirection=+1
+- sequenceSettings.ts, weldingCoreTypes.ts, robotApi, useSystemSettingsData.ts,
+  TouchSensingSection.tsx: 설정 항목 추가
+- touchSensing.ts, touchDryRun.ts: 측면 로그 문구에서 P4/P10 제거
+- database/migrations/016_p5_p11_touch_side.sql (+ 롤백), DB_STATE.md
+- 버전 1.1.239
+
+016 은 1.1.239 설치 전에 돌릴 것.

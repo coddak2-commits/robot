@@ -46,6 +46,14 @@ export interface TouchDirectionResult {
  * 같은 규칙이라 쓸림이 없다.
  */
 const CORNER_START_POINTS = ['p4', 'p10'];
+/*
+ * [v1.1.239] 수평 시작점(P5/P11)에도 측면 Y 터치를 붙인다(사용자 요청 2026-10-12).
+ * v1.1.228 에서 수평 시작점이 P4/P10 자리에서 P5/P11 로 옮겨갔는데, 측면 터치는
+ * P4/P10 에만 있어서 수평 시작점의 Y 가 보정되지 않았다.
+ * 방향은 같은 쪽 벽을 재는 P4/P10 과 같다(P5 -Y, P11 +Y).
+ * 보정 규칙은 P4/P10 이 수평 시작점이던 시절(227 까지)과 같게 depthOffset 없이
+ * 접촉면 그대로 쓴다. 수평 포인트라 applyDepthOffset=false 로 자동으로 그렇게 된다.
+ */
 export function getTouchDirections(
   pointIdLower: string,
   sequenceSettings: WeldingSequenceSettings,
@@ -84,6 +92,7 @@ export function getTouchDirections(
       hasCenter = sequenceSettings.p5TouchCenter;
       hasTop = sequenceSettings.p5TouchTop;
       hasBottomDir = sequenceSettings.p5TouchBottom;
+      hasSide = sequenceSettings.p5TouchSide;
       break;
     case 'p6':
       hasCenter = sequenceSettings.p6TouchCenter;
@@ -117,6 +126,8 @@ export function getTouchDirections(
       hasCenter = sequenceSettings.p11TouchCenter;
       hasTop = sequenceSettings.p11TouchTop;
       hasBottomDir = sequenceSettings.p11TouchBottom;
+      hasSide = sequenceSettings.p11TouchSide;
+      sideDirection = 1;
       break;
     case 'p12':
       hasCenter = sequenceSettings.p12TouchCenter;

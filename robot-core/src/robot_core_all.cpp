@@ -6162,6 +6162,7 @@ void registerSdkRoutes(
             if (body.contains("p5_touch_center")) config.p5_touch_center = body["p5_touch_center"].get<bool>();
             if (body.contains("p5_touch_top")) config.p5_touch_top = body["p5_touch_top"].get<bool>();
             if (body.contains("p5_touch_bottom")) config.p5_touch_bottom = body["p5_touch_bottom"].get<bool>();
+            if (body.contains("p5_touch_side")) config.p5_touch_side = body["p5_touch_side"].get<bool>();
             if (body.contains("p6_touch_center")) config.p6_touch_center = body["p6_touch_center"].get<bool>();
             if (body.contains("p6_touch_top")) config.p6_touch_top = body["p6_touch_top"].get<bool>();
             if (body.contains("p6_touch_bottom")) config.p6_touch_bottom = body["p6_touch_bottom"].get<bool>();
@@ -6182,6 +6183,7 @@ void registerSdkRoutes(
             if (body.contains("p11_touch_center")) config.p11_touch_center = body["p11_touch_center"].get<bool>();
             if (body.contains("p11_touch_top")) config.p11_touch_top = body["p11_touch_top"].get<bool>();
             if (body.contains("p11_touch_bottom")) config.p11_touch_bottom = body["p11_touch_bottom"].get<bool>();
+            if (body.contains("p11_touch_side")) config.p11_touch_side = body["p11_touch_side"].get<bool>();
             if (body.contains("p12_touch_center")) config.p12_touch_center = body["p12_touch_center"].get<bool>();
             if (body.contains("p12_touch_top")) config.p12_touch_top = body["p12_touch_top"].get<bool>();
             if (body.contains("p12_touch_bottom")) config.p12_touch_bottom = body["p12_touch_bottom"].get<bool>();
@@ -7141,7 +7143,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.238"
+#define APP_VERSION_STRING "1.1.239"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -9105,13 +9107,13 @@ WeldingConfig DatabaseService::getWeldingConfig() {
         "p2_touch_center, p2_touch_left, p2_touch_right, "
         "p3_touch_center, p3_touch_left, p3_touch_right, p3_touch_bottom, "
         "p4_touch_center, p4_touch_top, p4_touch_bottom, p4_touch_side, "
-        "p5_touch_center, p5_touch_top, p5_touch_bottom, "
+        "p5_touch_center, p5_touch_top, p5_touch_bottom, p5_touch_side, "
         "p6_touch_center, p6_touch_top, p6_touch_bottom, "
         "p7_touch_center, p7_touch_left, p7_touch_right, "
         "p8_touch_center, p8_touch_left, p8_touch_right, "
         "p9_touch_center, p9_touch_left, p9_touch_right, p9_touch_bottom, "
         "p10_touch_center, p10_touch_top, p10_touch_bottom, p10_touch_side, "
-        "p11_touch_center, p11_touch_top, p11_touch_bottom, "
+        "p11_touch_center, p11_touch_top, p11_touch_bottom, p11_touch_side, "
         "p12_touch_center, p12_touch_top, p12_touch_bottom, "
         "arc_tracking_enabled, arc_tracking_left_right, arc_tracking_up_down, "
         "arc_tracking_klr, arc_tracking_kud, arc_tracking_step_max_lr, arc_tracking_step_max_ud, "
@@ -9163,6 +9165,7 @@ WeldingConfig DatabaseService::getWeldingConfig() {
         config.p5_touch_center = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
         config.p5_touch_top = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
         config.p5_touch_bottom = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
+        config.p5_touch_side = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
         config.p6_touch_center = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
         config.p6_touch_top = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
         config.p6_touch_bottom = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
@@ -9183,6 +9186,7 @@ WeldingConfig DatabaseService::getWeldingConfig() {
         config.p11_touch_center = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
         config.p11_touch_top = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
         config.p11_touch_bottom = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
+        config.p11_touch_side = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
         config.p12_touch_center = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
         config.p12_touch_top = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
         config.p12_touch_bottom = row[col] ? (std::stoi(row[col]) != 0) : true; col++;
@@ -9248,6 +9252,7 @@ bool DatabaseService::updateWeldingConfig(const WeldingConfig& config) {
           << "p5_touch_center = " << (config.p5_touch_center ? 1 : 0) << ", "
           << "p5_touch_top = " << (config.p5_touch_top ? 1 : 0) << ", "
           << "p5_touch_bottom = " << (config.p5_touch_bottom ? 1 : 0) << ", "
+          << "p5_touch_side = " << (config.p5_touch_side ? 1 : 0) << ", "
           << "p6_touch_center = " << (config.p6_touch_center ? 1 : 0) << ", "
           << "p6_touch_top = " << (config.p6_touch_top ? 1 : 0) << ", "
           << "p6_touch_bottom = " << (config.p6_touch_bottom ? 1 : 0) << ", "
@@ -9268,6 +9273,7 @@ bool DatabaseService::updateWeldingConfig(const WeldingConfig& config) {
           << "p11_touch_center = " << (config.p11_touch_center ? 1 : 0) << ", "
           << "p11_touch_top = " << (config.p11_touch_top ? 1 : 0) << ", "
           << "p11_touch_bottom = " << (config.p11_touch_bottom ? 1 : 0) << ", "
+          << "p11_touch_side = " << (config.p11_touch_side ? 1 : 0) << ", "
           << "p12_touch_center = " << (config.p12_touch_center ? 1 : 0) << ", "
           << "p12_touch_top = " << (config.p12_touch_top ? 1 : 0) << ", "
           << "p12_touch_bottom = " << (config.p12_touch_bottom ? 1 : 0) << ", "
@@ -9330,6 +9336,7 @@ json DatabaseService::weldingConfigToJson(const WeldingConfig& config) {
         {"p5_touch_center", config.p5_touch_center},
         {"p5_touch_top", config.p5_touch_top},
         {"p5_touch_bottom", config.p5_touch_bottom},
+        {"p5_touch_side", config.p5_touch_side},
         {"p6_touch_center", config.p6_touch_center},
         {"p6_touch_top", config.p6_touch_top},
         {"p6_touch_bottom", config.p6_touch_bottom},
@@ -9350,6 +9357,7 @@ json DatabaseService::weldingConfigToJson(const WeldingConfig& config) {
         {"p11_touch_center", config.p11_touch_center},
         {"p11_touch_top", config.p11_touch_top},
         {"p11_touch_bottom", config.p11_touch_bottom},
+        {"p11_touch_side", config.p11_touch_side},
         {"p12_touch_center", config.p12_touch_center},
         {"p12_touch_top", config.p12_touch_top},
         {"p12_touch_bottom", config.p12_touch_bottom},
@@ -9412,6 +9420,7 @@ WeldingConfig DatabaseService::jsonToWeldingConfig(const json& j) {
     if (j.contains("p5_touch_center")) config.p5_touch_center = j["p5_touch_center"].get<bool>();
     if (j.contains("p5_touch_top")) config.p5_touch_top = j["p5_touch_top"].get<bool>();
     if (j.contains("p5_touch_bottom")) config.p5_touch_bottom = j["p5_touch_bottom"].get<bool>();
+    if (j.contains("p5_touch_side")) config.p5_touch_side = j["p5_touch_side"].get<bool>();
     if (j.contains("p6_touch_center")) config.p6_touch_center = j["p6_touch_center"].get<bool>();
     if (j.contains("p6_touch_top")) config.p6_touch_top = j["p6_touch_top"].get<bool>();
     if (j.contains("p6_touch_bottom")) config.p6_touch_bottom = j["p6_touch_bottom"].get<bool>();
@@ -9432,6 +9441,7 @@ WeldingConfig DatabaseService::jsonToWeldingConfig(const json& j) {
     if (j.contains("p11_touch_center")) config.p11_touch_center = j["p11_touch_center"].get<bool>();
     if (j.contains("p11_touch_top")) config.p11_touch_top = j["p11_touch_top"].get<bool>();
     if (j.contains("p11_touch_bottom")) config.p11_touch_bottom = j["p11_touch_bottom"].get<bool>();
+    if (j.contains("p11_touch_side")) config.p11_touch_side = j["p11_touch_side"].get<bool>();
     if (j.contains("p12_touch_center")) config.p12_touch_center = j["p12_touch_center"].get<bool>();
     if (j.contains("p12_touch_top")) config.p12_touch_top = j["p12_touch_top"].get<bool>();
     if (j.contains("p12_touch_bottom")) config.p12_touch_bottom = j["p12_touch_bottom"].get<bool>();

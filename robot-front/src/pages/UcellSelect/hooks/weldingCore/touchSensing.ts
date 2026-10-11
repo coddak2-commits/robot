@@ -122,7 +122,7 @@ async function performRealTouchSensing(
         }
       }
     } else if (hasSide) {
-      const sideLabel = sideDirection === -1 ? 'P4 좌측(Base -Y)' : 'P10 우측(Base +Y)';
+      const sideLabel = sideDirection === -1 ? '좌측(Base -Y)' : '우측(Base +Y)';
       if (!stopRef.current) {
         log_touchSensing.info('touchSensing.findDy.side', `${point.name} ${sideLabel} 터치 시작`);
         const dyResult = await findDy(sideDirection);
