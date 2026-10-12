@@ -4,7 +4,7 @@ import { WeldingLogData, getWeldingLogs, deleteWeldingLogs, updateWeldingLog, Re
 import Modal from 'react-modal';
 import { useAlert } from '../../../contexts';
 import { useGapAuth } from '../../../contexts/gapAuth';
-import { TeachingPoint, WeaveParams, WEAVING_TYPE_OPTIONS, UCellData, HEIGHT_OPTIONS, PART_ENABLE_GROUPS } from '..';
+import { TeachingPoint, WeaveParams, WEAVING_TYPE_OPTIONS, UCellData, HEIGHT_OPTIONS, getPartEnableGroups } from '..';
 import { Button } from '../../../components/common';
 import { RobotMoveData } from '../../../types/RobotData';
 import { useSortable, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -111,7 +111,7 @@ const UnifiedWorkspaceCanvasComponent: React.FC<UnifiedWorkspaceCanvasProps> = (
       const minOrderByGroup: Record<number, number> = {};
       order.forEach(o => {
         const points = Array.isArray(o.points) ? o.points : [];
-        const groupIdx = PART_ENABLE_GROUPS.findIndex(
+        const groupIdx = getPartEnableGroups().findIndex(
           g => points.length > 0 && points.every(p => g.includes(p)),
         );
         const key = groupIdx >= 0 ? groupIdx : o.part_index;

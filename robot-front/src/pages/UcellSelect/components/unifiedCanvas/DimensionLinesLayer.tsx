@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
 import type { WeldPoint, TransformFn } from './types';
+import { getPartEnableGroups } from '../..';
 const DimensionLinesLayer: React.FC<{
   points: WeldPoint[];
   transform: TransformFn;
@@ -8,12 +9,10 @@ const DimensionLinesLayer: React.FC<{
   // 치수선 묶음도 같이 바꾼다. 순서(partIdx)는 그대로 둔다. 아래에서
   // 0=바닥 좌, 1=좌측, 2=바닥 우, 3=우측으로 치수선 위치를 정하기 때문이다.
   // 방향은 기존 관례대로 아래에서 위로 적는다.
-  const partSegments = [
-    ['p5', 'p6'],
-    ['p4', 'p3', 'p2', 'p1'],
-    ['p11', 'p12'],
-    ['p10', 'p9', 'p8', 'p7'],
-  ];
+  // [v1.1.243] 묶음은 getPartEnableGroups() 를 따른다. 4파트(227 구성)면
+  // [P4,P5,P6] / [P3,P2,P1] / [P10,P11,P12] / [P9,P8,P7], 6파트면 위 228 묶음.
+  // 두 구성 모두 순서는 0=바닥 좌, 1=좌측, 2=바닥 우, 3=우측이다.
+  const partSegments = getPartEnableGroups();
   const pointMap = new Map(points.map(p => [p.id, p]));
   const dimensions: {
     from: { x: number; y: number };

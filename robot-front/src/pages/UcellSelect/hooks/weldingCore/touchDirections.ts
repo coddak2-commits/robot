@@ -1,5 +1,6 @@
 import React from 'react';
 import { WeldingSequenceSettings } from './weldingCoreTypes';
+import { hasCornerParts } from '../..';
 
 export interface TouchDirectionResult {
   hasCenter: boolean;
@@ -63,7 +64,11 @@ export function getTouchDirections(
   let hasCenter = true, hasLeft = false, hasRight = false, hasTop = false, hasBottomDir = false, hasSide = false;
   let sideDirection: 1 | -1 = -1;
   const isHorizontal = ['p4', 'p5', 'p6', 'p10', 'p11', 'p12'].includes(pointIdLower);
-  const applyDepthOffset = !isHorizontal || CORNER_START_POINTS.includes(pointIdLower);
+  // [v1.1.243] 모서리 파트가 있을 때만(6파트 구성). 4파트에서는 P4/P10 이 다시 수평
+  // 시작점이므로 227 까지처럼 접촉면 그대로 쓴다. P5/P11 측면 터치(239)도 6파트 전용이다.
+  // 4파트의 P5/P11 은 수평 중간점이라 옆벽이 없어 측면 탐색이 실패한다.
+  const cornerParts = hasCornerParts();
+  const applyDepthOffset = !isHorizontal || (cornerParts && CORNER_START_POINTS.includes(pointIdLower));
   switch (pointIdLower) {
     case 'p1':
       hasCenter = sequenceSettings.p1TouchCenter;
@@ -92,7 +97,7 @@ export function getTouchDirections(
       hasCenter = sequenceSettings.p5TouchCenter;
       hasTop = sequenceSettings.p5TouchTop;
       hasBottomDir = sequenceSettings.p5TouchBottom;
-      hasSide = sequenceSettings.p5TouchSide;
+      hasSide = cornerParts && sequenceSettings.p5TouchSide;
       break;
     case 'p6':
       hasCenter = sequenceSettings.p6TouchCenter;
@@ -126,7 +131,7 @@ export function getTouchDirections(
       hasCenter = sequenceSettings.p11TouchCenter;
       hasTop = sequenceSettings.p11TouchTop;
       hasBottomDir = sequenceSettings.p11TouchBottom;
-      hasSide = sequenceSettings.p11TouchSide;
+      hasSide = cornerParts && sequenceSettings.p11TouchSide;
       sideDirection = 1;
       break;
     case 'p12':

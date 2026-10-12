@@ -1,0 +1,14 @@
+v1.1.243: 4파트(227 구성)로 복귀, 파트 순서 수직 -> 수평
+
+모서리 하강이 흘러내려 228 의 모서리 파트 분리를 거둔다(마이그레이션 017).
+파트 구성에 모서리 파트가 있을 때만 6파트 전용 동작을 켜도록 hasCornerParts()
+로 묶었다. 017 적용 후에는 227 동작으로 돈다.
+
+- UcellSelect/index.tsx: hasCornerParts, isCornerPartPoints, getPartEnableGroups
+- touchDirections.ts: P4/P10 depthOffset, P5/P11 측면 터치를 6파트 전용으로
+- weldingExecution.ts: 수직 시작 10mm 내림을 6파트 전용으로
+- UnifiedWorkspaceCanvas.tsx, useSchematicCalculations.ts: getPartEnableGroups
+- useSchematicCalculations.ts, DimensionLinesLayer.tsx: 4파트 눈금자·치수선 배치
+- pendant/index.tsx: 4파트 세그먼트·갭 매핑·자세
+- database/migrations/017 (+ 롤백), DB_STATE.md
+- 버전 1.1.243

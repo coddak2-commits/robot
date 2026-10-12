@@ -1,4 +1,4 @@
-import { TeachingPoint, PART_ENABLE_GROUPS } from '..';
+import { TeachingPoint, getPartEnableGroups, hasCornerParts } from '..';
 import { useCallback, useMemo } from 'react';
 
 // [v1.1.228] 도식 눈금자에서 중간점이 끝점과 유지할 최소 간격(도식 좌표 단위).
@@ -40,10 +40,28 @@ export function useSchematicCalculations({
   //   좌측 바닥 눈금자 : P5(모서리) -> P6
   // 로 바뀐다. 우측도 P7 -> P8 -> P9 -> P10 / P11 -> P12.
   // P2·P3 와 P8·P9 는 실제 TCP 거리 비율로 눈금자 위에 보간한다(아래 switch).
-  const getSchematicEndpoints = useCallback(() => {
+  // [v1.1.243] 4파트(227 구성)면 227 까지의 배치로 그린다.
+  //   좌측 수직 눈금자 : P1(위) -> P2 -> P3(모서리)
+  //   좌측 바닥 눈금자 : P4(모서리) -> P5 -> P6
+  //   우측도 P7 -> P8 -> P9 / P10 -> P11 -> P12.
+  // 파트 구성(welding_part_order)에 모서리 파트가 있으면 아래 6파트 배치를 쓴다.
+  const cornerParts = hasCornerParts();
+  const getSchematicEndpoints = useCallback((): Record<string, { x: number; y: number }> => {
     const halfWidth = (selectedWidth || 600) / 2;
     const halfHeight = (selectedHeight || 550) / 2;
     const margin = 50;
+    if (!cornerParts) {
+      return {
+        p1: { x: -halfWidth - margin, y: halfHeight },
+        p3: { x: -halfWidth - margin, y: -halfHeight },
+        p4: { x: -halfWidth, y: -halfHeight - margin },
+        p6: { x: -margin / 2, y: -halfHeight - margin },
+        p7: { x: halfWidth + margin, y: halfHeight },
+        p9: { x: halfWidth + margin, y: -halfHeight },
+        p10: { x: halfWidth, y: -halfHeight - margin },
+        p12: { x: margin / 2, y: -halfHeight - margin },
+      };
+    }
     return {
       p1: { x: -halfWidth - margin, y: halfHeight },
       p4: { x: -halfWidth - margin, y: -halfHeight },
@@ -54,19 +72,30 @@ export function useSchematicCalculations({
       p11: { x: halfWidth, y: -halfHeight - margin },
       p12: { x: margin / 2, y: -halfHeight - margin },
     };
-  }, [selectedWidth, selectedHeight]);
+  }, [selectedWidth, selectedHeight, cornerParts]);
   const getSchematicPosition = useCallback((pointId: string) => {
     const endpoints = getSchematicEndpoints();
-    switch (pointId) {
-      case 'home': return { x: 0, y: 0 };
-      case 'p1': return endpoints.p1;
-      case 'p4': return endpoints.p4;
-      case 'p5': return endpoints.p5;
-      case 'p6': return endpoints.p6;
-      case 'p7': return endpoints.p7;
-      case 'p10': return endpoints.p10;
-      case 'p11': return endpoints.p11;
-      case 'p12': return endpoints.p12;
+    // [v1.1.243] 4파트 배치. 끝점은 그대로 쓰고 중간점(P2/P5/P8/P11)만 보간한다.
+    if (!cornerParts) {
+      const ep4 = endpoints;
+      const fixed4: Record<string, { x: number; y: number }> = {
+        home: { x: 0, y: 0 },
+        p1: ep4.p1, p3: ep4.p3, p4: ep4.p4, p6: ep4.p6,
+        p7: ep4.p7, p9: ep4.p9, p10: ep4.p10, p12: ep4.p12,
+      };
+      if (fixed4[pointId]) return fixed4[pointId];
+    } else {
+      switch (pointId) {
+        case 'home': return { x: 0, y: 0 };
+        case 'p1': return endpoints.p1;
+        case 'p4': return endpoints.p4;
+        case 'p5': return endpoints.p5;
+        case 'p6': return endpoints.p6;
+        case 'p7': return endpoints.p7;
+        case 'p10': return endpoints.p10;
+        case 'p11': return endpoints.p11;
+        case 'p12': return endpoints.p12;
+      }
     }
     // [v1.1.228] fallbackRatio 추가. 한 눈금자에 중간점이 둘(P2·P3)이 되면서,
     // 아직 티칭 안 된 상태에서 둘 다 0.5 로 떨어지면 겹쳐 보인다.
@@ -123,6 +152,21 @@ export function useSchematicCalculations({
         y: startPos.y + (endPos.y - startPos.y) * drawRatio,
       };
     };
+    if (!cornerParts) {
+      const ep4 = endpoints;
+      switch (pointId) {
+        case 'p2':
+          return calcMiddlePosition('p1', 'p2', 'p3', ep4.p1, ep4.p3, 0.5);
+        case 'p5':
+          return calcMiddlePosition('p4', 'p5', 'p6', ep4.p4, ep4.p6, 0.5);
+        case 'p8':
+          return calcMiddlePosition('p7', 'p8', 'p9', ep4.p7, ep4.p9, 0.5);
+        case 'p11':
+          return calcMiddlePosition('p10', 'p11', 'p12', ep4.p10, ep4.p12, 0.5);
+        default:
+          return { x: 0, y: 0 };
+      }
+    }
     // [v1.1.228] 수직 눈금자가 P1 -> P4 로 길어졌고 그 위에 중간점이 둘이다.
     // P3 는 모서리에서 20mm 위라 실제 비율로는 끝에 바짝 붙는다(fallback 0.88).
     switch (pointId) {
@@ -137,7 +181,7 @@ export function useSchematicCalculations({
       default:
         return { x: 0, y: 0 };
     }
-  }, [teachingPoints, getSchematicEndpoints]);
+  }, [teachingPoints, getSchematicEndpoints, cornerParts]);
   const { centerlinePath, fiveMMPoints } = useMemo<{
     centerlinePath: { x: number; y: number }[];
     fiveMMPoints: CenterlinePoint[];
@@ -147,7 +191,7 @@ export function useSchematicCalculations({
     // [v1.1.228] 중심선도 화면 묶음(수평 / 수직+모서리)을 따라 그린다.
     // WELDING_PARTS 는 welding_part_order 가 비었을 때의 실행 기본값이라
     // 모서리 파트가 없다. 그걸로 그리면 P4 가 바닥 선에 끼어 꺾여 보인다.
-    PART_ENABLE_GROUPS.forEach((group, partIndex) => {
+    getPartEnableGroups().forEach((group, partIndex) => {
       const partPoints = group
         .map(pointId => teachingPoints.find(pt => pt.id === pointId))
         .filter((pt): pt is TeachingPoint =>
@@ -229,7 +273,7 @@ export function useSchematicCalculations({
       }
     });
     return { centerlinePath: allPaths, fiveMMPoints: allPoints };
-  }, [teachingPoints, getSchematicPosition]);
+  }, [teachingPoints, getSchematicPosition, cornerParts]);
   return {
     getSchematicPosition,
     centerlinePath,

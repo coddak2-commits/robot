@@ -217,7 +217,7 @@ export function CellSelectionCore({
   // 예전 기준은 묶음 0 에 P4 를 함께 세고 있었다.
   const partSavedPointCounts = useMemo<Record<number, number>>(() => {
     const counts: Record<number, number> = {};
-    PART_ENABLE_GROUPS.forEach((group, index) => {
+    getPartEnableGroups().forEach((group, index) => {
       let savedCount = 0;
       for (const pointId of group) {
         const pt = teachingPoints.find(p => p.id === pointId);
@@ -330,12 +330,16 @@ export function CellSelectionCore({
   // 새 구성의 모서리 우 파트는 [P10,P9] 인데, 구 4파트의 [P10,P11,P12] 가 잡힌 것이다.
   // 블록 적용·블록 이름이 영향을 받는다. 실행 경로는 startWelding 이 직접 읽으므로
   // 무사했다.
+  // [v1.1.243] 도식 배치·치수선·체크박스 묶음이 파트 구성(4파트/6파트)에 따라
+  // 바뀌므로, 구성을 읽은 뒤 화면을 다시 그린다.
+  const [, setPartOrderVersion] = useState(0);
   useEffect(() => {
     let cancelled = false;
     getWeldingPartOrder()
       .then(order => {
         if (cancelled || order.length === 0) return;
         setWeldingPartOrder(order.map(o => ({ part_name: o.part_name, points: o.points })));
+        setPartOrderVersion(v => v + 1);
         log.info('mount.partOrder', '용접 파트 구성 로드', {
           parts: order.map(o => `${o.execution_order}:${o.part_name}`),
         });
@@ -769,6 +773,20 @@ export function setWeldingPartOrder(order: { part_name: string; points: string[]
 export function getWeldingParts(): readonly { name: string; points: readonly string[] }[] {
   return _dynamicParts ?? DEFAULT_WELDING_PARTS;
 }
+/**
+ * [v1.1.243] 지금 파트 구성에 모서리 파트(P3·P4 두 점 / P9·P10 두 점)가 있는가.
+ * 228~242 의 6파트 구성 전용 동작(모서리 조건 포인트, P4/P10 depthOffset,
+ * P5/P11 측면 터치, 수직 시작 10mm 내림, 펜던트 세그먼트·갭 매핑, 체크박스 묶음)은
+ * 이 값이 true 일 때만 켠다. 4파트(227 이전 구성)로 되돌리면 전부 227 동작으로 돈다.
+ */
+export function isCornerPartPoints(points: readonly string[]): boolean {
+  if (points.length !== 2) return false;
+  const ids = points.map(p => p.toLowerCase());
+  return (ids.includes('p3') && ids.includes('p4')) || (ids.includes('p9') && ids.includes('p10'));
+}
+export function hasCornerParts(): boolean {
+  return getWeldingParts().some(part => isCornerPartPoints(part.points));
+}
 // [v1.1.237] 파트의 용접 조건(전류·전압·위빙·속도·트래킹)을 읽는 포인트.
 // 기본은 파트 첫 포인트다. 모서리 파트만 예외로 모서리 바닥(P4/P10)에서 읽는다.
 // 모서리를 위에서 아래로(P3->P4, P9->P10) 돌리면 첫 포인트 P3/P9 가 수직 파트의
@@ -781,7 +799,9 @@ export function getPartConditionPointId(partPoints: readonly string[]): string |
   const first = partPoints[0];
   if (!first) return undefined;
   const cornerId = CORNER_CONDITION_POINT[first.toLowerCase()];
-  return cornerId && partPoints.includes(cornerId) ? cornerId : first;
+  // [v1.1.243] 모서리 파트(두 점)일 때만. 4파트의 수직 [P3,P2,P1] 은 P4 가 없어 원래도
+  // 안 걸리지만 의도를 분명히 한다.
+  return cornerId && isCornerPartPoints(partPoints) && partPoints.includes(cornerId) ? cornerId : first;
 }
 // [v1.1.228] 한 포인트가 두 파트에 들어갈 수 있게 됐다. 모서리 파트와 수직 파트가
 // P3/P9 를 함께 쓴다(이어지는 자리라 좌표를 공유한다).
@@ -856,6 +876,17 @@ export const PART_ENABLE_GROUPS: readonly (readonly string[])[] = [
   ['p11', 'p12'],
   ['p10', 'p9', 'p8', 'p7'],
 ];
+// [v1.1.243] 4파트(227 이전) 구성의 묶음. 228 이전에 DEFAULT_WELDING_PARTS 로 역산하던
+// 것과 같다. 체크박스 키(0~3)의 뜻은 두 구성 모두 수평 좌 / 수직 좌 / 수평 우 / 수직 우.
+export const PART_ENABLE_GROUPS_4PART: readonly (readonly string[])[] = [
+  ['p4', 'p5', 'p6'],
+  ['p3', 'p2', 'p1'],
+  ['p10', 'p11', 'p12'],
+  ['p9', 'p8', 'p7'],
+];
+export function getPartEnableGroups(): readonly (readonly string[])[] {
+  return hasCornerParts() ? PART_ENABLE_GROUPS : PART_ENABLE_GROUPS_4PART;
+}
 export const getExecutableParts = (
   teachingPoints: TeachingPoint[],
   partWeldEnabled?: PartWeldEnabled,
@@ -868,7 +899,7 @@ export const getExecutableParts = (
         (pt): pt is TeachingPoint =>
           pt !== undefined && pt.isSaved && pt.joints !== null && pt.joints.length > 0,
       );
-    const physicalIndex = PART_ENABLE_GROUPS.findIndex(g =>
+    const physicalIndex = getPartEnableGroups().findIndex(g =>
       part.points.every(p => g.includes(p)),
     );
     const enableKey = physicalIndex >= 0 ? physicalIndex : index;

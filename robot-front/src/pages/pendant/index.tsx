@@ -5,7 +5,7 @@ import { paramApi, Posture, WeldingParam, ParamLookupResult, deviationApi, overr
 import { isMockMode, mockCheckConnection } from '../../lib';
 import { pulseWireFeed, stopAllWireFeed, wireFeedDurationMs, WIRE_STOP_FAILED_MESSAGE } from '../../lib';
 import { getRobotError, resetRobotError, connectRobotSDK, getWeldingPartOrder } from '../../lib/robotApi/index';
-import { setWeldingPartOrder } from '../UcellSelect';
+import { setWeldingPartOrder, hasCornerParts } from '../UcellSelect';
 import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 import { playSaveOkBeep, playErrorBeep } from '../../lib/audio';
@@ -40,6 +40,17 @@ const SEGMENTS: { key: string; startId: string; endId: string; label: string; of
   { key: 'p11-p12', startId: 'p11', endId: 'p12', label: '11-12', offsetY: 105 },
 ];
 
+// [v1.1.243] 4파트(227 이전) 구성의 세그먼트. 수평은 시작점(P4/P10)에 갭을 저장한다.
+const SEGMENTS_4PART: typeof SEGMENTS = [
+  { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -25 },
+  { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -25 },
+  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 105 },
+  { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 25 },
+  { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 25 },
+  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 105 },
+];
+const getSegments = () => (hasCornerParts() ? SEGMENTS : SEGMENTS_4PART);
+
 // 파트별 "패스(skip)" 체크박스 배치 (U-셀 안쪽)
 const PART_CHECKBOXES: { partIdx: number; refPoint: string; offsetX?: number; offsetY?: number }[] = [
   // v1.1.178: 중앙 허브(폭 300~340, 화면 중앙)와 겹치지 않도록 벽 가까이로 옮김.
@@ -69,6 +80,15 @@ const PART_GAP_MAP: { points: string[]; gapPoints: string[] }[] = [
   { points: ['p10'], gapPoints: ['p10'] },                 // 모서리 우 - 세그먼트 p10-p9
 ];
 
+// [v1.1.243] 4파트(227 이전) 구성. 수평 대표 갭은 시작점 P4/P10.
+const PART_GAP_MAP_4PART: typeof PART_GAP_MAP = [
+  { points: ['p4', 'p5', 'p6'], gapPoints: ['p4'] },        // 수평 좌 - 세그먼트 p4-p6
+  { points: ['p3', 'p2', 'p1'], gapPoints: ['p1', 'p2'] }, // 수직 좌 - 세그먼트 p1-p2, p2-p3 평균
+  { points: ['p10', 'p11', 'p12'], gapPoints: ['p10'] },   // 수평 우 - 세그먼트 p10-p12
+  { points: ['p9', 'p8', 'p7'], gapPoints: ['p7', 'p8'] }, // 수직 우 - 세그먼트 p7-p8, p8-p9 평균
+];
+const getPartGapMap = () => (hasCornerParts() ? PART_GAP_MAP : PART_GAP_MAP_4PART);
+
 // v1.1.176: 캔버스 크기를 창 크기에 맞춰 계산한다(펜던트 1024x600 대응).
 // 아래 값은 최대 크기이고, 창이 작으면 그만큼 줄어든다. 오버레이(갭 입력, 패스 체크박스)는
 // worldToCanvas가 캔버스 크기를 인자로 받으므로 자동으로 따라 움직인다.
@@ -90,7 +110,9 @@ const getPosture = (pointId: string): Posture => {
   const n = Number(m[1]);
   // [v1.1.228] 4/10 추가. 모서리 파트(P4->P3, P10->P9)는 수직선을 타는 용접이라
   // 갭 파라미터도 수직 테이블을 조회해야 한다. 수평 시작점은 P5/P11 로 옮겨갔다.
-  if ([1, 2, 3, 4, 7, 8, 9, 10].includes(n)) return 'vertical';
+  // [v1.1.243] 4파트 구성에서는 P4/P10 이 수평 시작점이라 228 이전처럼 수평으로 본다.
+  const verticalIds = hasCornerParts() ? [1, 2, 3, 4, 7, 8, 9, 10] : [1, 2, 3, 7, 8, 9];
+  if (verticalIds.includes(n)) return 'vertical';
   return 'horizontal';
 };
 
@@ -293,6 +315,7 @@ const PendantInner: React.FC = () => {
 
   const homePoint = teachingPoints.find(p => p.id === 'home');
   const homeSaved = !!homePoint?.isSaved;
+  const [, setPartOrderVersion] = useState(0);
   // [v1.1.231] 화면에 들어올 때 DB 파트 구성을 먼저 읽어 둔다.
   // setWeldingPartOrder 는 그동안 startWelding 안에서만 불렸다. 그래서 용접을 한 번
   // 돌리기 전에는 getWeldingParts() 가 DEFAULT_WELDING_PARTS(구 4파트)를 돌려줬고,
@@ -307,6 +330,8 @@ const PendantInner: React.FC = () => {
       .then(order => {
         if (cancelled || order.length === 0) return;
         setWeldingPartOrder(order.map(o => ({ part_name: o.part_name, points: o.points })));
+        // [v1.1.243] 세그먼트·갭 매핑이 파트 구성에 따라 바뀌므로 다시 그린다.
+        setPartOrderVersion(v => v + 1);
       })
       .catch(() => { /* 읽기 실패 시 기본 4파트로 동작한다 */ });
     return () => { cancelled = true; };
@@ -582,7 +607,8 @@ const PendantInner: React.FC = () => {
     if (isWelding || isRobotMoving) return;
     try {
       // 파트별 gap → 파라미터 조회
-      const lookups = await Promise.all(PART_GAP_MAP.map(async pg => {
+      const partGapMap = getPartGapMap();
+      const lookups = await Promise.all(partGapMap.map(async pg => {
         const gaps = pg.gapPoints.map(id => teachingPoints.find(x => x.id === id)?.gap ?? 0);
         const gap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
         try {
@@ -601,7 +627,7 @@ const PendantInner: React.FC = () => {
 
       // 조회 결과를 파트 내 모든 포인트에 적용
       const updated = teachingPoints.map(pt => {
-        const idx = PART_GAP_MAP.findIndex(p => p.points.includes(pt.id));
+        const idx = partGapMap.findIndex(p => p.points.includes(pt.id));
         if (idx < 0) return pt;
         const res = lookups[idx]?.res;
         if (!res?.param) return pt;
@@ -614,7 +640,7 @@ const PendantInner: React.FC = () => {
       });
       // state에도 반영 (UI/재실행 대비)
       updated.forEach(pt => {
-        const idx = PART_GAP_MAP.findIndex(p => p.points.includes(pt.id));
+        const idx = partGapMap.findIndex(p => p.points.includes(pt.id));
         if (idx < 0 || !lookups[idx]?.res?.param) return;
         updatePointWeldParams(pt.id, Number(pt.weldVoltage), Number(pt.weldCurrent));
         updatePointSpeed(pt.id, Number(pt.moveSpeed));
@@ -673,7 +699,7 @@ const PendantInner: React.FC = () => {
         />
 
         {/* 세그먼트별 갭 입력 오버레이 */}
-        {SEGMENTS.map(seg => {
+        {getSegments().map(seg => {
           const a = getSchematicPosition(seg.startId);
           const b = getSchematicPosition(seg.endId);
           const mid = worldToCanvas({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, canvasW, canvasH);

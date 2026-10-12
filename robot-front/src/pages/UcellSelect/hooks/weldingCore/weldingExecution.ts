@@ -1,4 +1,4 @@
-import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo, getPartConditionPointId } from '../..';
+import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo, getPartConditionPointId, isCornerPartPoints } from '../..';
 import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, findDx, pulseWireFeedMs, wireFeedDurationMs, WireDirection, splineMove, markArcOff, buildCraterFill } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
@@ -512,7 +512,11 @@ export async function executeWelding(
   // 멈춘 자리에서 이어가므로 적용하지 않는다.
   const VERTICAL_START_DROP_MM = 10;
   const VERTICAL_START_POINT_IDS = ['p3', 'p9'];
+  // [v1.1.243] 모서리 파트가 있을 때만. 4파트(227 구성)에서는 P3/P9 가 모서리 바닥이라
+  // 10mm 내리면 바닥판으로 들어간다.
+  const hasCornerPartsInRun = executableParts.some(part => isCornerPartPoints(part.pointIds));
   const verticalStartDropZ = (idx: number): number => {
+    if (!hasCornerPartsInRun) return 0;
     const pt = weldingPoints[idx];
     if (!pt || !VERTICAL_START_POINT_IDS.includes(pt.id.toLowerCase())) return 0;
     if (!partBoundaryInfo.partStartIndices.includes(idx)) return 0;
