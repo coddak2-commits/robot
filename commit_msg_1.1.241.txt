@@ -1,0 +1,7 @@
+v1.1.241: 수직 파트 시작점(P3/P9)을 10mm 아래에서 시작
+
+수직 파트 시작 이동에 Base -Z 10mm 를 더한다(VERTICAL_START_DROP_MM).
+모서리 파트 시작(조건 포인트 P4/P10)과 "용접 계속"은 제외.
+
+- weldingExecution.ts: verticalStartDropZ, 파트 전환 ③ / 최종 하강에 적용
+- 버전 1.1.241 (installer.iss, lib/index.ts, robot_core_all.cpp)

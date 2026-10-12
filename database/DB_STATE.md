@@ -19,9 +19,9 @@
 | 001~011 | 기존 스키마 | 미확인 | 미확인 | 미확인 |
 | 012_corner_part_split | 파트 4개 -> 6개 (모서리 분리) | 미확인 | 적용 (2026-10-08, 6행 확인) | **미적용** |
 | 013_touch_offset_depth_z | `welding_config.touch_offset_depth_z` 컬럼 추가 | 미확인 | 적용 (2026-10-08) | **미적용** |
-| 014_corner_start_no_z_touch | P4/P10 의 Z 탐색 끄기 | 미확인 | 미확인 | **미적용** |
+| 014_corner_start_no_z_touch | P4/P10 의 Z 탐색 끄기 | 미확인 | 미적용 (10-09 15:38 로그에 P10 Z 탐색 있음) | **미적용** |
 | 015_corner_part_top_down | 모서리 파트 방향 뒤집기 ([P3,P4] / [P9,P10]) | 미적용 | 적용 (2026-10-09, 6행 확인) | **미적용** |
-| 016_p5_p11_touch_side | `welding_config.p5_touch_side` / `p11_touch_side` 컬럼 추가 (기본 1) | 미적용 | 미적용 | **미적용** |
+| 016_p5_p11_touch_side | `welding_config.p5_touch_side` / `p11_touch_side` 컬럼 추가 (기본 1) | 미적용 | 적용 (2026-10-12, 둘 다 1 확인) | **미적용** |
 
 펜던트는 228 이전 상태로 의도적으로 남겨둔 것이다. 자기 안에서는 일관되므로
 그대로 돌려도 된다. 안정화된 뒤에 한 번에 맞춘다.

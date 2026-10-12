@@ -504,6 +504,20 @@ export async function executeWelding(
     if (!condId || condId === part.pointIds[0]) return pt;
     return part.savedPoints.find(p => p.id === condId) ?? pt;
   };
+  // [v1.1.241] 수직 파트 시작점(P3/P9)을 교시 좌표보다 Base -Z 로 내려서 시작한다
+  // (사용자 요청 2026-10-12). 수직 비드가 모서리 비드 위에 겹쳐 시작되게 해서
+  // 이어지는 자리를 메운다. 모서리 파트([P3,P4] / [P9,P10])도 P3/P9 에서 시작하지만
+  // 그쪽은 조건 포인트가 P4/P10 이라 conditionPointAt 으로 걸러져 내리지 않는다.
+  // 시작점 이동에만 붙인다. 끝점(P1/P7)과 터치 결과는 그대로다. "용접 계속"은
+  // 멈춘 자리에서 이어가므로 적용하지 않는다.
+  const VERTICAL_START_DROP_MM = 10;
+  const VERTICAL_START_POINT_IDS = ['p3', 'p9'];
+  const verticalStartDropZ = (idx: number): number => {
+    const pt = weldingPoints[idx];
+    if (!pt || !VERTICAL_START_POINT_IDS.includes(pt.id.toLowerCase())) return 0;
+    if (!partBoundaryInfo.partStartIndices.includes(idx)) return 0;
+    return conditionPointAt(idx) === pt ? -VERTICAL_START_DROP_MM : 0;
+  };
   if (weldingPoints.length === 0) {
     showAlert('저장된 용접 포인트가 없습니다. (각 파트에 2개 이상 포인트 필요)', {
       type: 'warning',
@@ -849,6 +863,15 @@ export async function executeWelding(
         ];
         useStartOffset = true;
       }
+      const firstStartDropZ = verticalStartDropZ(startPointIndex);
+      if (firstStartDropZ !== 0) {
+        startTouchOffset[2] += firstStartDropZ;
+        useStartOffset = true;
+        log_weldingExecution.info(
+          'welding.partStart.verticalDrop',
+          `수직 시작점 ${startPoint.name} 을 ${-firstStartDropZ}mm 아래에서 시작 (보정 Z ${startTouchOffset[2].toFixed(1)})`,
+        );
+      }
       log_weldingExecution.info('welding.finalDescent', '최종 하강', { useOffset: useStartOffset });
       const descentResult = await moveToCartesianPosition(
         startPoint.tcp,
@@ -1041,14 +1064,36 @@ export async function executeWelding(
         }
         const targetNeedsCornerApproach =
           NEAR_UCELL_CORNER.includes((point?.id ?? '').toLowerCase());
+        // [v1.1.240] 우측 파트 전환에서 홈 경유를 없앤다(사용자 요청 2026-10-12).
+        // 015 이후 우측 순서는 [P11,P12] -> [P9,P10] -> [P9,P8,P7] 이고, 두 전환
+        // P12->P9, P10->P9 가 모두 목표 P9 가 코너 목록에 있어 홈을 들렀다.
+        // 좌측(P6->P3, P4->P3)은 목록에 없어 같은 쪽 전환으로 짧게 끝난다.
+        //   P12->P9 : 같은 쪽 전환(+X 후퇴 -> +X 접근)으로 돌린다. P9 는 228 부터
+        //             모서리에서 20mm 위라 +X 접근이 꼭 막히는 자리가 아니고(위 703행
+        //             주석), 227 의 P12->P9 가 같은 경로로 현장에서 문제없이 돌았다.
+        //   P10->P9 : 후퇴·접근 없이 P9 로 바로 간다. 방금 용접한 모서리 20mm 를
+        //             거꾸로 올라가는 경로라 주변 구조물에 닿을 일이 없다. P10 에서
+        //             +X 로 물러나는 것은 code=185 가 났던 통로라 쓰지 않는다.
+        // 목표가 P10 인 전환(015 롤백 시 P12->P10)은 종전대로 홈을 경유한다.
+        const prevIdLower = (prevPoint?.id ?? '').toLowerCase();
+        const pointIdLower = (point?.id ?? '').toLowerCase();
+        const isRightToP9SameSide = prevIdLower === 'p12' && pointIdLower === 'p9';
+        const isCornerReverse = prevIdLower === 'p10' && pointIdLower === 'p9';
         const isSameSide =
           !!prevPoint?.id && !!point?.id
           && pointSide(prevPoint.id) === pointSide(point.id)
-          && !targetNeedsCornerApproach;
+          && (!targetNeedsCornerApproach || isRightToP9SameSide);
+        if (isCornerReverse) {
+          log_weldingExecution.info(
+            'welding.partTransition.cornerReverse',
+            `파트 전환: ${prevPoint?.name ?? '?'} -> ${point.name} 모서리를 거꾸로 올라가 바로 이동 (후퇴·홈 경유 없음)`,
+          );
+        }
+        const skipRetractApproach = isSameSpotTransition || isCornerReverse;
         // v1.1.174: 횡단 전환 정면 이격 approachOffset -> 100mm 고정. approachOffset(현장 25mm)은 홈에서 MoveJ로 들어가기엔 가까워 쓰지 않는다.
         const CROSS_CLEARANCE_X = 100;
         const CROSS_LIFT_Z = 100;
-        if (prevPoint?.tcp && !stopRef.current && !isSameSpotTransition && isSameSide) {
+        if (prevPoint?.tcp && !stopRef.current && !skipRetractApproach && isSameSide) {
           log_weldingExecution.info(
             'welding.partTransition.retract',
             `파트 전환 ①: base +X +${approachOffset}mm 후퇴`,
@@ -1067,7 +1112,7 @@ export async function executeWelding(
             0,
           );
           if (retractResult?.status_code !== 200) throw new Error('파트 전환 후퇴 이동 실패');
-        } else if (prevPoint?.tcp && !stopRef.current && !isSameSpotTransition) {
+        } else if (prevPoint?.tcp && !stopRef.current && !skipRetractApproach) {
           // v1.1.171: 횡단 전환(좌 <-> 우) 후퇴를 바꾼다.
           // 1.1.170까지는 이전 점에서 base +X150 / +Z100 으로 물러났다. 옛 순서의 횡단은
           // 바닥 높이(P6->P9, 전용 분기)뿐이라 문제가 없었는데, 수평 우선 순서(4-5-6, 3-2-1,
@@ -1113,7 +1158,7 @@ export async function executeWelding(
         }
         if (hasWelding && !(simMode && !isWeldingTest) && !stopRef.current)
           await retractWireBeforeTransition(point);
-        if (!stopRef.current && !isSameSpotTransition) {
+        if (!stopRef.current && !skipRetractApproach) {
           if (isSameSide && point.tcp) {
             log_weldingExecution.info(
               'welding.partTransition.approachSameSide',
@@ -1252,6 +1297,15 @@ export async function executeWelding(
               0,
             ];
             usePointOffset = true;
+          }
+          const startDropZ = verticalStartDropZ(i);
+          if (startDropZ !== 0) {
+            pointTouchOffset[2] += startDropZ;
+            usePointOffset = true;
+            log_weldingExecution.info(
+              'welding.partStart.verticalDrop',
+              `수직 시작점 ${point.name} 을 ${-startDropZ}mm 아래에서 시작 (보정 Z ${pointTouchOffset[2].toFixed(1)})`,
+            );
           }
           log_weldingExecution.info(
             'welding.partTransition.final',
