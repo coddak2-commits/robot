@@ -94,12 +94,22 @@ type WireProfile = Record<WireDirection, { deadTimeMs: number; speedMmPerSec: nu
 //   1mm 는 2~6mm 로 흩어져 계산에서 뺐다. 25mm 자체도 27~30mm 로 흩어져
 //   보정 후에도 매번 ±1.5mm 정도는 차이가 날 수 있다.
 //   식은 쪽과 당기기는 이번에 재지 않았다. 뜨거운 판정 시간(5분)도 그대로다.
+//
+// v1.1.242 뜨거운 밀기 재보정 (2026-10-12, 현장 실측, 앱 1.1.239).
+// 238 값(0ms, 12.02mm/s)으로 용접 직후 3회씩 측정. 명령 시간 416/2080ms.
+//     요청 5mm  -> 3, 3, 3mm
+//     요청 25mm -> 17, 17, 17mm
+//   두 점 -> 속도 (17-3)/(2.080-0.416) = 8.41mm/s, 지연 0.416 - 3/8.41 = 59ms.
+//   검산: 25mm -> 3031ms -> 25.0 / 5mm -> 654ms -> 5.0
+//   이번 값은 식은 쪽(117ms, 8.46mm/s)과 거의 같다. 238 의 12.02mm/s 는 10-09
+//   하루만 빨랐던 셈이다. '뜨거우면 빨라진다'는 전제 자체가 약하다. 롤러 압력·
+//   라이너·스풀 같은 다른 요인으로 날마다 달라지는 것일 수 있다.
 export const WIRE_FEED_PROFILE_COLD: WireProfile = {
   forward: { deadTimeMs: 117, speedMmPerSec: 8.46 },
   reverse: { deadTimeMs: 306, speedMmPerSec: 23.42 },
 };
 export const WIRE_FEED_PROFILE_HOT: WireProfile = {
-  forward: { deadTimeMs: 0, speedMmPerSec: 12.02 },
+  forward: { deadTimeMs: 59, speedMmPerSec: 8.41 },
   reverse: { deadTimeMs: 306, speedMmPerSec: 23.42 },
 };
 // 마지막 아크 OFF 로부터 이 시간 안이면 뜨거운 값을 쓴다.
