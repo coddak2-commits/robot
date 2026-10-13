@@ -8,7 +8,7 @@
 - 기계 경로·계정·MariaDB 버전은 `HANDOFF.md` 9절에 있다. 여기서 반복하지 않는다.
 - 세 기계 모두 DB 이름은 `robot_welding` 이다.
 
-최종 갱신: 2026-10-13 (018 추가: 파트 순서 수평 먼저로. 5절 펜던트 절차에서 017 제외)
+최종 갱신: 2026-10-13 (018 추가: 파트 순서 수평 먼저로. 5절 펜던트 절차에서 017 제외. 2.4 아크 트래킹 좌우 보정. 5.6 펜던트 아크 트래킹 맞추기)
 
 ---
 
@@ -137,6 +137,18 @@ P5/P11 은 건드리지 않는다. 수평 구간은 양 끝이 같은 규칙이�
 Z 탐색을 끈 뒤에는 처음부터 모서리에 있어야 한다. 안 하면 모서리보다 17mm 위에서
 용접이 시작된다.
 
+### 2.4 `welding_config` — 아크 트래킹 좌우 보정
+
+2026-10-13 노트북에서 좌우 보정을 켰다. 자세한 설명은 `docs/arc-tracking.md`.
+
+| 컬럼 | 이전 | 현재 |
+| --- | --- | --- |
+| `arc_tracking_left_right` | 0 | 1 |
+| `arc_tracking_sum_max_lr` | 300 | 3 |
+
+상하 보정(`arc_tracking_up_down` = 1, `sum_max_ud` = 5), `klr` 0.06 은 그대로다.
+펜던트는 미확인.
+
 ---
 
 ## 3. 현재 상태 확인
@@ -177,7 +189,11 @@ Z 탐색을 끈 뒤에는 처음부터 모서리에 있어야 한다. 안 하면
 아래 세 가지만 맞추면 된다.
 
 - 새 앱이 읽는 컬럼 두 개 추가 (013, 016)
-- 앱 1.1.245 이상 설치
+- 앱 설치 (그때의 최신 안정 버전. 2026-10-13 기준 1.1.247)
+- 아크 트래킹 설정을 노트북과 맞추기 (5.6)
+
+[2026-10-13 현재] 펜던트는 앱·DB 모두 227 그대로 동결 중. 노트북 쪽이 안정화되면
+이 절차로 한 번에 맞춘다. 그 사이 노트북에서 DB 를 또 바꾸면 이 절에 추가할 것.
 
 [2026-10-13] 노트북은 018 로 순서가 수평 먼저(227 순서)로 돌아갔다. 펜던트는 원래
 수평 먼저이므로 순서는 손대지 않는다.
@@ -196,9 +212,10 @@ Z 탐색을 끈 뒤에는 처음부터 모서리에 있어야 한다. 안 하면
 | 0 | DB 백업 | 5.2 |
 | 1 | 013_touch_offset_depth_z.sql | `touch_offset_depth_z` 컬럼. 앱 1.1.232 이상은 없으면 설정 조회 실패 |
 | 2 | 016_p5_p11_touch_side.sql | `p5/p11_touch_side` 컬럼. 앱 1.1.239 이상은 없으면 설정 조회 실패. 4파트에서는 값이 있어도 쓰이지 않는다 |
-| 3 | 앱 설치 (1.1.245 이상) | 1~2 를 끝낸 뒤에 설치 |
+| 3 | 앱 설치 (최신 안정 버전, 1.1.247 이상) | 1~2 를 끝낸 뒤에 설치 |
 | 4 | 확인 | 5.4 |
-| 5 | 드라이런 | 5.5 |
+| 5 | 아크 트래킹 설정 맞추기 | 5.6. 실용접 전에 할 것 |
+| 6 | 드라이런 | 5.5 |
 
 ### 5.2 백업
 
@@ -251,5 +268,67 @@ SELECT touch_offset_depth_z, p4_touch_top, p4_touch_bottom, p10_touch_top, p10_t
   - P1 -> P10: 횡단 (P1 base +X 후퇴 -> 홈 -> P10 -Y 접근)
   - P12 -> P9: 같은 쪽 전환 (+X 후퇴 -> +X 접근)
 - 펜던트 화면 세그먼트가 1-2, 2-3, 4-6, 7-8, 8-9, 10-12 로 보이는지
+- 1.1.246 부터 수직 시작점(P3/P9)을 교시 좌표보다 3mm 아래에서 시작한다. 펜던트 P3/P9 가
+  바닥판에 바짝 붙어 교시돼 있으면 와이어가 판에 닿을 수 있으니 시작점에서 확인한다
+- 교시 포인트 6축(J6)이 180° 를 넘는 포인트가 있는지 본다. 실용접 끝점 이동(MoveLWithJoints)이
+  code=14 로 거부된다(2026-10-13 노트북 P6 J6 180.46°). 드라이런은 관절값 없이 움직여서
+  여기서는 안 드러난다. 확인 쿼리:
+  `SELECT job_id, point_id, joints FROM teaching_points WHERE job_id = <작업 번호> ORDER BY id;`
 
 끝나면 1절 표의 펜던트 칸을 갱신한다.
+
+### 5.6 아크 트래킹 설정 맞추기
+
+앱 1.1.247 부터 아크 트래킹을 위빙 종류가 아니라 파트 종류로 건다. 수직 파트(P1~P3, P7~P9)는
+위빙이 무엇이든 트래킹이 켜진다(`arc_tracking_enabled` = 1 일 때). 그래서 펜던트의
+`welding_config` 트래킹 값이 그대로 실용접에 걸린다. 펜던트 값은 미확인이다.
+
+1) 양쪽 값을 같은 쿼리로 뽑아 비교한다(노트북은 root, 펜던트는 robotback).
+
+```sql
+SELECT arc_tracking_enabled, arc_tracking_left_right, arc_tracking_up_down,
+       arc_tracking_klr, arc_tracking_kud,
+       arc_tracking_step_max_lr, arc_tracking_step_max_ud,
+       arc_tracking_sum_max_lr, arc_tracking_sum_max_ud,
+       arc_tracking_delay_time, arc_tracking_t_start_lr, arc_tracking_t_start_ud,
+       arc_tracking_axis_select, arc_tracking_reference_type, arc_tracking_reference_current,
+       arc_tracking_refer_sample_start_ud, arc_tracking_refer_sample_count_ud
+FROM welding_config WHERE id = 1;
+```
+
+2) 펜던트에 **그때의 노트북 값**을 넣는다. 아래는 2026-10-13 노트북에서 확인한 값이다.
+   그 사이 바뀌었을 수 있으니 1) 결과를 우선한다.
+
+| 컬럼 | 노트북 (2026-10-13) |
+| --- | --- |
+| `arc_tracking_enabled` | 1 |
+| `arc_tracking_left_right` | 1 (10-13 에 0 -> 1) |
+| `arc_tracking_up_down` | 1 |
+| `arc_tracking_klr` | 0.06 (부호 미검증) |
+| `arc_tracking_step_max_lr` | 5 |
+| `arc_tracking_sum_max_lr` | 3 (10-13 에 300 -> 3) |
+| `arc_tracking_t_start_lr` | 8 |
+| `arc_tracking_axis_select` | 0 |
+| `arc_tracking_sum_max_ud` | 5 |
+| 나머지(`kud`, `step_max_ud`, `t_start_ud`, `delay_time`, 기준 전류 관련) | 10-13 에 안 뽑음. 1) 결과로 맞출 것 |
+
+```sql
+-- 예: 10-13 노트북 값 기준. 1) 결과와 다르면 그 값으로 바꿔 쓸 것
+UPDATE welding_config SET
+  arc_tracking_enabled = 1,
+  arc_tracking_left_right = 1,
+  arc_tracking_up_down = 1,
+  arc_tracking_klr = 0.06,
+  arc_tracking_step_max_lr = 5,
+  arc_tracking_sum_max_lr = 3,
+  arc_tracking_t_start_lr = 8,
+  arc_tracking_axis_select = 0,
+  arc_tracking_sum_max_ud = 5
+WHERE id = 1;
+```
+
+주의:
+- 좌우 보정은 대칭 평면 삼각파(좌우 체류 같음)에서만 적용된다(벤더 문서 1.3.4).
+  펜던트 작업의 수직 포인트가 아직 수직 삼각파면 좌우를 켜도 효과가 없다.
+  노트북과 같게 쓰려면 수직 포인트 위빙을 평면 삼각파로 바꿔 작업 저장할 것.
+- 트래킹 값은 robot-core 가 용접마다 DB 에서 새로 읽으므로 앱 재시작은 필요 없다.

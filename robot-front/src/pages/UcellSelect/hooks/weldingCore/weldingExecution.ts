@@ -761,6 +761,37 @@ export async function executeWelding(
     const NEAR_UCELL_CORNER = ['p9', 'p10', 'p11'];
     const getStartApproachOffsetPos = (pointId: string, offset: number): number[] =>
       NEAR_UCELL_CORNER.includes(pointId.toLowerCase()) ? [0, -offset, 0, 0, 0, 0] : [offset, 0, 0, 0, 0, 0];
+    // [v1.1.248] 수평 시작점(P4/P10) 접근 자리를 '터치로 잡힌 구석' 기준으로 계산한다
+    // (사용자 요청 2026-10-14).
+    // 종전에는 접근 자리 = 교시 좌표 + 접근 거리였다(터치 보정 없음). 최종 하강은
+    // 교시 좌표 + 터치 보정이라, 교시를 어디에 찍었느냐에 따라 마지막 직선 이동의
+    // 방향이 달라졌다. 227 시절 P4 는 옆벽에 붙여 높게 찍혀 있어 옆벽을 따라 비스듬히
+    // 내려갔는데, 10-13 재교시 후에는 구석 가까이 낮게 찍혀 옆 17mm·아래 11mm 를
+    // 한 번에 꺾어 구석에 꽂히면서 와이어가 휘었다(2026-10-14 08:13 로그).
+    // 이제 접근 자리 = 교시 + 터치 보정 + 접근 방향 거리 + 바닥 위 LIFT + 반대쪽 벽에서 CLEAR.
+    // 교시 위치와 상관없이 매번 구석에서 같은 거리·높이에서 같은 방향으로 들어간다.
+    // 최종 하강(교시 + 터치 보정)은 그대로라 도착 위치는 종전과 같다.
+    //   P4 : 접근 +X(뒷벽에서 멀어지는 쪽), 옆벽(-Y)에서 +Y 로 CLEAR
+    //   P10: 접근 -Y(종전과 같은 방향, +X 는 code=185), 뒷벽(-X)에서 +X 로 CLEAR
+    // 4파트 구성에서만, 터치 보정이 있을 때만 쓴다. 없으면 종전 방식.
+    const HORIZONTAL_START_POINT_IDS = ['p4', 'p10'];
+    const HORIZONTAL_START_LIFT_MM = 15;
+    const HORIZONTAL_START_CLEAR_MM = 3;
+    const getTouchedStartApproachOffset = (point: TeachingPoint, offset: number): number[] | null => {
+      if (hasCornerPartsInRun) return null;
+      const id = (point.id ?? '').toLowerCase();
+      if (!HORIZONTAL_START_POINT_IDS.includes(id) || !point.touchOffset) return null;
+      const t = point.touchOffset;
+      const viaY = NEAR_UCELL_CORNER.includes(id);
+      return [
+        t.dx + (viaY ? HORIZONTAL_START_CLEAR_MM : offset),
+        t.dy + (viaY ? -offset : HORIZONTAL_START_CLEAR_MM),
+        t.dz + HORIZONTAL_START_LIFT_MM,
+        0,
+        0,
+        0,
+      ];
+    };
     markPointIndex(startPointIndex);
     const startPoint = weldingPoints[startPointIndex];
     const paramPoint = weldingPoints[paramPointIndex];
@@ -814,7 +845,14 @@ export async function executeWelding(
       }
     } else {
       if (startPoint.tcp && !stopRef.current) {
-        const startOffsetDir = getStartApproachOffsetPos(startPoint.id, approachOffset);
+        const touchedStartApproach = getTouchedStartApproachOffset(startPoint, approachOffset);
+        const startOffsetDir = touchedStartApproach ?? getStartApproachOffsetPos(startPoint.id, approachOffset);
+        if (touchedStartApproach) {
+          log_weldingExecution.info(
+            'welding.start.approachTouched',
+            `시작점 ${startPoint.name} 접근 자리를 터치 보정 기준으로 계산 [${touchedStartApproach.slice(0, 3).map(v => v.toFixed(1)).join(', ')}]`,
+          );
+        }
         const startOffsetPose = [
           startPoint.tcp.x + startOffsetDir[0],
           startPoint.tcp.y + startOffsetDir[1],
@@ -1201,7 +1239,15 @@ export async function executeWelding(
             // v1.1.175: 횡단 전환 목표가 P9/P10(우측 바닥 코너)이면 시작점 접근과 같은 방식을 쓴다.
             // 홈에서 -Y approachOffset 자리로 직선(MoveL) 이동 -> ③ 정위치 진입.
             // 1.1.174의 IK 상공 MoveJ + 하강 두 단계를 없앤다. (+X 접근은 code=185, MoveJ 곡선은 U셀 접촉 이력)
-            const cornerOffset = getStartApproachOffsetPos(point.id, approachOffset);
+            // [v1.1.248] 수평 시작점(P10)이면 터치로 잡힌 구석 기준 접근 자리. 위 getTouchedStartApproachOffset 참고.
+            const touchedCornerApproach = getTouchedStartApproachOffset(point, approachOffset);
+            const cornerOffset = touchedCornerApproach ?? getStartApproachOffsetPos(point.id, approachOffset);
+            if (touchedCornerApproach) {
+              log_weldingExecution.info(
+                'welding.partTransition.approachTouched',
+                `파트 전환 ②: ${point.name} 접근 자리를 터치 보정 기준으로 계산 [${touchedCornerApproach.slice(0, 3).map(v => v.toFixed(1)).join(', ')}]`,
+              );
+            }
             log_weldingExecution.info(
               'welding.partTransition.approachCorner',
               `파트 전환 ②(횡단): ${point.name} -Y ${approachOffset}mm 직선 접근 (U셀 코너, 시작점 접근 방식)`,
