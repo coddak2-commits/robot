@@ -1,4 +1,4 @@
-import { TeachingPoint, getExecutableParts, flattenExecutableParts, PartWeldEnabled } from '../..';
+import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo, PartWeldEnabled } from '../..';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { ClosestCenterlineResult } from './weldingCoreTypes';
@@ -11,6 +11,7 @@ export const findClosestCenterlinePoint = (
 ): ClosestCenterlineResult | null => {
   const executableParts = getExecutableParts(teachingPoints, partWeldEnabled);
   const weldingPoints = flattenExecutableParts(executableParts);
+  const { pointPartIndices } = getPartBoundaryInfo(executableParts);
   if (weldingPoints.length < 2) return null;
   // [v1.1.225] 5 -> 1mm. 샘플 간격만큼 복귀 지점이 뒤로 밀릴 수 있어 줄였다.
   const INTERVAL_MM = 1;
@@ -21,6 +22,11 @@ export const findClosestCenterlinePoint = (
   let closestSegmentIndex = 0;
   let closestDistanceAlongSegment = 0;
   for (let segIdx = 0; segIdx < weldingPoints.length - 1; segIdx++) {
+    // [v1.1.245] 파트 사이 전환 구간(예: P7->P10, P1->P10)은 용접선이 아니므로 뺀다.
+    // 넣으면 다음 파트 시작점 근처에서 멈췄을 때 전환선 위 점이 가장 가깝게 잡혀
+    // 시작 인덱스가 앞 파트의 끝점이 되고, 거기서 파트 전환(후퇴 -> 홈 -> 재진입)을
+    // 다시 돈다. '용접 계속'이 홈을 들렀다가 그 자리로 돌아오던 원인이다.
+    if (pointPartIndices[segIdx] !== pointPartIndices[segIdx + 1]) continue;
     const startPt = weldingPoints[segIdx];
     const endPt = weldingPoints[segIdx + 1];
     if (!startPt.tcp || !endPt.tcp) continue;

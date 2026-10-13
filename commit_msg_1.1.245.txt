@@ -1,0 +1,6 @@
+v1.1.245: 파트 순서 수평 먼저로, 위빙 기본값 평면 삼각파, '용접 계속' 홈 경유 수정
+
+- database/migrations/018 (+ 롤백): 파트 순서 수평 -> 수직 (227 순서), DB_STATE.md
+- UcellSelect/index.tsx: P1~P3, P7~P9 위빙 기본값 plane_triangle
+- weldingCore/pathFinding.ts: 용접 계속 시작점 탐색에서 파트 전환 구간 제외
+- 버전 1.1.245

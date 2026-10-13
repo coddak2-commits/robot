@@ -8,7 +8,7 @@
 - 기계 경로·계정·MariaDB 버전은 `HANDOFF.md` 9절에 있다. 여기서 반복하지 않는다.
 - 세 기계 모두 DB 이름은 `robot_welding` 이다.
 
-최종 갱신: 2026-10-12 (016·017 추가, 5절 펜던트 절차를 4파트 기준으로 다시 씀)
+최종 갱신: 2026-10-13 (018 추가: 파트 순서 수평 먼저로. 5절 펜던트 절차에서 017 제외)
 
 ---
 
@@ -22,10 +22,11 @@
 | 014_corner_start_no_z_touch | P4/P10 의 Z 탐색 끄기 | 미확인 | 미적용 (10-09 15:38 로그에 P10 Z 탐색 있음) | 돌리지 않음 |
 | 015_corner_part_top_down | 모서리 파트 방향 뒤집기 ([P3,P4] / [P9,P10]) | 미적용 | 적용 (2026-10-09, 6행 확인) -> 017 로 거둠 | 불필요 (돌리지 않음) |
 | 016_p5_p11_touch_side | `welding_config.p5_touch_side` / `p11_touch_side` 컬럼 추가 (기본 1) | 미적용 | 적용 (2026-10-12, 둘 다 1 확인) | **미적용** |
-| 017_back_to_4part_vertical_first | 4파트로 복귀, 순서 수직 -> 수평 (012·015 를 거둠) | 미적용 | 적용 (2026-10-12, 4행 확인) | **미적용** (순서 UPDATE 만 필요) |
+| 017_back_to_4part_vertical_first | 4파트로 복귀, 순서 수직 -> 수평 (012·015 를 거둠) | 미적용 | 적용 (2026-10-12, 4행 확인) | 불필요 (돌리지 않음) |
+| 018_horizontal_first | 파트 순서를 수평 먼저로 (227 순서) | 미적용 | **미적용** (앱 1.1.245 설치 후 돌릴 것) | 불필요 (원래 수평 먼저) |
 
 펜던트는 228 이전(227) 구성으로 의도적으로 남겨둔 것이다. 자기 안에서는 일관되므로
-그대로 돌려도 된다. 맞출 때는 5절(013 -> 016 -> 017 -> 앱 설치).
+그대로 돌려도 된다. 맞출 때는 5절(013 -> 016 -> 앱 설치).
 
 **펜던트 앱을 1.1.232 이상으로 올리려면 013 을 먼저 돌려야 한다.** 1.1.239 이상은 016 도 먼저 돌려야 한다(같은 이유). robot-core 의
 `welding_config` 조회가 `touch_offset_depth_z` 를 명시적으로 SELECT 하므로,
@@ -69,6 +70,15 @@
 | 0 | 1 | H-LEFT (p4-p6) | `["p4","p5","p6"]` |
 | 3 | 2 | V-RIGHT (p9-p7) | `["p9","p8","p7"]` |
 | 2 | 3 | H-RIGHT (p10-p12) | `["p10","p11","p12"]` |
+
+**[2026-10-13] 018 을 돌리면 순서가 수평 먼저(227 순서)로 바뀐다.** 적용 후 값:
+
+| part_index | execution_order | part_name | points |
+| --- | --- | --- | --- |
+| 0 | 0 | H-LEFT (p4-p6) | `["p4","p5","p6"]` |
+| 1 | 1 | V-LEFT (p3-p1) | `["p3","p2","p1"]` |
+| 2 | 2 | H-RIGHT (p10-p12) | `["p10","p11","p12"]` |
+| 3 | 3 | V-RIGHT (p9-p7) | `["p9","p8","p7"]` |
 
 아래 6파트 설명은 012~016 시절 기록이다.
 
@@ -167,10 +177,14 @@ Z 탐색을 끈 뒤에는 처음부터 모서리에 있어야 한다. 안 하면
 아래 세 가지만 맞추면 된다.
 
 - 새 앱이 읽는 컬럼 두 개 추가 (013, 016)
-- 파트 순서를 수직 먼저로 (017 의 UPDATE 부분)
-- 앱 1.1.243 이상 설치
+- 앱 1.1.245 이상 설치
 
-012·014·015 는 **돌리지 않는다.**
+[2026-10-13] 노트북은 018 로 순서가 수평 먼저(227 순서)로 돌아갔다. 펜던트는 원래
+수평 먼저이므로 순서는 손대지 않는다.
+
+012·014·015·017·018 은 **돌리지 않는다.**
+- 017/018: 017 은 순서를 수직 먼저로, 018 은 다시 수평 먼저로 바꾼다. 펜던트는 이미
+  수평 먼저라 둘 다 필요 없다.
 - 012/015: 6파트(모서리 분리) 구성용이다. 4파트로 돌아왔으므로 필요 없다.
 - 014: P4/P10 의 Z 탐색을 끈다. 4파트에서 P4/P10 은 수평 시작점이라 Z 탐색이 켜져
   있어야 바닥판까지 내려간다. 노트북도 안 돌렸다.
@@ -182,10 +196,9 @@ Z 탐색을 끈 뒤에는 처음부터 모서리에 있어야 한다. 안 하면
 | 0 | DB 백업 | 5.2 |
 | 1 | 013_touch_offset_depth_z.sql | `touch_offset_depth_z` 컬럼. 앱 1.1.232 이상은 없으면 설정 조회 실패 |
 | 2 | 016_p5_p11_touch_side.sql | `p5/p11_touch_side` 컬럼. 앱 1.1.239 이상은 없으면 설정 조회 실패. 4파트에서는 값이 있어도 쓰이지 않는다 |
-| 3 | 017_back_to_4part_vertical_first.sql | 파트 순서 수직 -> 수평. 모서리 행이 없으므로 DELETE 는 0행, UPDATE 4개만 적용된다 |
-| 4 | 앱 설치 (1.1.243 이상) | 1~3 을 끝낸 뒤에 설치 |
-| 5 | 확인 | 5.4 |
-| 6 | 드라이런 | 5.5 |
+| 3 | 앱 설치 (1.1.245 이상) | 1~2 를 끝낸 뒤에 설치 |
+| 4 | 확인 | 5.4 |
+| 5 | 드라이런 | 5.5 |
 
 ### 5.2 백업
 
@@ -198,7 +211,7 @@ mkdir C:\temp -Force
 
 ### 5.3 마이그레이션 실행
 
-1. 레포의 `database/migrations/` 에서 013, 016, 017 (+ 각 rollback) 파일을 USB 로
+1. 레포의 `database/migrations/` 에서 013, 016 (+ 각 rollback) 파일을 USB 로
    펜던트 `C:\temp\migrations\` 에 복사한다.
 2. mysql 에 접속한다.
 
@@ -212,20 +225,10 @@ mkdir C:\temp -Force
 ```sql
 source C:/temp/migrations/013_touch_offset_depth_z.sql
 source C:/temp/migrations/016_p5_p11_touch_side.sql
-source C:/temp/migrations/017_back_to_4part_vertical_first.sql
 ```
 
 `ALTER` 권한 오류가 나면 robotback 계정에 권한이 없는 것이다. 그때는 root 로 접속해
 같은 순서로 돌린다.
-
-파일을 못 옮기면 017 은 아래를 직접 붙여 넣어도 된다.
-
-```sql
-UPDATE welding_part_order SET execution_order = 0, part_name = 'V-LEFT (p3-p1)', points = '["p3","p2","p1"]' WHERE part_index = 1;
-UPDATE welding_part_order SET execution_order = 1, part_name = 'H-LEFT (p4-p6)', points = '["p4","p5","p6"]' WHERE part_index = 0;
-UPDATE welding_part_order SET execution_order = 2, part_name = 'V-RIGHT (p9-p7)', points = '["p9","p8","p7"]' WHERE part_index = 3;
-UPDATE welding_part_order SET execution_order = 3, part_name = 'H-RIGHT (p10-p12)', points = '["p10","p11","p12"]' WHERE part_index = 2;
-```
 
 ### 5.4 확인 쿼리
 
@@ -235,7 +238,7 @@ SELECT touch_offset_depth_z, p4_touch_top, p4_touch_bottom, p10_touch_top, p10_t
 ```
 
 기대값:
-- 파트 4행, 순서 `["p3","p2","p1"]` -> `["p4","p5","p6"]` -> `["p9","p8","p7"]` -> `["p10","p11","p12"]`
+- 파트 4행, 순서 `["p4","p5","p6"]` -> `["p3","p2","p1"]` -> `["p10","p11","p12"]` -> `["p9","p8","p7"]` (227 그대로)
 - `touch_offset_depth_z` = 0
 - `p4_touch_bottom`, `p10_touch_bottom` = 1 (수평 시작점 Z 탐색. 0 이면 1 로 바꿀 것)
 - `p5_touch_side`, `p11_touch_side` 는 아무 값이어도 된다(4파트에서는 안 쓰인다)
@@ -243,10 +246,10 @@ SELECT touch_offset_depth_z, p4_touch_top, p4_touch_bottom, p10_touch_top, p10_t
 ### 5.5 교시·드라이런
 
 - 펜던트의 교시 좌표는 227 구성 그대로이므로 **재교시는 필요 없다.**
-- 파트 순서만 바뀌었으므로 드라이런으로 전환 경로를 먼저 확인한다.
-  - P1 -> P4 : 같은 쪽 전환 (+X 후퇴 -> +X 접근)
-  - P6 -> P9 : 전용 경로 (P6 에서 +X 30mm 후퇴 -> P9 직선)
-  - P7 -> P10: 홈 경유 -> -Y 접근 (P10 +X 접근은 code=185 이력)
+- 앱이 바뀌었으므로 드라이런으로 전환 경로를 먼저 확인한다(227 과 같은 경로).
+  - P6 -> P3 : 같은 쪽 전환 (+X 후퇴 -> +X 접근)
+  - P1 -> P10: 횡단 (P1 base +X 후퇴 -> 홈 -> P10 -Y 접근)
+  - P12 -> P9: 같은 쪽 전환 (+X 후퇴 -> +X 접근)
 - 펜던트 화면 세그먼트가 1-2, 2-3, 4-6, 7-8, 8-9, 10-12 로 보이는지
 
 끝나면 1절 표의 펜던트 칸을 갱신한다.

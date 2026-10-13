@@ -1066,6 +1066,8 @@ export interface TeachingPoint {
 // 일치한다. 임의로 올리면 그대로 과속이 되므로 실측 없이 바꾸지 말 것.
 // (p12는 예전에 '종료점'으로 설계돼 혼자 50이었으나, 현장에서는 정상 용접 포인트로 쓰므로
 //  같은 파트인 p10/p11과 동일하게 맞춤.)
+// [v1.1.245] 위빙 타입 기본값을 전 포인트 평면 삼각파(plane_triangle)로 (사용자 요청 2026-10-13).
+// 수직 포인트(P1~P3, P7~P9)도 같다. 위빙 폭·체류(weaveParams)는 종전 값 그대로다.
 export const UCELL_POINT_DEFINITIONS: Omit<
   TeachingPoint,
   'tcp' | 'joints' | 'isSaved' | 'touchOffset'
@@ -1096,7 +1098,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 250,
-    weavingType: 'vertical_triangle',
+    weavingType: 'plane_triangle',
     weaveParams: { ...VERTICAL_WEAVE_PARAMS },
     gap: 0,
     touchDirection: 1,
@@ -1112,7 +1114,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 250,
-    weavingType: 'vertical_triangle',
+    weavingType: 'plane_triangle',
     weaveParams: { ...VERTICAL_WEAVE_PARAMS },
     gap: 0,
     touchDirection: 1,
@@ -1128,7 +1130,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 250,
-    weavingType: 'vertical_triangle',
+    weavingType: 'plane_triangle',
     weaveParams: { ...VERTICAL_WEAVE_PARAMS },
     gap: 0,
     touchDirection: 1,
@@ -1192,7 +1194,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 250,
-    weavingType: 'vertical_triangle',
+    weavingType: 'plane_triangle',
     weaveParams: { ...VERTICAL_WEAVE_PARAMS },
     gap: 0,
     touchDirection: -1,
@@ -1208,7 +1210,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 250,
-    weavingType: 'vertical_triangle',
+    weavingType: 'plane_triangle',
     weaveParams: { ...VERTICAL_WEAVE_PARAMS },
     gap: 0,
     touchDirection: -1,
@@ -1224,7 +1226,7 @@ export const UCELL_POINT_DEFINITIONS: Omit<
     velMode: 1,
     weldVoltage: 28,
     weldCurrent: 250,
-    weavingType: 'vertical_triangle',
+    weavingType: 'plane_triangle',
     weaveParams: { ...VERTICAL_WEAVE_PARAMS },
     gap: 0,
     touchDirection: -1,
