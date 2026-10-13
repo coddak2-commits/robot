@@ -1,0 +1,5 @@
+v1.1.247: 아크 트래킹 판정을 위빙 종류에서 파트 종류로
+
+- weldingCore/weldingExecution.ts: 수직 파트(P1~P3, P7~P9)면 트래킹 ON, 수평은 OFF
+- docs/arc-tracking.md: 동작 조건 갱신
+- 버전 1.1.247

@@ -710,11 +710,23 @@ export async function executeWelding(
     // v1.1.169로 파트 순서가 수평 먼저가 되면서 트래킹이 수평 첫 파트에 걸렸고,
     // 그 시작점에서 아크만 켜진 채 정지하는 증상이 났다.
     // 수평 파트에서는 0을 보내 직전 파트의 트래킹을 명시적으로 끈다.
-    const VERTICAL_WEAVE_CODES = [1, 5, 6, 7];
+    // [v1.1.247] 수직 판정을 위빙 종류(수직 계열 코드 1, 5, 6, 7)에서 파트 종류로 바꾼다
+    // (사용자 요청 2026-10-13). 245 부터 수직도 평면 삼각파(코드 0)로 용접하면서
+    // 위빙 코드로 판정하면 수직에서도 트래킹이 꺼졌다. 벤더 문서 1.3.4 기준 좌우 보정은
+    // 대칭 평면 삼각파/사인파에서만 적용되므로 평면 삼각파가 오히려 조건에 맞는다.
+    // 수직 파트 = 조건 포인트가 P1~P3/P7~P9 인 파트. 6파트 구성에서는 모서리 파트
+    // (조건 포인트 P4/P10)도 수직선을 타므로 종전처럼 켠다. 수평은 계속 끈다.
+    // 위빙이 없는 파트(코드 -1)는 종전처럼 끈다.
+    const VERTICAL_PART_POINT_IDS = ['p1', 'p2', 'p3', 'p7', 'p8', 'p9'];
+    const CORNER_CONDITION_POINT_IDS = ['p4', 'p10'];
+    const isVerticalPartPoint = (pointId?: string): boolean => {
+      const id = (pointId ?? '').toLowerCase();
+      return VERTICAL_PART_POINT_IDS.includes(id) || (hasCornerPartsInRun && CORNER_CONDITION_POINT_IDS.includes(id));
+    };
     const armArcTracking = async (point: TeachingPoint) => {
       if (!arcTrackingActive) return;
       const weaveCode = getWeaveTypeCode(point.weavingType ?? firstWeldPoint.weavingType);
-      const isVertical = VERTICAL_WEAVE_CODES.includes(weaveCode);
+      const isVertical = weaveCode >= 0 && isVerticalPartPoint(point.id);
       try {
         await arcTraceControl({ flag: isVertical ? 1 : 0 });
         log_weldingExecution.info(
@@ -1473,7 +1485,9 @@ export async function executeWelding(
       // 안 끝난 상태에서 다음 명령이 겹칠 수 있는 경로는 블렌드뿐이다.
       // 블렌드 -1인 수직(트래킹 ON)은 같은 기어가기로 정상 동작했다.
       const batchWeaveCode = getWeaveTypeCode(batchPoints[0].weaving_type ?? null);
-      const batchArcTracking = arcTrackingActive && VERTICAL_WEAVE_CODES.includes(batchWeaveCode);
+      // [v1.1.247] 로그 표시용. armArcTracking 과 같은 파트 기준으로 판정한다.
+      const batchCondPoint = conditionPointAt(batchIndices[0]) ?? weldingPoints[batchIndices[0]];
+      const batchArcTracking = arcTrackingActive && batchWeaveCode >= 0 && isVerticalPartPoint(batchCondPoint?.id);
       const WAYPOINT_BLEND_MM = -1;
       // v1.1.203: 아크 트래킹이 걸리는 배치는 중간 경유점을 지나지 않고
       // 끝점까지 단일 MoveL로 간다(per_point=false). 중간점에서 방향이 꺾여
