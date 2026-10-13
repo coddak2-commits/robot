@@ -1,0 +1,5 @@
+v1.1.246: 4파트에서 수직 시작점(P3/P9)을 3mm 아래에서 시작
+
+- weldingCore/weldingExecution.ts: 4파트 수직 시작 내림 3mm (6파트는 10mm 그대로)
+- DB_STATE.md: 노트북 018 적용 기록
+- 버전 1.1.246

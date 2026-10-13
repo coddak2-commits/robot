@@ -511,16 +511,19 @@ export async function executeWelding(
   // 시작점 이동에만 붙인다. 끝점(P1/P7)과 터치 결과는 그대로다. "용접 계속"은
   // 멈춘 자리에서 이어가므로 적용하지 않는다.
   const VERTICAL_START_DROP_MM = 10;
+  // [v1.1.246] 4파트도 내린다. 거리는 3mm (사용자 요청 2026-10-13).
+  // P3/P9 가 모서리 바닥이라 10mm 는 바닥판으로 들어가므로 따로 둔다.
+  const VERTICAL_START_DROP_MM_4PART = 3;
   const VERTICAL_START_POINT_IDS = ['p3', 'p9'];
   // [v1.1.243] 모서리 파트가 있을 때만. 4파트(227 구성)에서는 P3/P9 가 모서리 바닥이라
   // 10mm 내리면 바닥판으로 들어간다.
   const hasCornerPartsInRun = executableParts.some(part => isCornerPartPoints(part.pointIds));
   const verticalStartDropZ = (idx: number): number => {
-    if (!hasCornerPartsInRun) return 0;
+    const dropMm = hasCornerPartsInRun ? VERTICAL_START_DROP_MM : VERTICAL_START_DROP_MM_4PART;
     const pt = weldingPoints[idx];
     if (!pt || !VERTICAL_START_POINT_IDS.includes(pt.id.toLowerCase())) return 0;
     if (!partBoundaryInfo.partStartIndices.includes(idx)) return 0;
-    return conditionPointAt(idx) === pt ? -VERTICAL_START_DROP_MM : 0;
+    return conditionPointAt(idx) === pt ? -dropMm : 0;
   };
   if (weldingPoints.length === 0) {
     showAlert('저장된 용접 포인트가 없습니다. (각 파트에 2개 이상 포인트 필요)', {
