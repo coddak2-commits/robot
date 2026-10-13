@@ -1,0 +1,7 @@
+v1.1.244: 셀 화면 포인트 이름을 4파트 이름으로 표시
+
+작업을 불러올 때 포인트 이름을 DB 저장값 대신 UCELL_POINT_DEFINITIONS 에서 읽는다.
+228~242 에 저장한 작업의 '모서리' 이름이 셀 화면에 남아 있던 것.
+
+- UcellSelect/hooks/useJobManagement.ts: loadJob 이름 매핑
+- 버전 1.1.244

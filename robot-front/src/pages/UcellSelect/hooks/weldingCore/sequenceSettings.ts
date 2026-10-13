@@ -23,11 +23,10 @@ export const defaultSequenceSettings: WeldingSequenceSettings = {
   p3TouchRight: true,
   p3TouchBottom: true,
   p4TouchCenter: true,
-  // [v1.1.235] 모서리 시작점의 Z 탐색은 끈다. 끝점(P3/P9)이 Z 를 재지 않아
-  // P4 만 바닥판으로 내려가면 20mm 구간이 39mm 로 늘어난다.
-  // 자세한 사유는 robot_core_all.h 의 p4_touch_top 주석에 적었다.
-  p4TouchTop: false,
-  p4TouchBottom: false,
+  // [v1.1.243] 4파트 복귀로 P4/P10 은 다시 수평 시작점이다. Z 탐색 기본값을
+  // 227 까지처럼 켠다(236 에서 끈 것을 되돌림).
+  p4TouchTop: true,
+  p4TouchBottom: true,
   p4TouchSide: true,
   p5TouchCenter: true,
   p5TouchTop: true,
@@ -47,8 +46,8 @@ export const defaultSequenceSettings: WeldingSequenceSettings = {
   p9TouchRight: true,
   p9TouchBottom: true,
   p10TouchCenter: true,
-  p10TouchTop: false,   // [v1.1.235] P4 와 같은 사유
-  p10TouchBottom: false, // [v1.1.235] P4 와 같은 사유
+  p10TouchTop: true,
+  p10TouchBottom: true,
   p10TouchSide: true,
   p11TouchCenter: true,
   p11TouchTop: true,
@@ -95,8 +94,8 @@ export const mapConfigToSequenceSettings = (config: WeldingConfigData): WeldingS
   p3TouchRight: config.p3_touch_right ?? true,
   p3TouchBottom: config.p3_touch_bottom ?? true,
   p4TouchCenter: config.p4_touch_center ?? true,
-  p4TouchTop: config.p4_touch_top ?? false,
-  p4TouchBottom: config.p4_touch_bottom ?? false,
+  p4TouchTop: config.p4_touch_top ?? true,
+  p4TouchBottom: config.p4_touch_bottom ?? true,
   p4TouchSide: config.p4_touch_side ?? true,
   p5TouchCenter: config.p5_touch_center ?? true,
   p5TouchTop: config.p5_touch_top ?? true,
@@ -116,8 +115,8 @@ export const mapConfigToSequenceSettings = (config: WeldingConfigData): WeldingS
   p9TouchRight: config.p9_touch_right ?? true,
   p9TouchBottom: config.p9_touch_bottom ?? true,
   p10TouchCenter: config.p10_touch_center ?? true,
-  p10TouchTop: config.p10_touch_top ?? false,
-  p10TouchBottom: config.p10_touch_bottom ?? false,
+  p10TouchTop: config.p10_touch_top ?? true,
+  p10TouchBottom: config.p10_touch_bottom ?? true,
   p10TouchSide: config.p10_touch_side ?? true,
   p11TouchCenter: config.p11_touch_center ?? true,
   p11TouchTop: config.p11_touch_top ?? true,

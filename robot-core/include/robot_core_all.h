@@ -422,20 +422,11 @@ struct WeldingConfig {
     bool p3_touch_left = true;
     bool p3_touch_right = true;
     bool p3_touch_bottom = true;
-    // [v1.1.235] P4/P10 의 Z 탐색 기본값을 끈다.
-    // 모서리 파트의 끝점(P3/P9)은 Z 탐색을 돌지 않는다. 그래서 P4 만 바닥판까지
-    // 내려가면 20mm 로 교시한 구간이 그만큼 늘어난다. 2026-10-08 좌측 실측:
-    //   P4 교시 Z 17.169, rawDz -17.695 -> 보정 후 -0.526
-    //   P3 교시 Z 38.525, Z 탐색 없음   -> 보정 후 38.525
-    //   교시 간격 21.4mm -> 보정 후 39.1mm
-    // P3 쪽을 켜는 것으로는 못 고친다. P3 에서 -Z 로 내려가면 20mm 아래 바닥판을
-    // 찾아 P3 도 끌려 내려오고 구간이 0 이 된다.
-    // 끈 뒤에는 P4/P10 을 실제 모서리 높이에 다시 교시해야 한다. 지금은 P5/P11 과
-    // 같은 자리(바닥판 위 17mm)에 있는데, 그건 수평 포인트가 Z 탐색으로 내려오려고
-    // 일부러 띄워 교시한 자리다. Z 탐색을 끈 P4 는 처음부터 모서리에 있어야 한다.
+    // [v1.1.243] 4파트 복귀로 P4/P10 은 다시 수평 시작점이다. Z 탐색 기본값을
+    // 227 까지처럼 켠다(236 에서 끈 것을 되돌림).
     bool p4_touch_center = true;
-    bool p4_touch_top = false;
-    bool p4_touch_bottom = false;
+    bool p4_touch_top = true;
+    bool p4_touch_bottom = true;
     bool p4_touch_side = true;
     bool p5_touch_center = true;
     bool p5_touch_top = true;
@@ -455,8 +446,8 @@ struct WeldingConfig {
     bool p9_touch_right = true;
     bool p9_touch_bottom = true;
     bool p10_touch_center = true;
-    bool p10_touch_top = false;   // [v1.1.235] P4 와 같은 사유
-    bool p10_touch_bottom = false; // [v1.1.235] P4 와 같은 사유
+    bool p10_touch_top = true;
+    bool p10_touch_bottom = true;
     bool p10_touch_side = true;
     bool p11_touch_center = true;
     bool p11_touch_top = true;

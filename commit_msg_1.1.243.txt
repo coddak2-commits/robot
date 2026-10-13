@@ -5,6 +5,8 @@ v1.1.243: 4파트(227 구성)로 복귀, 파트 순서 수직 -> 수평
 로 묶었다. 017 적용 후에는 227 동작으로 돈다.
 
 - UcellSelect/index.tsx: hasCornerParts, isCornerPartPoints, getPartEnableGroups
+- UcellSelect/index.tsx: 새 티칭 기본값·포인트 이름을 4파트 역할로
+- robot_core_all.h, sequenceSettings.ts: P4/P10 Z 탐색 기본값 true 로 (236 되돌림)
 - touchDirections.ts: P4/P10 depthOffset, P5/P11 측면 터치를 6파트 전용으로
 - weldingExecution.ts: 수직 시작 10mm 내림을 6파트 전용으로
 - UnifiedWorkspaceCanvas.tsx, useSchematicCalculations.ts: getPartEnableGroups

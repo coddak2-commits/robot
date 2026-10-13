@@ -1,4 +1,4 @@
-import { TeachingPoint, DEFAULT_WEAVE_PARAMS } from '..';
+import { TeachingPoint, DEFAULT_WEAVE_PARAMS, UCELL_POINT_DEFINITIONS } from '..';
 import { TeachingPointData, createTeachingJob, updateTeachingJob, getTeachingJobs, getTeachingJob, deleteTeachingJob, updateTeachingJobName, TeachingJob } from '../../../lib';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -168,7 +168,9 @@ export function useJobManagement(): UseJobManagementReturn {
         const tcpData = pt.tcp;
         return {
           id: pt.point_id,
-          name: pt.name,
+          // [v1.1.244] 이름은 DB 저장값 대신 현재 포인트 정의를 쓴다. 228~242 에 저장한 작업에
+          // '모서리' 이름이 남아 있어 4파트 화면에서 헷갈린다.
+          name: UCELL_POINT_DEFINITIONS.find(d => d.id === pt.point_id)?.name ?? pt.name,
           order: pt.order,
           tcp: tcpData ? {
             x: tcpData.x,

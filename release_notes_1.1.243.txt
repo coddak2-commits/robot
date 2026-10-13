@@ -39,6 +39,11 @@ database/migrations/017_back_to_4part_vertical_first.sql (+ 롤백)
   P4/P10 Z 탐색은 노트북 DB 에 014 를 안 돌렸으므로 켜진 그대로다. 수평 시작점에
   필요하다.
 
+[P4/P10 Z 탐색 기본값] robot_core_all.h, sequenceSettings.ts
+  236 에서 false 로 바꾼 p4/p10_touch_top·bottom 기본값을 227 처럼 true 로 되돌렸다.
+  DB 값이 있으면 DB 값을 쓰므로 노트북·펜던트 동작은 그대로다. 설정 조회가
+  실패하거나 값이 비었을 때 P4/P10 이 Z 탐색 없이 17mm 위에서 시작하는 것을 막는다.
+
 [파트 전환 경로 (4파트, 수직 먼저)]
   P1 -> P4 : 같은 쪽 전환 (P1 에서 +X 후퇴 -> P4 앞 +X 접근 -> 정위치)
   P6 -> P9 : 기존 전용 분기 (P6 에서 +X 30mm 후퇴 -> P9 로 직선)
@@ -65,3 +70,11 @@ database/migrations/017_back_to_4part_vertical_first.sql (+ 롤백)
     좌측 수직 P1 -> P2 -> P3(모서리), 바닥 P4(모서리) -> P5 -> P6, 우측 동일.
     치수선 묶음도 getPartEnableGroups() 를 따른다.
   UcellSelect/index.tsx: 파트 구성을 읽은 뒤 화면을 다시 그린다.
+
+[새 티칭 기본값·포인트 이름] UcellSelect/index.tsx
+  4파트 역할로 되돌렸다. 저장된 작업을 불러오면 그 값으로 덮어써진다.
+  - P3/P9 : '좌측/우측 하단' (모서리+20mm 문구 제거), 수직 조건 그대로
+  - P4/P10: '하단 좌측/우측 시작', 수평 조건
+            plane_triangle, 26cpm / 32V / 290A, HORIZONTAL_LEFT/RIGHT 위빙
+  - P5/P11: '하단 좌측/우측 중간'
+  P4/P10 시작 체류(227 의 1000ms)는 되돌리지 않았다. 0 그대로.
