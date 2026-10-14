@@ -403,6 +403,84 @@ async function retreatBaseX(
   }
   return 0;
 }
+// [v1.1.253] 수직 끝(P1/P7)에서 빠져나오는 경로 (사용자 요청 2026-10-15).
+// 실제 현장 U셀은 수직재 위가 가로 판으로 막혀 있다. 종전의 토치축 후퇴(위·바깥)나
+// 홈 MoveJ 의 곡선 경로가 그 판에 닿을 수 있다. 위로 올라가지 않고 아래로 빠진다.
+//   1) 뒤로   : 뒷판에서 +X 20mm, U셀 가운데 쪽(P1 +Y / P7 -Y) 20mm  (높이 그대로)
+//   2) 아래로 : 같은 자리에서 -Z 150mm
+//   3) 앞으로 : +X 150mm 더 나가 U셀 밖으로
+// 모두 직선(MoveL, 블렌드 -1). 그다음 호출한 쪽에서 홈 MoveJ.
+// 기준은 끝점의 실제 자리(교시 + 터치 보정)다. 각 단계가 거부되면 그 단계 거리를
+// 절반으로 한 번 더 시도하고, 그래도 안 되면 남은 단계는 건너뛰고 false 를 돌려준다.
+// 쓰는 곳: 용접 마지막 종료, 파트 전환(횡단) 후퇴. 터치센싱 끝은 touchSensing.ts 에 같은 경로.
+const VERTICAL_END_POINT_IDS = ['p1', 'p7'];
+const VERTICAL_EXIT_BACK_MM = 20;
+const VERTICAL_EXIT_CENTER_MM = 20;
+const VERTICAL_EXIT_DOWN_MM = 150;
+const VERTICAL_EXIT_OUT_MM = 150;
+const isVerticalEndPointId = (pointId?: string): boolean =>
+  VERTICAL_END_POINT_IDS.includes((pointId ?? '').toLowerCase());
+async function exitFromVerticalEnd(point: TeachingPoint, speed: number): Promise<boolean> {
+  if (!point.tcp) return false;
+  const center = (point.id ?? '').toLowerCase() === 'p7' ? -1 : 1;
+  const t = point.touchOffset;
+  const base = t ? [t.dx, t.dy, t.dz] : [0, 0, 0];
+  const steps: { label: string; target: number[] }[] = [
+    { label: '뒤로', target: [VERTICAL_EXIT_BACK_MM, center * VERTICAL_EXIT_CENTER_MM, 0] },
+    { label: '아래로', target: [VERTICAL_EXIT_BACK_MM, center * VERTICAL_EXIT_CENTER_MM, -VERTICAL_EXIT_DOWN_MM] },
+    {
+      label: '앞으로(U셀 밖)',
+      target: [VERTICAL_EXIT_BACK_MM + VERTICAL_EXIT_OUT_MM, center * VERTICAL_EXIT_CENTER_MM, -VERTICAL_EXIT_DOWN_MM],
+    },
+  ];
+  let reached = [0, 0, 0];
+  for (const step of steps) {
+    let ok = false;
+    for (const ratio of [1, 0.5]) {
+      const v = reached.map((p, k) => p + (step.target[k] - p) * ratio);
+      let status: number | undefined;
+      try {
+        const res = await moveToCartesianPosition(
+          point.tcp,
+          speed,
+          100,
+          100,
+          -1,
+          1,
+          [base[0] + v[0], base[1] + v[1], base[2] + v[2], 0, 0, 0],
+          undefined,
+          point.toolNum ?? 3,
+          point.userNum ?? 0,
+          0,
+        );
+        status = res?.status_code;
+      } catch {
+        status = undefined;
+      }
+      if (status === 200) {
+        reached = v;
+        ok = true;
+        log_weldingExecution.info(
+          'welding.verticalExit.step',
+          `${point.name} 빠져나오기 ${step.label}${ratio < 1 ? ' (절반 거리)' : ''} [${v.map(n => n.toFixed(0)).join(', ')}]`,
+        );
+        break;
+      }
+      log_weldingExecution.warn(
+        'welding.verticalExit.retry',
+        `${point.name} 빠져나오기 ${step.label} 실패 (status=${status ?? '-'})${ratio === 1 ? ' - 절반 거리로 재시도' : ''}`,
+      );
+    }
+    if (!ok) {
+      log_weldingExecution.warn(
+        'welding.verticalExit.none',
+        `${point.name} 빠져나오기 중단 - 남은 단계를 건너뛰고 홈으로 간다. 주변 간섭을 확인할 것`,
+      );
+      return false;
+    }
+  }
+  return true;
+}
 // v1.1.215: 용접 중 화면의 "현재 포인트" 표시를 시간으로 따라가게 한다.
 //
 // 배치 이동은 블로킹 호출 하나라, 시작할 때 첫 포인트를 찍고 끝난 뒤에 나머지를
@@ -845,6 +923,11 @@ export async function executeWelding(
     const HORIZONTAL_START_CLEAR_MM = 3;
     const P4_FRONT_OUT_MM = 95;
     const P4_FRONT_LIFT_MM = 20;
+    // [v1.1.253] P4 는 위 접근 자리에서 바로 들어가면 기울기 약 12도로 바닥을 스치듯
+    // 들어가 와이어가 모재에 닿을 뻔했다(2026-10-15 현장). 접근 자리 -> 토치 축 -Z 50mm
+    // 자리(터치 보정 적용 자세 기준, 툴 좌표) -> 축 방향 직선 진입 순서로 바꾼다.
+    // 축 방향 진입은 토치가 P4 자세에서 이미 차지하는 공간만 지나간다.
+    const P4_AXIS_BACK_MM = 50;
     const getTouchedStartApproachOffset = (point: TeachingPoint, offset: number): number[] | null => {
       if (hasCornerPartsInRun) return null;
       const id = (point.id ?? '').toLowerCase();
@@ -983,6 +1066,54 @@ export async function executeWelding(
             0,
           );
           if (approachResult?.status_code !== 200) throw new Error('시작점 접근 이동 실패');
+        }
+        if (
+          touchedStartApproach &&
+          startPoint.id.toLowerCase() === 'p4' &&
+          startPoint.touchOffset &&
+          !stopRef.current
+        ) {
+          const t = startPoint.touchOffset;
+          const touchedPose = {
+            ...startPoint.tcp,
+            x: startPoint.tcp.x + t.dx,
+            y: startPoint.tcp.y + t.dy,
+            z: startPoint.tcp.z + t.dz,
+          };
+          let axisOk = false;
+          for (const mm of [P4_AXIS_BACK_MM, Math.round(P4_AXIS_BACK_MM * 0.6)]) {
+            log_weldingExecution.info(
+              'welding.start.axisApproach',
+              `시작점 ${startPoint.name} 토치 축 -Z ${mm}mm 자리로 이동 (축 방향 진입 준비)`,
+            );
+            const axisResult = await moveToCartesianPosition(
+              touchedPose,
+              30,
+              100,
+              100,
+              -1,
+              2,
+              [0, 0, -mm, 0, 0, 0],
+              undefined,
+              startPoint.toolNum ?? 3,
+              startPoint.userNum ?? 0,
+              0,
+            );
+            if (axisResult?.status_code === 200) {
+              axisOk = true;
+              break;
+            }
+            log_weldingExecution.warn(
+              'welding.start.axisApproach.failed',
+              `토치 축 -Z ${mm}mm 이동 실패 (status=${axisResult?.status_code})`,
+            );
+          }
+          if (!axisOk) {
+            log_weldingExecution.warn(
+              'welding.start.axisApproach.none',
+              '토치 축 경유 실패 - 접근 자리에서 바로 진입',
+            );
+          }
         }
       }
     }
@@ -1268,13 +1399,21 @@ export async function executeWelding(
           //   base +X 후퇴 -> 홈 MoveJ -> (아래 ②) 목표 앞 상공 IK MoveJ -> 하강 -> ③ 진입.
           // 홈을 거치므로 팔이 U셀 안을 가로지르지 않는다.
           const crossRetract = sequenceSettings.touchHomeRetractOffset;
+          // [v1.1.253] 수직 끝(P1/P7)에서는 아래로 빠져나오는 경로를 쓴다. exitFromVerticalEnd 참고.
+          const useVerticalExit = isVerticalEndPointId(prevPoint.id);
           log_weldingExecution.info(
             'welding.partTransition.retract',
-            `파트 전환 ①(횡단): ${prevPoint.name} base +X ${crossRetract}mm 후퇴 -> 홈 경유`,
+            useVerticalExit
+              ? `파트 전환 ①(횡단): ${prevPoint.name} 뒤로 -> 아래로 -> U셀 밖으로 빠진 뒤 홈 경유`
+              : `파트 전환 ①(횡단): ${prevPoint.name} base +X ${crossRetract}mm 후퇴 -> 홈 경유`,
           );
           // v1.1.212: 도달 불가면 거리를 줄여 재시도한다. 위 retreatBaseX 주석 참고.
-          const retractedMm = await retreatBaseX(prevPoint, crossRetract, transitionSpeed);
-          if (retractedMm === 0) {
+          const retractedMm = useVerticalExit
+            ? ((await exitFromVerticalEnd(prevPoint, transitionSpeed)) ? crossRetract : -1)
+            : await retreatBaseX(prevPoint, crossRetract, transitionSpeed);
+          if (retractedMm === -1) {
+            // 빠져나오기 경고는 exitFromVerticalEnd 에서 이미 남겼다.
+          } else if (retractedMm === 0) {
             log_weldingExecution.warn(
               'welding.partTransition.retract.none',
               `파트 전환(횡단): ${prevPoint.name} 후퇴 실패 - 그 자리에서 홈으로 간다. `
@@ -1736,7 +1875,11 @@ export async function executeWelding(
     if (arcTrackingActive) await arcTraceControl({ flag: 0 }).catch(() => {});
     if (!stopRef.current) {
       const lastWeldPoint = weldingPoints[weldingPoints.length - 1];
-      if (lastWeldPoint?.tcp) {
+      if (lastWeldPoint?.tcp && isVerticalEndPointId(lastWeldPoint.id)) {
+        // [v1.1.253] 수직 끝(P1/P7)에서 끝나면 토치축 후퇴(위·바깥) 대신 아래로 빠져나온다.
+        log_weldingExecution.info('welding.retract', `${lastWeldPoint.name} 뒤로 -> 아래로 -> U셀 밖으로 빠져나오기`);
+        await exitFromVerticalEnd(lastWeldPoint, 30);
+      } else if (lastWeldPoint?.tcp) {
         log_weldingExecution.info('welding.retract', 'TCP Z -100mm 후퇴');
         const retreatResult = await moveToCartesianPosition(
           lastWeldPoint.tcp,

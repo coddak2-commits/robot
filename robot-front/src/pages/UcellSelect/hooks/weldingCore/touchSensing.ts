@@ -501,12 +501,62 @@ export async function executeTouchSensing(
                 lastPoint!.userNum ?? 0,
                 stopRef,
               );
+            // [v1.1.253] 마지막이 수직 끝(P1/P7)이면 위로 올라가지 않고 아래로 빠져나온다.
+            // weldingExecution.ts exitFromVerticalEnd 와 같은 경로(뒤로 20·가운데 20 -> 아래 150 -> 앞 150).
+            // 막힌 U셀(수직재 위 가로 판)에서 토치축 후퇴가 판 쪽으로 올라가는 것을 피한다.
+            const lastIdLower = lastPoint.id.toLowerCase();
+            let retract: { success: boolean; stopped: boolean } = { success: false, stopped: false };
+            if (lastIdLower === 'p1' || lastIdLower === 'p7') {
+              const center = lastIdLower === 'p7' ? -1 : 1;
+              const exitSteps: { label: string; target: number[] }[] = [
+                { label: '뒤로', target: [20, center * 20, 0] },
+                { label: '아래로', target: [20, center * 20, -150] },
+                { label: '앞으로(U셀 밖)', target: [170, center * 20, -150] },
+              ];
+              let reached = [0, 0, 0];
+              let allOk = true;
+              for (const step of exitSteps) {
+                let ok = false;
+                for (const ratio of [1, 0.5]) {
+                  const v = reached.map((p, k) => p + (step.target[k] - p) * ratio);
+                  const r = await retractTo(1, [v[0], v[1], v[2], 0, 0, 0]);
+                  if (r.stopped) {
+                    retract = r;
+                    break;
+                  }
+                  if (r.success) {
+                    reached = v;
+                    ok = true;
+                    log_touchSensing.info(
+                      'touchSensing.homeReturn.exit',
+                      `${lastPoint.name} 빠져나오기 ${step.label}${ratio < 1 ? ' (절반 거리)' : ''}`,
+                    );
+                    break;
+                  }
+                  log_touchSensing.warn(
+                    'touchSensing.homeReturn.exit.retry',
+                    `${lastPoint.name} 빠져나오기 ${step.label} 실패${ratio === 1 ? ' - 절반 거리로 재시도' : ''}`,
+                  );
+                }
+                if (retract.stopped) break;
+                if (!ok) {
+                  allOk = false;
+                  log_touchSensing.warn(
+                    'touchSensing.homeReturn.exit.none',
+                    `${lastPoint.name} 빠져나오기 중단 - 남은 단계를 건너뛰고 홈으로 간다`,
+                  );
+                  break;
+                }
+              }
+              if (!retract.stopped) retract = { success: allOk, stopped: false };
+            } else {
             log_touchSensing.info(
               'touchSensing.homeReturn.retract',
               `${lastPoint.name} 토치축 -Z ${TOUCH_HOME_TOOL_RETRACT_MM}mm 후퇴`,
             );
-            let retract = await retractTo(2, [0, 0, -TOUCH_HOME_TOOL_RETRACT_MM, 0, 0, 0]);
-            if (!retract.success && !retract.stopped) {
+            retract = await retractTo(2, [0, 0, -TOUCH_HOME_TOOL_RETRACT_MM, 0, 0, 0]);
+            }
+            if (!retract.success && !retract.stopped && !(lastIdLower === 'p1' || lastIdLower === 'p7')) {
               const viaY = NEAR_UCELL_CORNER.includes(lastPoint.id.toLowerCase());
               for (const ratio of [1, 0.7, 0.45, 0.25]) {
                 const dist = Math.max(15, Math.round(HOME_RETRACT_OFFSET * ratio));

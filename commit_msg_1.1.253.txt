@@ -1,0 +1,9 @@
+v1.1.253: 수직 끝(P1/P7) 빠져나오기 경로, P4 토치 축 방향 진입
+
+- weldingCore/weldingExecution.ts: exitFromVerticalEnd, 최종 후퇴 및 P1->P10 전환에 적용
+- weldingCore/weldingExecution.ts: P4 접근 자리 -> 툴 -Z 50mm 경유 -> 축 방향 진입
+- weldingCore/touchSensing.ts: 터치센싱 끝 P1/P7 홈 복귀 경로 동일 적용
+- 버전 1.1.253
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017cv2bULfRu7QKNCTq2DYgq

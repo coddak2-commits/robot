@@ -1,0 +1,37 @@
+﻿v1.1.253 - 수직 끝(P1/P7) 빠져나오기 경로, P4 토치 축 방향 진입
+
+[수정 1] 용접 마지막 끝(P7) / 좌->우 전환(P1->P10) 빠져나오기
+    weldingCore/weldingExecution.ts exitFromVerticalEnd 추가
+    P1/P7 에서 위로 들지 않고 아래 순서로 Base 직선(MoveL) 이동 후 홈 MoveJ.
+      1) 뒤로 +X 20mm, U셀 가운데 쪽 20mm (P1 +Y, P7 -Y)
+      2) 아래로 -Z 150mm
+      3) 앞으로 +X 150mm (U셀 밖)
+      4) 홈 MoveJ
+    각 단계 실패 시 절반 거리로 1회 재시도, 그래도 실패하면 경고 후 중단.
+    P1/P7 이 아닌 지점은 기존(TCP Z -100mm + Base +X 후퇴) 그대로.
+    로그: welding.verticalExit.step / welding.verticalExit.none
+
+[수정 2] 터치센싱 끝(P7) 홈 복귀
+    weldingCore/touchSensing.ts 마지막 포인트가 P1/P7 이면 위와 같은 3단계 경로 후 홈.
+    그 외 포인트는 기존(툴 -Z 40mm, 실패 시 +X/-Y 단계 후퇴).
+    로그: touchSensing.homeReturn.exit / .exit.retry / .exit.none
+
+[수정 3] P4 시작점 토치 축 방향 진입
+    weldingCore/weldingExecution.ts P4_AXIS_BACK_MM = 50
+    기존: 접근 자리(구석 기준 +X 95, +Y 3, +Z 20) -> P4 로 직선. 기울기 약 12도로
+          바닥을 스치듯 들어가 와이어가 모재에 닿을 뻔함.
+    변경: 접근 자리 -> 터치 보정 적용 P4 자세 기준 툴 -Z 50mm 자리(MoveL)
+          -> 토치 축 방향 직선으로 P4 진입.
+    50mm 가 거부되면 30mm 로 재시도, 그래도 실패하면 경고 후 종전대로 접근 자리에서 바로 진입.
+    4파트·터치 보정 있을 때만. P10 은 변경 없음.
+    로그: welding.start.axisApproach / .failed / .none
+
+[DB]
+    변경 없음.
+
+[현장 확인 항목] - 드라이런 먼저
+  - P1/P7 에서 뒤로 20mm·가운데 20mm 이동 시 벽/바닥판에 닿지 않는지
+  - 아래로 150mm 내려갈 때 바닥판 아래 공간이 충분한지
+  - 앞으로 150mm 후 홈 MoveJ 중 상단 플랫바·U셀에 닿지 않는지
+  - 거리(20/20/150/150)는 상수로 조정 가능
+  - P4: 접근 자리 -> 토치 축 50mm 자리 이동 중 U셀/바닥에 닿지 않는지, 마지막 진입이 와이어 방향 그대로인지
