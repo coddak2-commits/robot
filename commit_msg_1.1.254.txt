@@ -1,0 +1,10 @@
+v1.1.254: P4 진입 경로 보정 없을 때도 적용, P7 뒤로 40mm, 수직 끝 앞으로 단계 삭제
+
+- weldingCore/weldingExecution.ts: P4 터치 보정 없으면 교시 좌표 기준으로 접근 자리/토치 축 경유
+- weldingCore/weldingExecution.ts: VERTICAL_EXIT_BACK_MM_P7 = 40
+- weldingCore/touchSensing.ts: 터치센싱 끝 P7 뒤로 40mm
+- weldingExecution.ts / touchSensing.ts: 수직 끝 빠져나오기 '앞으로 150mm' 단계 삭제
+- 버전 1.1.254
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017cv2bULfRu7QKNCTq2DYgq

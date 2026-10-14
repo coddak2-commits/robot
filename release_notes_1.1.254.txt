@@ -1,0 +1,30 @@
+﻿v1.1.254 - P4 진입 경로를 터치 보정 없을 때도 적용, 수직 끝 빠져나오기 수정(P7 뒤로 40mm, 앞으로 단계 삭제)
+
+[수정 1] P4 진입 경로 - 터치 보정 없을 때도 적용
+    weldingCore/weldingExecution.ts getTouchedStartApproachOffset / 토치 축 경유
+    2026-10-15 드라이런 로그: 터치 보정 없이 실행돼(offsetFlag=0) 250/253 경로가 쓰이지 않고
+    종전 방식(P4 +X 접근거리 자리로 IK MoveJ, J1 -1.95 -> 38.39)으로 가서
+    곡선 경로가 U셀 안쪽을 지나 와이어가 닿을 뻔함.
+    변경: P4 는 보정이 없으면 교시 좌표 기준으로 같은 경로를 쓴다.
+      접근 자리(+X 95, +Y 3, +Z 20) -> 토치 축 -Z 50mm 자리 -> 축 방향 직선 진입
+    P10 은 변경 없음(보정 있을 때만 구석 기준).
+
+[수정 2] P7 빠져나오기 뒤로 20 -> 40mm
+    weldingCore/weldingExecution.ts VERTICAL_EXIT_BACK_MM_P7 = 40
+    weldingCore/touchSensing.ts 터치센싱 끝 P7 도 40mm
+    P7: 뒤로 40·가운데 20 -> 아래 150 -> 홈
+    P1 은 20mm 그대로.
+
+[수정 3] 수직 끝(P1/P7) 빠져나오기 '앞으로 150mm' 단계 삭제
+    2026-10-15 드라이런: P7 에서 앞으로(+X) 150mm 가 code=38 로 거부(절반 거리도 거부),
+    아래 150mm 자리에서 바로 홈 MoveJ 로 갔다.
+    용접 끝, P1->P10 전환, 터치센싱 끝 모두 '뒤로 -> 아래로' 후 홈 MoveJ.
+
+[DB]
+    변경 없음.
+
+[현장 확인 항목] - 드라이런 먼저
+  - P4: 로그에 welding.start.approachTouched (교시 좌표 기준) 와 welding.start.axisApproach 가 찍히는지
+  - P4: 홈 -> 접근 자리 이동이 U셀 밖에서 끝나는지
+  - P7: 뒤로 40mm 이동 시 벽에 닿지 않는지
+  - P1/P7: 아래 150mm 자리에서 홈 MoveJ 중 U셀·상단 플랫바에 닿지 않는지
