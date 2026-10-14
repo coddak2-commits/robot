@@ -1,0 +1,5 @@
+v1.1.252: 수직 시작 내림 3 -> 10mm, 내린 구간만 20cpm 으로 빠르게 상승
+
+- weldingCore/weldingExecution.ts: VERTICAL_START_DROP_MM_4PART 3 -> 10
+- weldingCore/weldingExecution.ts: riseFromVerticalDrop - 내린 10mm 를 20cpm 별도 MoveL 로 올라간 뒤 배치
+- 버전 1.1.252

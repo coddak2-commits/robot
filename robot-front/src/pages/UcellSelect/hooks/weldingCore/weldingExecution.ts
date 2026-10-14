@@ -229,6 +229,56 @@ async function dwellAtPartStart(
     await holdStill();
   }
 }
+// [v1.1.252] 수직 시작점을 내려서 시작했을 때(verticalStartDropZ), 내린 구간만 빠르게 올라온다
+// (사용자 요청 2026-10-14). 아크·위빙을 켠 뒤, 내린 자리에서 원래 시작점(교시 + 터치 보정)까지
+// 별도 직선 이동(블렌드 -1, 완료까지 기다림)을 VERTICAL_DROP_RISE_CPM 으로 하고, 그다음
+// 배치(원래 시작점 -> 끝점)는 파트 용접 속도로 간다. 예: 수직 16cpm 이면 아래 10mm 만 20cpm.
+// 기어가기(v1.1.205, 시작 구간 저속 MoveL)와 같은 구조이고 속도만 빠른 쪽이다.
+// 2026-09-30 사고(기어가기 MoveL + 블렌드 50 이 모션을 물림)는 블렌드가 있을 때만 났고,
+// 지금 용접 이동은 전부 블렌드 -1 이다. 블렌드를 되살릴 때는 이 이동도 같이 볼 것.
+// 속도 환산은 배치와 같은 식: 명령% = (cpm / 15) x 0.431.
+// 20cpm = 0.575% = 약 3.3mm/s 라 10mm 에 약 3초. 아크 트래킹 보정 시작(위빙 8주기, 약 4초)
+// 전에 끝난다. 이동이 실패하면 경고만 남기고 그 자리에서 배치로 넘어간다.
+const VERTICAL_DROP_RISE_CPM = 20;
+async function riseFromVerticalDrop(point: TeachingPoint, dropZ: number): Promise<void> {
+  if (dropZ === 0 || !point.tcp) return;
+  const t = point.touchOffset;
+  const offset = t ? [t.dx, t.dy, t.dz, 0, 0, 0] : [0, 0, 0, 0, 0, 0];
+  const speedPct = Math.min(100, Math.max(0.1, (VERTICAL_DROP_RISE_CPM / 15) * WELD_BATCH_SPEED_SCALE));
+  const mmPerSec = speedPct * SPEED_MM_PER_SEC_PER_PCT;
+  log_weldingExecution.info(
+    'welding.partStart.verticalRise',
+    `수직 시작 ${point.name}: 아래 ${-dropZ}mm 구간을 ${VERTICAL_DROP_RISE_CPM}cpm 으로 상승 `
+    + `(${speedPct.toFixed(3)}%, ${mmPerSec.toFixed(2)}mm/s, 약 ${(-dropZ / mmPerSec).toFixed(1)}초)`,
+  );
+  try {
+    const result = await moveToCartesianPosition(
+      point.tcp,
+      speedPct,
+      100,
+      100,
+      -1,
+      1,
+      offset,
+      undefined,
+      point.toolNum ?? 3,
+      point.userNum ?? 0,
+      0,
+    );
+    if (result?.status_code !== 200) {
+      log_weldingExecution.warn(
+        'welding.partStart.verticalRise.failed',
+        `수직 시작 상승 이동 실패 (status=${result?.status_code}) - 그 자리에서 배치로 진행`,
+      );
+    }
+  } catch (error) {
+    log_weldingExecution.warn(
+      'welding.partStart.verticalRise.error',
+      `수직 시작 상승 이동 오류 - 그 자리에서 배치로 진행`,
+      { error: String(error) },
+    );
+  }
+}
 // 시작점 확인 터치 (v1.1.164, 드라이런 전용).
 // 터치 보정을 적용해 시작점에 도착한 뒤, 접합부까지 실제로 얼마나 남았는지 -X로 한 번 더
 // 탐색해서 남긴다. 2026-09-21 세트에서 좌우 점화 시간이 1.29/1.36초(좌) vs 1.60/1.58초(우)로
@@ -513,7 +563,9 @@ export async function executeWelding(
   const VERTICAL_START_DROP_MM = 10;
   // [v1.1.246] 4파트도 내린다. 거리는 3mm (사용자 요청 2026-10-13).
   // P3/P9 가 모서리 바닥이라 10mm 는 바닥판으로 들어가므로 따로 둔다.
-  const VERTICAL_START_DROP_MM_4PART = 3;
+  // [v1.1.252] 3 -> 10mm (사용자 요청 2026-10-14). 아래 내린 구간은 riseFromVerticalDrop 이
+  // 빠른 속도로 올라온다.
+  const VERTICAL_START_DROP_MM_4PART = 10;
   const VERTICAL_START_POINT_IDS = ['p3', 'p9'];
   // [v1.1.243] 모서리 파트가 있을 때만. 4파트(227 구성)에서는 P3/P9 가 모서리 바닥이라
   // 10mm 내리면 바닥판으로 들어간다.
@@ -1004,6 +1056,10 @@ export async function executeWelding(
       weldingPoints[startPointIndex + 1],
       hasWelding && !simMode && !isStartAtPartEnd && !isWeldingTest,
     );
+    // [v1.1.252] 수직 시작점을 내려서 시작했으면 그 구간만 빠르게 올라온다.
+    // '용접 계속'은 내림을 적용하지 않으므로 상승도 없다.
+    if (!startFromClosest && !stopRef.current)
+      await riseFromVerticalDrop(weldingPoints[startPointIndex], verticalStartDropZ(startPointIndex));
     const loopStartIndex = startPointIndex + 1;
     let segmentStartTime = Date.now();
     let i = loopStartIndex;
@@ -1449,6 +1505,8 @@ export async function executeWelding(
         setArcActive?.(true);
         if (hasWelding && !(simMode && !isWeldingTest)) arcMayBeOn = true;
         await dwellAtPartStart(point, weldingPoints[i + 1], hasWelding && !(simMode && !isWeldingTest));
+        // [v1.1.252] 수직 시작점을 내려서 시작했으면 그 구간만 빠르게 올라온다.
+        if (!stopRef.current) await riseFromVerticalDrop(point, verticalStartDropZ(i));
         const ptSegIdx = i - 1;
         if (ptSegIdx >= 0 && ptSegIdx < segments.length)
           segments[ptSegIdx].actual_sec = (Date.now() - segmentStartTime) / 1000;
