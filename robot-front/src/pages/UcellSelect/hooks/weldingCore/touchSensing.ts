@@ -474,25 +474,48 @@ export async function executeTouchSensing(
       if (homePoint?.joints) {
         try {
           if (lastPoint?.tcp) {
+            // [v1.1.249] 홈 복귀 전 후퇴를 용접 종료 후퇴(weldingExecution v1.1.217)와 같은
+            // 순서로 한다: 토치축 -Z 100mm -> 실패하면 base +X(P9/P10 은 -Y)를 거리 줄여가며.
+            // 종전에는 base +X HOME_RETRACT_OFFSET 한 번만 시도했다. P7(우측 상단)에서는 이게
+            // 매번 code=38(특이 자세)로 거부됐고(2026-10-13 09:12/09:15/09:50 로그), 후퇴 없이
+            // 터치 직후 자리(벽에서 약 10mm)에서 홈 MoveJ 가 나가 와이어가 모재를 스쳤다.
+            // P7 의 토치축 -Z 100mm 는 용접 종료 때 매번 성공하는 동작이다.
             const { x: lx, y: ly, z: lz, rx: lrx, ry: lry, rz: lrz } = lastPoint.tcp;
-            const retractOffsetPos = getApproachOffsetPos(lastPoint.id, HOME_RETRACT_OFFSET);
-            log_touchSensing.info(
-              'touchSensing.homeReturn.retract',
-              `${lastPoint.name} ${NEAR_UCELL_CORNER.includes(lastPoint.id.toLowerCase()) ? '-Y' : '+X'} ${HOME_RETRACT_OFFSET}mm 후퇴`,
-            );
-            await moveToCartesianWithStopCheck(
-              { x: lx, y: ly, z: lz, rx: lrx, ry: lry, rz: lrz },
-              sequenceSettings.touchSensingPointSpeed,
-              100,
-              100,
-              -1,
-              1,
-              retractOffsetPos,
-              undefined,
-              lastPoint.toolNum ?? 0,
-              lastPoint.userNum ?? 0,
-              stopRef,
-            );
+            const lastPose = { x: lx, y: ly, z: lz, rx: lrx, ry: lry, rz: lrz };
+            const retractTo = (flag: number, offset: number[]) =>
+              moveToCartesianWithStopCheck(
+                lastPose,
+                sequenceSettings.touchSensingPointSpeed,
+                100,
+                100,
+                -1,
+                flag,
+                offset,
+                undefined,
+                lastPoint!.toolNum ?? 0,
+                lastPoint!.userNum ?? 0,
+                stopRef,
+              );
+            log_touchSensing.info('touchSensing.homeReturn.retract', `${lastPoint.name} 토치축 -Z 100mm 후퇴`);
+            let retract = await retractTo(2, [0, 0, -100, 0, 0, 0]);
+            if (!retract.success && !retract.stopped) {
+              const viaY = NEAR_UCELL_CORNER.includes(lastPoint.id.toLowerCase());
+              for (const ratio of [1, 0.7, 0.45, 0.25]) {
+                const dist = Math.max(15, Math.round(HOME_RETRACT_OFFSET * ratio));
+                log_touchSensing.warn(
+                  'touchSensing.homeReturn.retract.fallback',
+                  `${lastPoint.name} 토치축 후퇴 실패 - ${viaY ? '-Y' : '+X'} ${dist}mm 로 재시도`,
+                );
+                retract = await retractTo(1, getApproachOffsetPos(lastPoint.id, dist));
+                if (retract.success || retract.stopped) break;
+              }
+            }
+            if (!retract.success && !retract.stopped) {
+              log_touchSensing.warn(
+                'touchSensing.homeReturn.retract.none',
+                `${lastPoint.name} 후퇴 실패 - 그 자리에서 홈으로 간다. 와이어가 모재에 닿을 수 있다`,
+              );
+            }
           }
           log_touchSensing.info('touchSensing.homeReturn', 'Home으로 복귀');
           await moveToJointWithStopCheck(

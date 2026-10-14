@@ -773,6 +773,12 @@ export async function executeWelding(
     // 최종 하강(교시 + 터치 보정)은 그대로라 도착 위치는 종전과 같다.
     //   P4 : 접근 +X(뒷벽에서 멀어지는 쪽), 옆벽(-Y)에서 +Y 로 CLEAR
     //   P10: 접근 -Y(종전과 같은 방향, +X 는 code=185), 뒷벽(-X)에서 +X 로 CLEAR
+    // [v1.1.249] P4 도 P10 과 같은 방식으로 들어간다(사용자 요청 2026-10-14).
+    //   P4 : 접근 +Y(용접선 P5 쪽에서 옆벽 -Y 를 향해), 뒷벽(-X)에서 +X 로 CLEAR
+    //   P10: 접근 -Y(용접선 P11 쪽에서 옆벽 +Y 를 향해), 뒷벽(-X)에서 +X 로 CLEAR
+    // 둘 다 뒷벽에서 3mm 떨어진 채 용접선을 따라 바닥 위 15mm 에서 비스듬히 내려가
+    // 옆벽 구석으로 들어간다. 좌우 대칭이다.
+    // 접근 자리까지 가는 이동 방식은 그대로다(P4 는 IK 관절 이동, P10 은 직선).
     // 4파트 구성에서만, 터치 보정이 있을 때만 쓴다. 없으면 종전 방식.
     const HORIZONTAL_START_POINT_IDS = ['p4', 'p10'];
     const HORIZONTAL_START_LIFT_MM = 15;
@@ -782,10 +788,11 @@ export async function executeWelding(
       const id = (point.id ?? '').toLowerCase();
       if (!HORIZONTAL_START_POINT_IDS.includes(id) || !point.touchOffset) return null;
       const t = point.touchOffset;
-      const viaY = NEAR_UCELL_CORNER.includes(id);
+      // P4 는 옆벽이 -Y 라 +Y 쪽에서, P10 은 옆벽이 +Y 라 -Y 쪽에서 들어간다.
+      const sideApproach = id === 'p10' ? -offset : offset;
       return [
-        t.dx + (viaY ? HORIZONTAL_START_CLEAR_MM : offset),
-        t.dy + (viaY ? -offset : HORIZONTAL_START_CLEAR_MM),
+        t.dx + HORIZONTAL_START_CLEAR_MM,
+        t.dy + sideApproach,
         t.dz + HORIZONTAL_START_LIFT_MM,
         0,
         0,
@@ -862,7 +869,9 @@ export async function executeWelding(
           startPoint.tcp.rz,
         ];
         const isNearUcellCorner = NEAR_UCELL_CORNER.includes(startPoint.id.toLowerCase());
-        const startOffsetLabel = isNearUcellCorner ? '-Y' : '+X';
+        const startOffsetLabel = touchedStartApproach
+          ? (isNearUcellCorner ? '-Y(구석 기준)' : '+Y(구석 기준)')
+          : (isNearUcellCorner ? '-Y' : '+X');
         let startApproachJoints: number[] | null = null;
         // p9/p10은 U셀 구조물과 가까워 MoveJ의 곡선 경로가 U셀에 닿을 수 있음 (2026-09-14 실제 발생).
         // 따라서 이 두 포인트는 IK 관절 이동을 쓰지 않고 항상 직선(MoveL)으로 접근한다.

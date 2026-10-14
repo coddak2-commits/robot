@@ -1,0 +1,6 @@
+v1.1.249: 수평 시작점 P4 를 P10 과 같은 방식(옆에서)으로 진입, 터치 후 홈 복귀 후퇴 보강
+
+- weldingCore/weldingExecution.ts: P4 접근 방향 +X -> +Y (P10 과 좌우 대칭), 뒷벽에서 3mm
+- weldingCore/touchSensing.ts: 홈 복귀 전 후퇴를 토치축 -Z 100mm 우선, 실패 시 +X/-Y 거리 줄여 재시도
+  (P7 에서 +X 후퇴가 code=38 로 거부돼 와이어가 모재를 스치던 문제)
+- 버전 1.1.249
