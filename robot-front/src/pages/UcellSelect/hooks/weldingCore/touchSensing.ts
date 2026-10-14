@@ -480,6 +480,11 @@ export async function executeTouchSensing(
             // 매번 code=38(특이 자세)로 거부됐고(2026-10-13 09:12/09:15/09:50 로그), 후퇴 없이
             // 터치 직후 자리(벽에서 약 10mm)에서 홈 MoveJ 가 나가 와이어가 모재를 스쳤다.
             // P7 의 토치축 -Z 100mm 는 용접 종료 때 매번 성공하는 동작이다.
+            // [v1.1.251] 100mm -> 40mm. P7 은 우측 수직 맨 위(Z 약 553)에 토치가 비스듬히
+            // 서 있어 토치축 100mm 후퇴가 위 약 65mm·바깥 약 75mm 가 되고, 작업 범위 위쪽 끝으로
+            // 팔을 뻗으며 팔꿈치·손목이 크게 꺾였다(2026-10-14 현장). 터치 직후에는 벽에서 약
+            // 10mm 떨어져 있고 와이어가 25mm 라 40mm 면 와이어가 판에서 빠진다.
+            const TOUCH_HOME_TOOL_RETRACT_MM = 40;
             const { x: lx, y: ly, z: lz, rx: lrx, ry: lry, rz: lrz } = lastPoint.tcp;
             const lastPose = { x: lx, y: ly, z: lz, rx: lrx, ry: lry, rz: lrz };
             const retractTo = (flag: number, offset: number[]) =>
@@ -496,8 +501,11 @@ export async function executeTouchSensing(
                 lastPoint!.userNum ?? 0,
                 stopRef,
               );
-            log_touchSensing.info('touchSensing.homeReturn.retract', `${lastPoint.name} 토치축 -Z 100mm 후퇴`);
-            let retract = await retractTo(2, [0, 0, -100, 0, 0, 0]);
+            log_touchSensing.info(
+              'touchSensing.homeReturn.retract',
+              `${lastPoint.name} 토치축 -Z ${TOUCH_HOME_TOOL_RETRACT_MM}mm 후퇴`,
+            );
+            let retract = await retractTo(2, [0, 0, -TOUCH_HOME_TOOL_RETRACT_MM, 0, 0, 0]);
             if (!retract.success && !retract.stopped) {
               const viaY = NEAR_UCELL_CORNER.includes(lastPoint.id.toLowerCase());
               for (const ratio of [1, 0.7, 0.45, 0.25]) {
