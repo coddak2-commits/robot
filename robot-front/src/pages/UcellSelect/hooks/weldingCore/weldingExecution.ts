@@ -779,20 +779,40 @@ export async function executeWelding(
     // 둘 다 뒷벽에서 3mm 떨어진 채 용접선을 따라 바닥 위 15mm 에서 비스듬히 내려가
     // 옆벽 구석으로 들어간다. 좌우 대칭이다.
     // 접근 자리까지 가는 이동 방식은 그대로다(P4 는 IK 관절 이동, P10 은 직선).
+    // [v1.1.250] P4 를 정면 진입으로 되돌리고, 접근 자리를 227 처럼 바깥에 둔다.
+    // 249 의 P4 접근 자리(구석 +Y 접근거리, 뒷벽 3mm, 바닥 15mm)는 U셀 안쪽 깊고 낮은
+    // 자리라, 홈에서 IK 관절 이동(곡선)으로 가는 도중 U셀 판을 쳐 와이어가 꺾였다
+    // (2026-10-14 현장). 227 시절 P4 는 뒷벽 앞 약 45mm·옆벽 3mm·바닥 위 21mm 로
+    // 교시돼 있어 접근 자리가 뒷벽 앞 약 95mm 였고, 그 동작이 오래 문제없이 돌았다.
+    //   P4 : 구석 기준 +X 95mm(뒷벽 앞), 옆벽(-Y)에서 +Y 3mm, 바닥 위 20mm
+    //        -> 직선으로 비스듬히 구석까지
+    //   P10: 249 그대로(구석 기준 -Y 접근거리, 뒷벽에서 +X 3mm, 바닥 위 15mm, 홈에서 직선)
     // 4파트 구성에서만, 터치 보정이 있을 때만 쓴다. 없으면 종전 방식.
     const HORIZONTAL_START_POINT_IDS = ['p4', 'p10'];
     const HORIZONTAL_START_LIFT_MM = 15;
     const HORIZONTAL_START_CLEAR_MM = 3;
+    const P4_FRONT_OUT_MM = 95;
+    const P4_FRONT_LIFT_MM = 20;
     const getTouchedStartApproachOffset = (point: TeachingPoint, offset: number): number[] | null => {
       if (hasCornerPartsInRun) return null;
       const id = (point.id ?? '').toLowerCase();
       if (!HORIZONTAL_START_POINT_IDS.includes(id) || !point.touchOffset) return null;
       const t = point.touchOffset;
-      // P4 는 옆벽이 -Y 라 +Y 쪽에서, P10 은 옆벽이 +Y 라 -Y 쪽에서 들어간다.
-      const sideApproach = id === 'p10' ? -offset : offset;
+      if (id === 'p4') {
+        // [v1.1.250] 정면(+X) 바깥에서 출발. 위 주석 참고.
+        return [
+          t.dx + P4_FRONT_OUT_MM,
+          t.dy + HORIZONTAL_START_CLEAR_MM,
+          t.dz + P4_FRONT_LIFT_MM,
+          0,
+          0,
+          0,
+        ];
+      }
+      // P10: 옆벽이 +Y 라 -Y 쪽(P11 쪽)에서 들어간다.
       return [
         t.dx + HORIZONTAL_START_CLEAR_MM,
-        t.dy + sideApproach,
+        t.dy - offset,
         t.dz + HORIZONTAL_START_LIFT_MM,
         0,
         0,
@@ -870,7 +890,7 @@ export async function executeWelding(
         ];
         const isNearUcellCorner = NEAR_UCELL_CORNER.includes(startPoint.id.toLowerCase());
         const startOffsetLabel = touchedStartApproach
-          ? (isNearUcellCorner ? '-Y(구석 기준)' : '+Y(구석 기준)')
+          ? (isNearUcellCorner ? '-Y(구석 기준)' : '+X(구석 기준)')
           : (isNearUcellCorner ? '-Y' : '+X');
         let startApproachJoints: number[] | null = null;
         // p9/p10은 U셀 구조물과 가까워 MoveJ의 곡선 경로가 U셀에 닿을 수 있음 (2026-09-14 실제 발생).
