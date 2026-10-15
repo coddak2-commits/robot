@@ -406,10 +406,11 @@ async function retreatBaseX(
 // [v1.1.253] 수직 끝(P1/P7)에서 빠져나오는 경로 (사용자 요청 2026-10-15).
 // 실제 현장 U셀은 수직재 위가 가로 판으로 막혀 있다. 종전의 토치축 후퇴(위·바깥)나
 // 홈 MoveJ 의 곡선 경로가 그 판에 닿을 수 있다. 위로 올라가지 않고 아래로 빠진다.
-//   1) 뒤로   : 뒷판에서 +X 20mm, U셀 가운데 쪽(P1 +Y / P7 -Y) 20mm  (높이 그대로)
-//   2) 아래로 : 같은 자리에서 -Z 150mm
-//   (v1.1.254 삭제) 3) 앞으로 +X 150mm - 2026-10-15 드라이런 P7 에서 code=38 로 거부되어 뺐다.
-// 모두 직선(MoveL, 블렌드 -1). 그다음 호출한 쪽에서 홈 MoveJ.
+//   [v1.1.255] 뒤로 한 번: 뒷판에서 +X 20mm(P7 40mm), U셀 가운데 쪽(P1 +Y / P7 -Y) 20mm,
+//              높이 그대로 직선(MoveL, 블렌드 -1) 1회. 그다음 호출한 쪽에서 홈 MoveJ.
+//   (v1.1.253~254 의 아래로 -Z 150mm 는 뺐다. 홈이 낮은 자세라 홈 MoveJ 가 시작부터
+//    아래·몸쪽으로 내려가는 것을 2026-10-15 드라이런 영상에서 확인. 내려가는 동작이 중복이었다.)
+//   (v1.1.254 삭제) 앞으로 +X 150mm - 2026-10-15 드라이런 P7 에서 code=38 로 거부되어 뺐다.
 // 기준은 끝점의 실제 자리(교시 + 터치 보정)다. 각 단계가 거부되면 그 단계 거리를
 // 절반으로 한 번 더 시도하고, 그래도 안 되면 남은 단계는 건너뛰고 false 를 돌려준다.
 // 쓰는 곳: 용접 마지막 종료, 파트 전환(횡단) 후퇴. 터치센싱 끝은 touchSensing.ts 에 같은 경로.
@@ -418,7 +419,6 @@ const VERTICAL_EXIT_BACK_MM = 20;
 // [v1.1.254] P7 은 뒤로 더 뺀다(2026-10-15 현장 요청).
 const VERTICAL_EXIT_BACK_MM_P7 = 40;
 const VERTICAL_EXIT_CENTER_MM = 20;
-const VERTICAL_EXIT_DOWN_MM = 150;
 const isVerticalEndPointId = (pointId?: string): boolean =>
   VERTICAL_END_POINT_IDS.includes((pointId ?? '').toLowerCase());
 async function exitFromVerticalEnd(point: TeachingPoint, speed: number): Promise<boolean> {
@@ -430,7 +430,6 @@ async function exitFromVerticalEnd(point: TeachingPoint, speed: number): Promise
   const base = t ? [t.dx, t.dy, t.dz] : [0, 0, 0];
   const steps: { label: string; target: number[] }[] = [
     { label: '뒤로', target: [back, center * VERTICAL_EXIT_CENTER_MM, 0] },
-    { label: '아래로', target: [back, center * VERTICAL_EXIT_CENTER_MM, -VERTICAL_EXIT_DOWN_MM] },
   ];
   let reached = [0, 0, 0];
   for (const step of steps) {
@@ -1406,7 +1405,7 @@ export async function executeWelding(
           log_weldingExecution.info(
             'welding.partTransition.retract',
             useVerticalExit
-              ? `파트 전환 ①(횡단): ${prevPoint.name} 뒤로 -> 아래로 빠진 뒤 홈 경유`
+              ? `파트 전환 ①(횡단): ${prevPoint.name} 뒤로 빠진 뒤 홈 경유`
               : `파트 전환 ①(횡단): ${prevPoint.name} base +X ${crossRetract}mm 후퇴 -> 홈 경유`,
           );
           // v1.1.212: 도달 불가면 거리를 줄여 재시도한다. 위 retreatBaseX 주석 참고.
@@ -1879,7 +1878,7 @@ export async function executeWelding(
       const lastWeldPoint = weldingPoints[weldingPoints.length - 1];
       if (lastWeldPoint?.tcp && isVerticalEndPointId(lastWeldPoint.id)) {
         // [v1.1.253] 수직 끝(P1/P7)에서 끝나면 토치축 후퇴(위·바깥) 대신 아래로 빠져나온다.
-        log_weldingExecution.info('welding.retract', `${lastWeldPoint.name} 뒤로 -> 아래로 빠져나오기`);
+        log_weldingExecution.info('welding.retract', `${lastWeldPoint.name} 뒤로 빠져나오기`);
         await exitFromVerticalEnd(lastWeldPoint, 30);
       } else if (lastWeldPoint?.tcp) {
         log_weldingExecution.info('welding.retract', 'TCP Z -100mm 후퇴');

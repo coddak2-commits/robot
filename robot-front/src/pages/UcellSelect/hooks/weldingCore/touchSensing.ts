@@ -504,6 +504,7 @@ export async function executeTouchSensing(
             // [v1.1.253] 마지막이 수직 끝(P1/P7)이면 위로 올라가지 않고 아래로 빠져나온다.
             // weldingExecution.ts exitFromVerticalEnd 와 같은 경로(뒤로 20·가운데 20 -> 아래 150).
             // v1.1.254: '앞으로 150' 단계 삭제(드라이런 P7 code=38 거부).
+            // v1.1.255: 아래로 150mm 삭제. 뒤로·가운데 직선 1회 후 홈(홈 MoveJ 가 처음부터 내려간다).
             // 막힌 U셀(수직재 위 가로 판)에서 토치축 후퇴가 판 쪽으로 올라가는 것을 피한다.
             const lastIdLower = lastPoint.id.toLowerCase();
             let retract: { success: boolean; stopped: boolean } = { success: false, stopped: false };
@@ -513,7 +514,6 @@ export async function executeTouchSensing(
               const back = lastIdLower === 'p7' ? 40 : 20;
               const exitSteps: { label: string; target: number[] }[] = [
                 { label: '뒤로', target: [back, center * 20, 0] },
-                { label: '아래로', target: [back, center * 20, -150] },
               ];
               let reached = [0, 0, 0];
               let allOk = true;

@@ -1,0 +1,8 @@
+v1.1.255: 수직 끝(P1/P7) 빠져나오기 아래로 150mm 삭제, 뒤로만 빼고 홈
+
+- weldingCore/weldingExecution.ts: exitFromVerticalEnd 뒤로·가운데 직선 1회
+- weldingCore/touchSensing.ts: 터치센싱 끝 P1/P7 동일
+- 버전 1.1.255
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017cv2bULfRu7QKNCTq2DYgq
