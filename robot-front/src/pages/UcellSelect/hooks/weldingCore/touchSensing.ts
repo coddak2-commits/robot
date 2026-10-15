@@ -510,8 +510,8 @@ export async function executeTouchSensing(
             let retract: { success: boolean; stopped: boolean } = { success: false, stopped: false };
             if (lastIdLower === 'p1' || lastIdLower === 'p7') {
               const center = lastIdLower === 'p7' ? -1 : 1;
-              // [v1.1.256] P7 은 뒤로 100mm (weldingExecution.ts VERTICAL_EXIT_BACK_MM_P7 과 같게).
-              const back = lastIdLower === 'p7' ? 100 : 20;
+              // [v1.1.257] P7 은 뒤로 80mm, 거부 시 60 -> 40 (weldingExecution.ts VERTICAL_EXIT_BACK_MM_P7 과 같게).
+              const back = lastIdLower === 'p7' ? 80 : 20;
               const exitSteps: { label: string; target: number[] }[] = [
                 { label: '뒤로', target: [back, center * 20, 0] },
               ];
@@ -519,7 +519,7 @@ export async function executeTouchSensing(
               let allOk = true;
               for (const step of exitSteps) {
                 let ok = false;
-                for (const ratio of [1, 0.5]) {
+                for (const ratio of [1, 0.75, 0.5]) {
                   const v = reached.map((p, k) => p + (step.target[k] - p) * ratio);
                   const r = await retractTo(1, [v[0], v[1], v[2], 0, 0, 0]);
                   if (r.stopped) {
@@ -531,13 +531,13 @@ export async function executeTouchSensing(
                     ok = true;
                     log_touchSensing.info(
                       'touchSensing.homeReturn.exit',
-                      `${lastPoint.name} 빠져나오기 ${step.label}${ratio < 1 ? ' (절반 거리)' : ''}`,
+                      `${lastPoint.name} 빠져나오기 ${step.label}${ratio < 1 ? ` (${Math.round(ratio * 100)}% 거리)` : ''}`,
                     );
                     break;
                   }
                   log_touchSensing.warn(
                     'touchSensing.homeReturn.exit.retry',
-                    `${lastPoint.name} 빠져나오기 ${step.label} 실패${ratio === 1 ? ' - 절반 거리로 재시도' : ''}`,
+                    `${lastPoint.name} 빠져나오기 ${step.label} 실패${ratio > 0.5 ? ' - 더 짧게 재시도' : ''}`,
                   );
                 }
                 if (retract.stopped) break;

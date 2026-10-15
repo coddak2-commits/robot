@@ -1,0 +1,26 @@
+﻿v1.1.257 - P4 를 P10 처럼 옆(P4·P5 사이)에서 직선 진입, P7 빠져나오기 80mm(60/40 재시도)
+
+[수정 1] P4 진입 방식 변경 (P10 과 좌우 대칭)
+    weldingCore/weldingExecution.ts getTouchedStartApproachOffset / 시작점 접근
+    2026-10-15 09:19 드라이런(256): 정면 바깥 자리 IK MoveJ 에서 J1 -1.95 -> 67.92, J6 207 로
+    팔이 비틀린 자세로 크게 돌았다.
+    변경: 홈 -> (직선 MoveL) P4·P5 사이 자리(뒷벽 +X 3, 바닥 +Z 15) -> (직선) 용접선 따라 P4.
+    P4·P5 사이 = 두 포인트 Y 중간(터치 보정 반영). 25mm 미만이면 접근거리 설정값(최소 25mm).
+    P10 은 같은 방식(홈에서 직선)으로 닿은 적이 없다.
+    250 정면 접근 자리, 253~254 토치 축 경유, 256 정면 바깥 자리는 모두 삭제.
+    직선 이동이 거부되면 곡선(MoveJ)으로 대신 가지 않고 오류로 중단.
+    로그: welding.start.approach (P4·P5 사이 자리로 직선 이동) / welding.start.approach.p4Failed
+
+[수정 2] P7 빠져나오기 뒤로 100 -> 80mm, 재시도 60 -> 40mm
+    weldingCore/weldingExecution.ts VERTICAL_EXIT_BACK_MM_P7 = 80, 재시도 비율 1 / 0.75 / 0.5
+    weldingCore/touchSensing.ts 터치센싱 끝 P7 동일
+    2026-10-15 09:24: 100mm 는 code=38 로 거부, 50mm 재시도로 갔다.
+    P1 은 20mm 그대로(재시도 15 / 10mm).
+
+[DB]
+    변경 없음.
+
+[현장 확인 항목] - 드라이런 먼저
+  - P4: 홈 -> P4·P5 사이 자리 직선 이동이 거부되지 않는지(code=38 등), 이동 중 U셀에 닿지 않는지
+  - P4: 사이 자리 -> P4 직선 진입 중 옆벽·바닥에 닿지 않는지
+  - P7: 로그 welding.verticalExit.step 에서 실제로 간 거리(80/60/40)

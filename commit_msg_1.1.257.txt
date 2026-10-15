@@ -1,0 +1,9 @@
+v1.1.257: P4 를 P10 처럼 P4-P5 사이에서 직선 진입, P7 빠져나오기 80mm(60/40 재시도)
+
+- weldingCore/weldingExecution.ts: P4 홈 -> P4·P5 사이(+X 3, +Z 15) MoveL -> 용접선 따라 P4, 정면/축/바깥 경유 삭제
+- weldingCore/weldingExecution.ts: VERTICAL_EXIT_BACK_MM_P7 100 -> 80, 재시도 1/0.75/0.5
+- weldingCore/touchSensing.ts: 터치센싱 끝 P7 80mm, 재시도 동일
+- 버전 1.1.257
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017cv2bULfRu7QKNCTq2DYgq
