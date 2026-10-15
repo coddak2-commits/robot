@@ -2,7 +2,7 @@ import { TeachingPoint } from '..';
 import { RealtimeRobotStatus, enableRobot, getRealtimeRobotStatus, stopRobotSDK } from '../../../lib';
 import { createLogger } from '../../../lib';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { executeRetract, executeMoveJ } from './moveHelpers';
+import { executeRetract, executeMoveJ, executeHomeExitRetreat } from './moveHelpers';
 
 const log_useRobotControl = createLogger('useRobotControl');
 export interface MoveToPointOptions {
@@ -110,7 +110,29 @@ export function useRobotControl(): UseRobotControlReturn {
         const toolNum = point.toolNum ?? 0;
         const userNum = point.userNum ?? 0;
         const skipRetract = opts.skipRetract ?? false;
-        if (!skipRetract) {
+        const isHomeTarget = (point.id ?? '').toLowerCase() === 'home';
+        if (isHomeTarget) {
+          // [v1.1.260] 홈은 어디서든 먼저 짧게 빠진다. moveHelpers.ts executeHomeExitRetreat 참고.
+          const exit = await executeHomeExitRetreat(
+            teachingRobotState?.tcp ?? null,
+            speed,
+            toolNum,
+            userNum,
+            stopMoveRef,
+          );
+          if (exit === 'stopped') return false;
+          if (exit === 'failed') {
+            log_useRobotControl.warn('moveToPoint.homeExitFailed', '홈 복귀 전 빠져나오기 전부 거부');
+            const goAnyway = window.confirm(
+              '뒤로 빼는 이동이 거부되었습니다.\n이 자리에서 바로 홈으로 가면 U셀에 닿을 수 있습니다.\n\n토치 주변을 확인했으면 [확인], 직접 빼낼 거면 [취소]를 누르세요.',
+            );
+            if (!goAnyway) {
+              log_useRobotControl.info('moveToPoint.homeExitCancel', '사용자 취소 - 홈 이동 안 함');
+              return false;
+            }
+            log_useRobotControl.info('moveToPoint.homeExitForce', '사용자 확인 - 빠져나오기 없이 홈 이동');
+          }
+        } else if (!skipRetract) {
           const retractOk = await executeRetract(
             teachingRobotState?.tcp ?? null,
             speed,

@@ -1,0 +1,22 @@
+﻿v1.1.260 - 홈 버튼 복귀 시 어디서든 먼저 짧게 빠지기
+
+[수정] 화면 홈 버튼(포인트 이동 -> Home)
+    hooks/moveHelpers.ts executeHomeExitRetreat, hooks/useRobotControl.ts moveToPoint
+    기존: 저장된 포인트 위에 정확히(관절 0.5도 이내) 있을 때만 +X 후퇴. 비상정지 후 멈춘 자리,
+          용접 중간, 터치 보정 자리에서는 후퇴 없이 바로 홈 MoveJ -> 곡선이 U셀에 닿음
+          (2026-10-15 로그: 10:33:04, 14:23:20 등 MoveJ 만 있음).
+    변경: 홈으로 갈 때는 로봇이 어디에 있든
+          1) 높이 그대로 Base +X 60mm, U셀 가운데 쪽(현재 Y<0 이면 +Y, 아니면 -Y) 20mm 직선(MoveL)
+          2) 거부되면 45 -> 30mm 재시도
+          3) 홈 MoveJ
+          세 번 다 거부되면 확인 창: [확인] 그대로 홈 이동 / [취소] 멈춤(직접 빼냄).
+    위로 들지 않는다(현장 U셀 상단 플랫바). 홈이 아닌 다른 포인트로의 이동은 종전 그대로.
+    로그(프런트): homeExit.try / homeExit.done / homeExit.rejected / moveToPoint.homeExitFailed
+
+[DB]
+    변경 없음.
+
+[현장 확인 항목] - 와이어 뺀 상태로 먼저
+  - 수평(P4~P6, P10~P12) 중간, 수직(P1~P3, P7~P9) 중간에서 정지 후 홈 버튼:
+    MoveL 1번(빠지기) 후 MoveJ 인지, 빠지는 방향이 U셀 바깥·가운데 쪽인지
+  - 홈 근처에서 홈 버튼을 눌렀을 때 60mm 이동이 문제없는지

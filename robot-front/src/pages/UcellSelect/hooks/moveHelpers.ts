@@ -122,6 +122,51 @@ export async function executeApproachWithOffset(
   }
   return await waitForMotionComplete(stopMoveRef, 300000, 'approach.final');
 }
+// [v1.1.260] 홈 버튼으로 홈에 갈 때, 로봇이 어디에 있든 먼저 짧게 빠진다.
+// 종전에는 저장된 포인트 위에 정확히(관절 0.5도 이내) 서 있을 때만 +X 후퇴했고, 비상정지 후
+// 멈춘 자리·용접 중간·터치 보정 자리에서는 후퇴 없이 바로 MoveJ 해서 곡선이 U셀에 닿았다
+// (2026-10-15 현장). 용접 끝 P7 빠져나오기와 같은 방식:
+//   높이 그대로 Base +X 60mm, U셀 가운데 쪽(현재 Y<0 이면 +Y, 아니면 -Y) 20mm 직선(MoveL).
+//   거부되면 45 -> 30mm. 위로 들지 않는다(현장 U셀 상단 플랫바).
+// 결과: 'ok' 빠짐 / 'failed' 전부 거부 / 'stopped' 정지 / 'skipped' TCP 없음.
+const HOME_EXIT_BACK_STEPS_MM = [60, 45, 30];
+const HOME_EXIT_CENTER_MM = 20;
+export async function executeHomeExitRetreat(
+  currentTcp: number[] | null,
+  speed: number,
+  toolNum: number,
+  userNum: number,
+  stopMoveRef: React.MutableRefObject<boolean>,
+): Promise<'ok' | 'failed' | 'stopped' | 'skipped'> {
+  if (!currentTcp || currentTcp.length < 6) {
+    log.info('homeExit.noTcp', 'TCP 데이터 없음, 빠져나오기 생략');
+    return 'skipped';
+  }
+  const [px, py, pz, prx, pry, prz] = currentTcp;
+  const center = py < 0 ? HOME_EXIT_CENTER_MM : -HOME_EXIT_CENTER_MM;
+  for (const back of HOME_EXIT_BACK_STEPS_MM) {
+    log.info('homeExit.try', `홈 복귀 전 빠져나오기: +X ${back}mm, Y ${center > 0 ? '+' : ''}${center}mm (높이 그대로)`);
+    const result = await moveToCartesianPositionNonBlocking(
+      { x: px, y: py, z: pz, rx: prx, ry: pry, rz: prz },
+      Math.min(speed, 30),
+      100,
+      100,
+      toolNum,
+      userNum,
+      1,
+      [back, center, 0, 0, 0, 0],
+    );
+    const rc = extractResultCode(result);
+    if (result?.status_code === 200 && rc === 0) {
+      if (!(await waitForMotionComplete(stopMoveRef, 30000, 'homeExit'))) return 'stopped';
+      log.info('homeExit.done', `홈 복귀 전 빠져나오기 완료 (+X ${back}mm)`);
+      return 'ok';
+    }
+    log.warn('homeExit.rejected', `빠져나오기 +X ${back}mm 거부`, { code: rc, errorMsg: getErrorMessage(rc) });
+    if (stopMoveRef.current) return 'stopped';
+  }
+  return 'failed';
+}
 export async function executeHomeSafeApproach(
   currentTcp: number[] | null,
   homePoint: TeachingPoint,

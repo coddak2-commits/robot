@@ -1,0 +1,8 @@
+v1.1.260: 홈 버튼 복귀 시 어디서든 +X 60mm(45/30)·가운데 20mm 빠진 뒤 홈
+
+- hooks/moveHelpers.ts: executeHomeExitRetreat 추가
+- hooks/useRobotControl.ts: 홈 이동이면 빠져나오기, 전부 거부 시 확인 창
+- 버전 1.1.260
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017cv2bULfRu7QKNCTq2DYgq
