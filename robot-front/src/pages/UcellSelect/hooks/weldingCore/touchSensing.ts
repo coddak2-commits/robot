@@ -510,8 +510,8 @@ export async function executeTouchSensing(
             let retract: { success: boolean; stopped: boolean } = { success: false, stopped: false };
             if (lastIdLower === 'p1' || lastIdLower === 'p7') {
               const center = lastIdLower === 'p7' ? -1 : 1;
-              // [v1.1.254] P7 은 뒤로 40mm (weldingExecution.ts VERTICAL_EXIT_BACK_MM_P7 과 같게).
-              const back = lastIdLower === 'p7' ? 40 : 20;
+              // [v1.1.256] P7 은 뒤로 100mm (weldingExecution.ts VERTICAL_EXIT_BACK_MM_P7 과 같게).
+              const back = lastIdLower === 'p7' ? 100 : 20;
               const exitSteps: { label: string; target: number[] }[] = [
                 { label: '뒤로', target: [back, center * 20, 0] },
               ];

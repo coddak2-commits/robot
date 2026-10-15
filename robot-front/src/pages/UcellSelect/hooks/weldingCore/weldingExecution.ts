@@ -417,7 +417,9 @@ async function retreatBaseX(
 const VERTICAL_END_POINT_IDS = ['p1', 'p7'];
 const VERTICAL_EXIT_BACK_MM = 20;
 // [v1.1.254] P7 은 뒤로 더 뺀다(2026-10-15 현장 요청).
-const VERTICAL_EXIT_BACK_MM_P7 = 40;
+// [v1.1.256] 40 -> 100mm. 홈 MoveJ 에서 J1 이 약 42도 돌며 토치 끝이 로봇에서 먼 쪽(뒷판 쪽)으로
+// 부풀어 지나간다(반경 약 575mm 기준 약 40mm). 40mm 로는 뒷판에 거의 닿았다(2026-10-15 영상).
+const VERTICAL_EXIT_BACK_MM_P7 = 100;
 const VERTICAL_EXIT_CENTER_MM = 20;
 const isVerticalEndPointId = (pointId?: string): boolean =>
   VERTICAL_END_POINT_IDS.includes((pointId ?? '').toLowerCase());
@@ -926,6 +928,12 @@ export async function executeWelding(
     // 자리(터치 보정 적용 자세 기준, 툴 좌표) -> 축 방향 직선 진입 순서로 바꾼다.
     // 축 방향 진입은 토치가 P4 자세에서 이미 차지하는 공간만 지나간다.
     const P4_AXIS_BACK_MM = 50;
+    // [v1.1.256] 홈 -> 접근 자리 MoveJ 에서 J1 이 약 47도 돌며 곡선이 U셀 안쪽으로 부풀었다.
+    // 접근 자리(+X 95)가 U셀 안이라 곡선이 U셀 안에서 끝났다(2026-10-15 09:06 드라이런).
+    // MoveJ 는 U셀 정면 바깥 자리(구석 기준 +X 250, 옆벽 +Y 3, +Z 70)까지만 하고,
+    // 거기서 접근 자리까지는 직선(MoveL)으로 들어간다.
+    const P4_OUTSIDE_X_MM = 250;
+    const P4_OUTSIDE_Z_MM = 70;
     const getTouchedStartApproachOffset = (point: TeachingPoint, offset: number): number[] | null => {
       if (hasCornerPartsInRun) return null;
       const id = (point.id ?? '').toLowerCase();
@@ -1025,6 +1033,27 @@ export async function executeWelding(
           startPoint.tcp.ry,
           startPoint.tcp.rz,
         ];
+        // [v1.1.256] P4: 먼저 U셀 정면 바깥 자리로. 위 P4_OUTSIDE_X_MM 참고.
+        const isP4Outside = !!touchedStartApproach && startPoint.id.toLowerCase() === 'p4';
+        const p4t = startPoint.touchOffset;
+        const firstDir = isP4Outside
+          ? [
+              (p4t?.dx ?? 0) + P4_OUTSIDE_X_MM,
+              (p4t?.dy ?? 0) + HORIZONTAL_START_CLEAR_MM,
+              (p4t?.dz ?? 0) + P4_OUTSIDE_Z_MM,
+              0,
+              0,
+              0,
+            ]
+          : startOffsetDir;
+        const firstPose = [
+          startPoint.tcp.x + firstDir[0],
+          startPoint.tcp.y + firstDir[1],
+          startPoint.tcp.z + firstDir[2],
+          startPoint.tcp.rx,
+          startPoint.tcp.ry,
+          startPoint.tcp.rz,
+        ];
         const isNearUcellCorner = NEAR_UCELL_CORNER.includes(startPoint.id.toLowerCase());
         const startOffsetLabel = touchedStartApproach
           ? (isNearUcellCorner ? '-Y(구석 기준)' : '+X(구석 기준)')
@@ -1033,12 +1062,14 @@ export async function executeWelding(
         // p9/p10은 U셀 구조물과 가까워 MoveJ의 곡선 경로가 U셀에 닿을 수 있음 (2026-09-14 실제 발생).
         // 따라서 이 두 포인트는 IK 관절 이동을 쓰지 않고 항상 직선(MoveL)으로 접근한다.
         if (!isNearUcellCorner && startPoint.joints && startPoint.joints.length === 6) {
-          startApproachJoints = await getInverseKin(startOffsetPose, startPoint.joints);
+          startApproachJoints = await getInverseKin(isP4Outside ? firstPose : startOffsetPose, startPoint.joints);
         }
         if (startApproachJoints) {
           log_weldingExecution.info(
             'welding.start.approachJoint',
-            `시작점 ${startOffsetLabel} ${approachOffset}mm 접근 (IK 관절 이동, 특이점 회피)`,
+            isP4Outside
+              ? `시작점 ${startPoint.name} U셀 정면 바깥 자리(구석 기준 +X ${P4_OUTSIDE_X_MM}, +Z ${P4_OUTSIDE_Z_MM})로 IK 관절 이동`
+              : `시작점 ${startOffsetLabel} ${approachOffset}mm 접근 (IK 관절 이동, 특이점 회피)`,
           );
           const jointResult = await moveToJointWithStopCheck(
             startApproachJoints,
@@ -1061,13 +1092,33 @@ export async function executeWelding(
             100,
             -1,
             1,
-            startOffsetDir,
+            firstDir,
             undefined,
             startPoint.toolNum ?? 3,
             startPoint.userNum ?? 0,
             0,
           );
           if (approachResult?.status_code !== 200) throw new Error('시작점 접근 이동 실패');
+        }
+        if (isP4Outside && !stopRef.current) {
+          log_weldingExecution.info(
+            'welding.start.p4Inward',
+            `시작점 ${startPoint.name} 바깥 자리 -> 접근 자리 직선 진입 [${startOffsetDir.slice(0, 3).map(v => v.toFixed(1)).join(', ')}]`,
+          );
+          const inwardResult = await moveToCartesianPosition(
+            startPoint.tcp,
+            30,
+            100,
+            100,
+            -1,
+            1,
+            startOffsetDir,
+            undefined,
+            startPoint.toolNum ?? 3,
+            startPoint.userNum ?? 0,
+            0,
+          );
+          if (inwardResult?.status_code !== 200) throw new Error('시작점 접근 이동 실패 (P4 직선 진입)');
         }
         if (
           touchedStartApproach &&

@@ -1,0 +1,9 @@
+v1.1.256: P4 진입 MoveJ 를 U셀 바깥에서 끝내기, P7 빠져나오기 뒤로 100mm
+
+- weldingCore/weldingExecution.ts: P4 홈 -> U셀 정면 바깥(+X 250, +Z 70) MoveJ -> 접근 자리 MoveL
+- weldingCore/weldingExecution.ts: VERTICAL_EXIT_BACK_MM_P7 40 -> 100
+- weldingCore/touchSensing.ts: 터치센싱 끝 P7 뒤로 100mm
+- 버전 1.1.256
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017cv2bULfRu7QKNCTq2DYgq

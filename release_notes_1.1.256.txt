@@ -1,0 +1,24 @@
+﻿v1.1.256 - P4 진입 MoveJ 를 U셀 바깥에서 끝내기, P7 빠져나오기 뒤로 100mm
+
+[수정 1] P4 진입: MoveJ 는 U셀 정면 바깥까지만
+    weldingCore/weldingExecution.ts P4_OUTSIDE_X_MM = 250, P4_OUTSIDE_Z_MM = 70
+    2026-10-15 09:06 드라이런: 홈 -> 접근 자리 MoveJ 에서 J1 이 -1.95 -> 45.22 로 약 47도 돌며
+    곡선이 U셀 안쪽으로 부풀었다. 접근 자리(구석 +X 95)가 U셀 안이라 곡선이 U셀 안에서 끝남.
+    변경: 홈 -> (MoveJ) U셀 정면 바깥 자리(구석 기준 +X 250, 옆벽 +Y 3, +Z 70)
+          -> (MoveL) 접근 자리(+X 95, +Y 3, +Z 20) -> (MoveL) 토치 축 -Z 50mm 자리 -> (MoveL) P4
+    U셀 안으로 들어가는 이동은 모두 직선. 터치 보정 없으면 교시 좌표 기준.
+    로그: welding.start.approachJoint (바깥 자리) / welding.start.p4Inward
+
+[수정 2] P7 빠져나오기 뒤로 40 -> 100mm
+    weldingCore/weldingExecution.ts VERTICAL_EXIT_BACK_MM_P7 = 100
+    weldingCore/touchSensing.ts 터치센싱 끝 P7 도 100mm
+    홈 MoveJ 에서 J1 이 약 42도 돌며 토치 끝이 뒷판 쪽으로 약 40mm 부풀어 지나간다.
+    40mm 로는 뒷판에 거의 닿았다(2026-10-15 09:10 영상). P1 은 20mm 그대로.
+
+[DB]
+    변경 없음.
+
+[현장 확인 항목] - 드라이런 먼저
+  - P4: 홈 -> 바깥 자리 MoveJ 가 U셀 밖에서 끝나는지, 바깥 자리 -> 접근 자리 직선이 옆벽과 나란히 들어가는지
+  - P4: 250/70 은 현장 U셀 앞끝보다 바깥이 되도록 조정 가능
+  - P7: 뒤로 100mm 이동이 거부되지 않는지(거부 시 50mm 재시도), 홈 MoveJ 중 뒷판과 간격
