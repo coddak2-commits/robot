@@ -1,0 +1,10 @@
+v1.1.261: 수직 끝(P1/P7) -> 홈 직선(LIN) 우선, 거부 시 J1 고정 접기 후 회전, 수직 시작 내림 7mm
+
+- weldingCore/moveStopCheck.ts: moveHomeFromVerticalEnd 추가
+- weldingCore/weldingExecution.ts: 용접 끝·P1->P10 전환 홈 이동에 적용, VERTICAL_START_DROP_MM_4PART 10 -> 7
+- weldingCore/touchSensing.ts: 터치센싱 끝 P1/P7 홈 이동에 적용
+- database/DB_STATE.md: 수직 시작 내림 7mm
+- 버전 1.1.261
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017cv2bULfRu7QKNCTq2DYgq

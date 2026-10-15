@@ -1,0 +1,25 @@
+﻿v1.1.261 - 수직 끝(P1/P7) -> 홈을 직선(LIN) 우선, 수직 시작 내림 10 -> 7mm
+
+[수정 1] 수직 끝(P1/P7)에서 홈으로 가는 이동
+    weldingCore/moveStopCheck.ts moveHomeFromVerticalEnd
+    적용: 용접 끝(P7), P1->P10 전환, 터치센싱 끝(P1/P7). 홈 버튼(1.1.260)은 그대로.
+    기존: 뒤로 빼기(P7 60mm) 후 홈 MoveJ 한 번. J1 이 약 42도 돌며 팔이 같이 접혀 토치 끝이
+          뒷판·U셀 쪽으로 부풀어 지나감(2026-10-15 현장). 뒤로는 60mm 가 한계(80mm 부터 code=38).
+    변경: 뒤로 빼기(그대로) 후
+      1) 홈 TCP 로 직선(MoveL, LIN). 받아들여지면 곡선 없음. 끝나면 홈 관절로 MoveJ 한 번 더(관절 맞추기).
+      2) 직선이 거부되면 J1 은 그대로, 나머지 관절만 홈 값으로 MoveJ(팔 접기 - 토치가 몸쪽으로 곧게 당겨짐).
+      3) 홈 MoveJ(남은 J1 회전, 팔이 접혀 반경이 작음).
+    로그(프런트): homeFromVerticalEnd.lin / .lin.rejected / .fold / .rotate
+
+[수정 2] 수직 시작 내림 10 -> 7mm
+    weldingCore/weldingExecution.ts VERTICAL_START_DROP_MM_4PART = 7
+    내린 구간만 20cpm 으로 올라오는 이동(riseFromVerticalDrop)은 내린 거리만큼이라 자동으로 7mm.
+
+[DB]
+    변경 없음. database/DB_STATE.md 5.5 수직 시작 내림 값 갱신(7mm).
+
+[현장 확인 항목] - 와이어 뺀 드라이런 먼저
+  - P7 끝: robot_core 로그에서 뒤로 빼기 MoveL 다음 MoveL(홈 TCP) 이 거부 없이 나오는지
+    거부되면(code=38 등) MoveJ 두 번(J1 고정 접기 -> 홈) 인지
+  - 홈 직선/접기 중 토치가 위로 들리지 않는지(현장 U셀 상단 플랫바), 뒷판과 간격
+  - P3/P9 시작: 7mm 아래에서 시작해 20cpm 으로 올라오는지

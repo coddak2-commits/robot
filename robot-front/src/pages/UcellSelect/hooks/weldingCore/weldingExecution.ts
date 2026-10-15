@@ -6,7 +6,7 @@ import { setWeldingPartOrder } from '../..';
 import { WeldingResult, WeldingStartOptions, ClosestCenterlineResult } from './weldingCoreTypes';
 import { findClosestCenterlinePoint } from './pathFinding';
 import { saveStoppedLog, saveWeldingLog } from './loggingHelpers';
-import { moveToJointWithStopCheck, getWeaveTypeCode, calculateDistance, getMinimumWeavingDistance } from './moveStopCheck';
+import { moveToJointWithStopCheck, getWeaveTypeCode, calculateDistance, getMinimumWeavingDistance, moveHomeFromVerticalEnd } from './moveStopCheck';
 import { loadWeldingSettings } from './sequenceSettings';
 import { safeArcOn, setupAndStartWeave, endPartWelding, startPartWelding, safeEndWeave, safeArcOff } from './weaveHelpers';
 import { determinePointTouchOffset } from './weldingPointLoop';
@@ -647,7 +647,8 @@ export async function executeWelding(
   // P3/P9 가 모서리 바닥이라 10mm 는 바닥판으로 들어가므로 따로 둔다.
   // [v1.1.252] 3 -> 10mm (사용자 요청 2026-10-14). 아래 내린 구간은 riseFromVerticalDrop 이
   // 빠른 속도로 올라온다.
-  const VERTICAL_START_DROP_MM_4PART = 10;
+  // [v1.1.261] 10 -> 7mm (사용자 요청 2026-10-15). 20cpm 상승 구간도 내린 거리만큼이라 7mm 가 된다.
+  const VERTICAL_START_DROP_MM_4PART = 7;
   const VERTICAL_START_POINT_IDS = ['p3', 'p9'];
   // [v1.1.243] 모서리 파트가 있을 때만. 4파트(227 구성)에서는 P3/P9 가 모서리 바닥이라
   // 10mm 내리면 바닥판으로 들어간다.
@@ -1429,13 +1430,16 @@ export async function executeWelding(
             );
           }
           if (homePoint?.joints && !stopRef.current) {
-            const homeResult = await moveToJointWithStopCheck(
-              homePoint.joints,
-              homePoint.moveSpeed || 50,
-              homePoint.toolNum ?? 3,
-              homePoint.userNum ?? 0,
-              stopRef,
-            );
+            // [v1.1.261] 수직 끝(P1)에서는 직선 -> (거부 시) 팔 접기 -> 회전. moveHomeFromVerticalEnd 참고.
+            const homeResult = useVerticalExit
+              ? await moveHomeFromVerticalEnd(homePoint, stopRef)
+              : await moveToJointWithStopCheck(
+                  homePoint.joints,
+                  homePoint.moveSpeed || 50,
+                  homePoint.toolNum ?? 3,
+                  homePoint.userNum ?? 0,
+                  stopRef,
+                );
             if (homeResult.stopped) stopRef.current = true;
             else if (!homeResult.success) throw new Error('파트 전환(횡단) 홈 경유 실패');
           }
@@ -1935,13 +1939,19 @@ export async function executeWelding(
     }
     if (!stopRef.current && homePoint?.joints) {
       log_weldingExecution.info('welding.homeReturn', 'Home으로 복귀');
-      await moveToJointWithStopCheck(
-        homePoint.joints,
-        homePoint.moveSpeed || 50,
-        homePoint.toolNum ?? 3,
-        homePoint.userNum ?? 0,
-        stopRef,
-      );
+      const lastPointForHome = weldingPoints[weldingPoints.length - 1];
+      if (isVerticalEndPointId(lastPointForHome?.id)) {
+        // [v1.1.261] 수직 끝(P1/P7)에서는 직선 -> (거부 시) 팔 접기 -> 회전.
+        await moveHomeFromVerticalEnd(homePoint, stopRef);
+      } else {
+        await moveToJointWithStopCheck(
+          homePoint.joints,
+          homePoint.moveSpeed || 50,
+          homePoint.toolNum ?? 3,
+          homePoint.userNum ?? 0,
+          stopRef,
+        );
+      }
     }
     const completedAt = new Date();
     const actualDurationSec = (completedAt.getTime() - startedAt.getTime()) / 1000;

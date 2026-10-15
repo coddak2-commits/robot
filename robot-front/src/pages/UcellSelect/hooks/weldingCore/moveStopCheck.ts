@@ -1,5 +1,5 @@
 import { WEAVING_TYPE_OPTIONS } from '../..';
-import { moveToJointPositionNonBlocking, checkMotionDone } from '../../../../lib';
+import { moveToJointPositionNonBlocking, checkMotionDone, getRealtimeRobotStatus } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 
@@ -129,6 +129,73 @@ export const moveToCartesianWithStopCheck = async (
     log_helpers.error('moveToCartesianWithStopCheck.error', '이동 오류', { error: String(error) });
     return { success: false, stopped: false };
   }
+};
+// [v1.1.261] 수직 끝(P1/P7)에서 빠져나온 뒤 홈으로 가는 이동.
+// 홈 MoveJ 한 번이면 J1 이 약 42도 돌면서 팔이 동시에 접혀, 토치 끝이 로봇에서 먼 쪽(뒷판·U셀 쪽)으로
+// 부풀어 지나갔다(2026-10-15 영상). 뒤로 빼는 거리는 60mm 가 한계(80mm 부터 code=38).
+//   1) 홈 TCP 로 직선(MoveL, 사용자 제안 'LIN'). 받아들여지면 곡선이 없다.
+//      거부는 명령 직후 바로 오고 로봇은 움직이지 않는다(2026-10-15 로그의 code=38 들).
+//      직선이 끝난 뒤에도 홈 관절로 MoveJ 한 번 더 한다(관절값 정확히 맞추기, 이미 홈이면 거의 안 움직임).
+//   2) 직선이 거부되면 J1 은 지금 값 그대로, 나머지 관절만 홈 값으로 MoveJ(팔 접기).
+//      J1 이 안 돌아 위에서 보면 토치가 로봇 몸쪽으로 곧게 당겨진다.
+//   3) 홈 MoveJ (J1 만 남은 회전, 팔이 접혀 반경이 작다).
+export const moveHomeFromVerticalEnd = async (
+  homePoint: {
+    joints?: number[] | null;
+    tcp?: { x: number; y: number; z: number; rx: number; ry: number; rz: number } | null;
+    moveSpeed?: number;
+    toolNum?: number;
+    userNum?: number;
+  },
+  stopRef: React.MutableRefObject<boolean>,
+): Promise<{ success: boolean; stopped: boolean }> => {
+  if (!homePoint.joints || homePoint.joints.length !== 6) return { success: false, stopped: false };
+  const tool = homePoint.toolNum ?? 3;
+  const user = homePoint.userNum ?? 0;
+  const speed = homePoint.moveSpeed || 50;
+  if (homePoint.tcp) {
+    log_helpers.info('homeFromVerticalEnd.lin', '수직 끝 -> 홈: 직선(LIN) 이동 시도');
+    const lin = await moveToCartesianWithStopCheck(
+      homePoint.tcp,
+      Math.min(speed, 30),
+      100,
+      100,
+      -1,
+      0,
+      [0, 0, 0, 0, 0, 0],
+      undefined,
+      tool,
+      user,
+      stopRef,
+    );
+    if (lin.stopped) return lin;
+    if (lin.success) {
+      log_helpers.info('homeFromVerticalEnd.lin.done', '수직 끝 -> 홈: 직선 이동 완료, 홈 관절 맞추기');
+      return await moveToJointWithStopCheck(homePoint.joints, speed, tool, user, stopRef);
+    }
+    log_helpers.warn('homeFromVerticalEnd.lin.rejected', '수직 끝 -> 홈: 직선 이동 거부 - 팔 접기 후 회전으로 진행');
+  }
+  let current: number[] | null = null;
+  try {
+    const st = await getRealtimeRobotStatus();
+    current = st?.joints && st.joints.length === 6 ? st.joints : null;
+  } catch (error) {
+    log_helpers.warn('homeFromVerticalEnd.status', '현재 관절값 조회 실패', { error: String(error) });
+  }
+  if (current) {
+    const fold = [current[0], ...homePoint.joints.slice(1)];
+    log_helpers.info(
+      'homeFromVerticalEnd.fold',
+      `수직 끝 -> 홈: J1 ${current[0].toFixed(2)} 고정, 나머지 관절만 홈 자세로 접기`,
+    );
+    const f = await moveToJointWithStopCheck(fold, speed, tool, user, stopRef);
+    if (f.stopped) return f;
+    if (!f.success) log_helpers.warn('homeFromVerticalEnd.fold.failed', '팔 접기 실패 - 홈 MoveJ 로 진행');
+  } else {
+    log_helpers.warn('homeFromVerticalEnd.noJoints', '현재 관절값 없음 - 홈 MoveJ 로 진행');
+  }
+  log_helpers.info('homeFromVerticalEnd.rotate', '수직 끝 -> 홈: 홈 MoveJ');
+  return await moveToJointWithStopCheck(homePoint.joints, speed, tool, user, stopRef);
 };
 export const calculateDistance = (
   p1: { x: number; y: number; z: number } | null,

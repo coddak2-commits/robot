@@ -6,7 +6,7 @@ import { WeldingSequenceSettings, TouchSensingOptions, TouchSensingResult } from
 import { PointTouchResult, performDryRunForPoint } from './touchDryRun';
 import { getTouchDirections } from './touchDirections';
 import { loadWeldingSettings } from './sequenceSettings';
-import { moveToCartesianWithStopCheck, moveToJointWithStopCheck } from './moveStopCheck';
+import { moveToCartesianWithStopCheck, moveToJointWithStopCheck, moveHomeFromVerticalEnd } from './moveStopCheck';
 
 const log_touchSensing = createLogger('weldingCore.touchSensing');
 export interface TouchSensingContext {
@@ -578,13 +578,19 @@ export async function executeTouchSensing(
             }
           }
           log_touchSensing.info('touchSensing.homeReturn', 'Home으로 복귀');
-          await moveToJointWithStopCheck(
-            homePoint.joints,
-            homePoint.moveSpeed || 50,
-            homePoint.toolNum ?? 3,
-            homePoint.userNum ?? 0,
-            stopRef,
-          );
+          const lastIdForHome = (lastPoint?.id ?? '').toLowerCase();
+          if (lastIdForHome === 'p1' || lastIdForHome === 'p7') {
+            // [v1.1.261] 수직 끝에서는 직선 -> (거부 시) 팔 접기 -> 회전. moveStopCheck.ts 참고.
+            await moveHomeFromVerticalEnd(homePoint, stopRef);
+          } else {
+            await moveToJointWithStopCheck(
+              homePoint.joints,
+              homePoint.moveSpeed || 50,
+              homePoint.toolNum ?? 3,
+              homePoint.userNum ?? 0,
+              stopRef,
+            );
+          }
         } catch (e) {
           log_touchSensing.warn('touchSensing.homeReturn.failed', 'Home 복귀 실패', { error: String(e) });
         }
