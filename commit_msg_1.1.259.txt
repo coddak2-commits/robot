@@ -1,0 +1,7 @@
+v1.1.259: P4 를 토치 축 방향으로 위에서 진입, P4-P5 사이 경유 삭제
+
+- weldingCore/weldingExecution.ts: P4 홈 -> 툴 -Z 60mm(재시도 40) 자리 MoveL -> 축 따라 P4
+- 버전 1.1.259
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017cv2bULfRu7QKNCTq2DYgq

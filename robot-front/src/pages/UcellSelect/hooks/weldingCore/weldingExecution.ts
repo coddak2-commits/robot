@@ -925,25 +925,16 @@ export async function executeWelding(
     const HORIZONTAL_START_POINT_IDS = ['p4', 'p10'];
     const HORIZONTAL_START_LIFT_MM = 15;
     const HORIZONTAL_START_CLEAR_MM = 3;
-    // [v1.1.257] P4 는 P10 과 좌우만 바꾼 방식으로 들어간다(사용자 제안 2026-10-15).
-    //   홈 -> (직선 MoveL) P4·P5 사이 자리(뒷벽 +X 20, 바닥 +Z 30, v1.1.258) -> (직선) P4.
-    //   250(정면 +X 95 자리, IK MoveJ), 253~254(토치 축 경유), 256(정면 바깥 +X 250 자리, IK MoveJ)는 모두 뺐다.
-    //   MoveJ 는 J1 이 크게 돌며 곡선이 U셀 쪽으로 부풀었다(256: J1 -1.95 -> 67.92, J6 207).
-    //   P10 은 같은 방식(홈에서 직선)으로 닿은 적이 없다.
-    //   직선 이동이 거부되면 곡선으로 대신 가지 않고 오류로 멈춘다.
-    const P4_SIDE_MIN_MM = 25;
-    // [v1.1.258] 사이 자리를 뒷벽 3 -> 20mm, 바닥 15 -> 30mm 로 띄운다. 홈에서 오는 직선 끝부분이
-    // 뒷벽·바닥에 붙어 들어가 와이어가 살짝 닿을 뻔했다(2026-10-15 09:55 드라이런 영상). P10 은 그대로.
-    const P4_SIDE_CLEAR_MM = 20;
-    const P4_SIDE_LIFT_MM = 30;
-    const getP4SideOffsetY = (p4: TeachingPoint, p4dy: number, fallback: number): number => {
-      const p5 = weldingPoints.find(p => (p.id ?? '').toLowerCase() === 'p5');
-      if (p4.tcp && p5?.tcp) {
-        const half = (p5.tcp.y + (p5.touchOffset?.dy ?? 0) - (p4.tcp.y + p4dy)) / 2;
-        if (Number.isFinite(half) && half >= P4_SIDE_MIN_MM) return half;
-      }
-      return Math.max(fallback, P4_SIDE_MIN_MM);
-    };
+    // [v1.1.259] P4 는 토치 축 방향으로 위에서 들어간다.
+    //   홈 -> (직선 MoveL) 터치 보정된 P4 자세에서 툴 -Z 60mm 자리(구석 위 약 58mm)
+    //      -> (직선 MoveL) 토치 축 따라 P4.
+    //   258 의 P4·P5 사이 자리(P4 에서 Y 약 138mm, 바닥 위 30mm)는 터치 보정이 붙으면 마지막
+    //   138mm 를 낮게 비스듬히 구석으로 들어가 와이어가 걸려 꺾였다(2026-10-15 14:08 실용접).
+    //   P4 토치는 거의 아래를 향한다(약 15도). 축 방향 진입은 와이어가 옆으로 끌리지 않고,
+    //   토치 몸체는 P4 자세에서 이미 차지하는 공간만 지난다.
+    //   이력: 250 정면 +X 95(IK MoveJ), 253~255 축 경유(앞 MoveJ 곡선이 문제), 256 정면 바깥(IK MoveJ),
+    //   257~258 P4·P5 사이. MoveJ 는 쓰지 않는다. 직선 이동이 거부되면 오류로 멈춘다.
+    const P4_AXIS_BACK_STEPS_MM = [60, 40];
     const getTouchedStartApproachOffset = (point: TeachingPoint, offset: number): number[] | null => {
       if (hasCornerPartsInRun) return null;
       const id = (point.id ?? '').toLowerCase();
@@ -954,15 +945,8 @@ export async function executeWelding(
       if (id !== 'p4' && !point.touchOffset) return null;
       const t = point.touchOffset ?? { dx: 0, dy: 0, dz: 0 };
       if (id === 'p4') {
-        // [v1.1.257] 옆벽이 -Y 라 +Y 쪽(P5 쪽), P4·P5 사이에서 들어간다. 위 주석 참고.
-        return [
-          t.dx + P4_SIDE_CLEAR_MM,
-          t.dy + getP4SideOffsetY(point, t.dy, offset),
-          t.dz + P4_SIDE_LIFT_MM,
-          0,
-          0,
-          0,
-        ];
+        // [v1.1.259] 터치 보정된 P4 자리 자체. 실제 접근은 여기서 툴 -Z 로 뺀 자리. 위 주석 참고.
+        return [t.dx, t.dy, t.dz, 0, 0, 0];
       }
       // P10: 옆벽이 +Y 라 -Y 쪽(P11 쪽)에서 들어간다.
       return [
@@ -1043,18 +1027,18 @@ export async function executeWelding(
           startPoint.tcp.ry,
           startPoint.tcp.rz,
         ];
-        // [v1.1.257] P4 는 P10 처럼 홈에서 직선(MoveL)으로 P4·P5 사이 자리까지 간다.
-        const isP4Side = !!touchedStartApproach && startPoint.id.toLowerCase() === 'p4';
+        // [v1.1.259] P4 는 홈에서 직선(MoveL)으로 토치 축 -Z 자리까지 간다.
+        const isP4Axis = !!touchedStartApproach && startPoint.id.toLowerCase() === 'p4';
         const isNearUcellCorner = NEAR_UCELL_CORNER.includes(startPoint.id.toLowerCase());
-        const useStraightApproach = isNearUcellCorner || isP4Side;
-        const startOffsetLabel = isP4Side
-          ? '+Y(P4·P5 사이)'
+        const useStraightApproach = isNearUcellCorner || isP4Axis;
+        const startOffsetLabel = isP4Axis
+          ? '토치 축'
           : touchedStartApproach
             ? (isNearUcellCorner ? '-Y(구석 기준)' : '+X(구석 기준)')
             : (isNearUcellCorner ? '-Y' : '+X');
         let startApproachJoints: number[] | null = null;
         // p9/p10은 U셀 구조물과 가까워 MoveJ의 곡선 경로가 U셀에 닿을 수 있음 (2026-09-14 실제 발생).
-        // 따라서 이 두 포인트는 IK 관절 이동을 쓰지 않고 항상 직선(MoveL)으로 접근한다. P4 도 같다(v1.1.257).
+        // 따라서 이 두 포인트는 IK 관절 이동을 쓰지 않고 항상 직선(MoveL)으로 접근한다. P4 도 같다(v1.1.257~).
         if (!useStraightApproach && startPoint.joints && startPoint.joints.length === 6) {
           startApproachJoints = await getInverseKin(startOffsetPose, startPoint.joints);
         }
@@ -1072,12 +1056,52 @@ export async function executeWelding(
           );
           if (jointResult.stopped) stopRef.current = true;
           else if (!jointResult.success) throw new Error('시작점 접근 이동 실패');
+        } else if (isP4Axis) {
+          const touchedPose = {
+            ...startPoint.tcp,
+            x: startPoint.tcp.x + startOffsetDir[0],
+            y: startPoint.tcp.y + startOffsetDir[1],
+            z: startPoint.tcp.z + startOffsetDir[2],
+          };
+          let axisOk = false;
+          for (const mm of P4_AXIS_BACK_STEPS_MM) {
+            log_weldingExecution.info(
+              'welding.start.approach',
+              `시작점 ${startPoint.name} 토치 축 -Z ${mm}mm 자리로 직선 이동 (P4 축 방향 진입 준비)`,
+            );
+            const axisResult = await moveToCartesianPosition(
+              touchedPose,
+              30,
+              100,
+              100,
+              -1,
+              2,
+              [0, 0, -mm, 0, 0, 0],
+              undefined,
+              startPoint.toolNum ?? 3,
+              startPoint.userNum ?? 0,
+              0,
+            );
+            if (axisResult?.status_code === 200) {
+              axisOk = true;
+              break;
+            }
+            log_weldingExecution.warn(
+              'welding.start.approach.p4Failed',
+              `토치 축 -Z ${mm}mm 자리 직선 이동 거부 (status=${axisResult?.status_code})`,
+            );
+          }
+          if (!axisOk) {
+            log_weldingExecution.warn(
+              'welding.start.approach.p4None',
+              'P4 토치 축 자리 직선 이동 전부 거부 - 곡선 이동으로 대신 가지 않고 중단',
+            );
+            throw new Error('시작점 접근 이동 실패 (P4 토치 축)');
+          }
         } else {
           log_weldingExecution.info(
             'welding.start.approach',
-            isP4Side
-              ? `시작점 ${startPoint.name} P4·P5 사이 자리로 직선 이동 (U셀 간섭 회피, P10 과 같은 방식)`
-              : `시작점 ${startOffsetLabel} ${approachOffset}mm 접근${isNearUcellCorner ? ' (U셀 간섭 회피, 직선 이동)' : ''}`,
+            `시작점 ${startOffsetLabel} ${approachOffset}mm 접근${isNearUcellCorner ? ' (U셀 간섭 회피, 직선 이동)' : ''}`,
           );
           const approachResult = await moveToCartesianPosition(
             startPoint.tcp,
@@ -1092,15 +1116,7 @@ export async function executeWelding(
             startPoint.userNum ?? 0,
             0,
           );
-          if (approachResult?.status_code !== 200) {
-            if (isP4Side) {
-              log_weldingExecution.warn(
-                'welding.start.approach.p4Failed',
-                `P4·P5 사이 자리 직선 이동 거부 (status=${approachResult?.status_code}) - 곡선 이동으로 대신 가지 않고 중단`,
-              );
-            }
-            throw new Error('시작점 접근 이동 실패');
-          }
+          if (approachResult?.status_code !== 200) throw new Error('시작점 접근 이동 실패');
         }
       }
     }
