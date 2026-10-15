@@ -421,7 +421,9 @@ const VERTICAL_EXIT_BACK_MM = 20;
 // 부풀어 지나간다(반경 약 575mm 기준 약 40mm). 40mm 로는 뒷판에 거의 닿았다(2026-10-15 영상).
 // [v1.1.257] 100mm 는 code=38 로 거부되고 50mm 재시도로 갔다(2026-10-15 09:24). 80mm 로 하고
 // 재시도를 80 -> 60 -> 40 으로 나눈다(비율 1, 0.75, 0.5).
-const VERTICAL_EXIT_BACK_MM_P7 = 80;
+// [v1.1.258] 80 -> 60mm. 80mm 는 code=38 로 거부되고 60mm 로 성공(2026-10-15 09:24, 09:59 두 번).
+// 재시도는 45 -> 30mm (P7 재교시·터치 보정으로 60mm 도 거부될 때 대비).
+const VERTICAL_EXIT_BACK_MM_P7 = 60;
 const VERTICAL_EXIT_CENTER_MM = 20;
 const isVerticalEndPointId = (pointId?: string): boolean =>
   VERTICAL_END_POINT_IDS.includes((pointId ?? '').toLowerCase());
@@ -924,12 +926,16 @@ export async function executeWelding(
     const HORIZONTAL_START_LIFT_MM = 15;
     const HORIZONTAL_START_CLEAR_MM = 3;
     // [v1.1.257] P4 는 P10 과 좌우만 바꾼 방식으로 들어간다(사용자 제안 2026-10-15).
-    //   홈 -> (직선 MoveL) P4·P5 사이 자리(뒷벽 +X 3, 바닥 +Z 15) -> (직선) 용접선 따라 P4.
+    //   홈 -> (직선 MoveL) P4·P5 사이 자리(뒷벽 +X 20, 바닥 +Z 30, v1.1.258) -> (직선) P4.
     //   250(정면 +X 95 자리, IK MoveJ), 253~254(토치 축 경유), 256(정면 바깥 +X 250 자리, IK MoveJ)는 모두 뺐다.
     //   MoveJ 는 J1 이 크게 돌며 곡선이 U셀 쪽으로 부풀었다(256: J1 -1.95 -> 67.92, J6 207).
     //   P10 은 같은 방식(홈에서 직선)으로 닿은 적이 없다.
     //   직선 이동이 거부되면 곡선으로 대신 가지 않고 오류로 멈춘다.
     const P4_SIDE_MIN_MM = 25;
+    // [v1.1.258] 사이 자리를 뒷벽 3 -> 20mm, 바닥 15 -> 30mm 로 띄운다. 홈에서 오는 직선 끝부분이
+    // 뒷벽·바닥에 붙어 들어가 와이어가 살짝 닿을 뻔했다(2026-10-15 09:55 드라이런 영상). P10 은 그대로.
+    const P4_SIDE_CLEAR_MM = 20;
+    const P4_SIDE_LIFT_MM = 30;
     const getP4SideOffsetY = (p4: TeachingPoint, p4dy: number, fallback: number): number => {
       const p5 = weldingPoints.find(p => (p.id ?? '').toLowerCase() === 'p5');
       if (p4.tcp && p5?.tcp) {
@@ -950,9 +956,9 @@ export async function executeWelding(
       if (id === 'p4') {
         // [v1.1.257] 옆벽이 -Y 라 +Y 쪽(P5 쪽), P4·P5 사이에서 들어간다. 위 주석 참고.
         return [
-          t.dx + HORIZONTAL_START_CLEAR_MM,
+          t.dx + P4_SIDE_CLEAR_MM,
           t.dy + getP4SideOffsetY(point, t.dy, offset),
-          t.dz + HORIZONTAL_START_LIFT_MM,
+          t.dz + P4_SIDE_LIFT_MM,
           0,
           0,
           0,

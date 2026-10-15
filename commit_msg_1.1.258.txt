@@ -1,0 +1,8 @@
+v1.1.258: P4-P5 사이 접근 자리 뒷벽 20mm, 바닥 30mm 로 띄움, P7 빠져나오기 60mm
+
+- weldingCore/weldingExecution.ts: P4_SIDE_CLEAR_MM 20, P4_SIDE_LIFT_MM 30 (P10 은 3/15 그대로)
+- weldingCore/weldingExecution.ts, touchSensing.ts: P7 뒤로 80 -> 60mm (재시도 45/30)
+- 버전 1.1.258
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017cv2bULfRu7QKNCTq2DYgq
