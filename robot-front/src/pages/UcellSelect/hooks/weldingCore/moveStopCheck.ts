@@ -1,5 +1,5 @@
 import { WEAVING_TYPE_OPTIONS } from '../..';
-import { moveToJointPositionNonBlocking, checkMotionDone, getRealtimeRobotStatus } from '../../../../lib';
+import { moveToJointPositionNonBlocking, checkMotionDone, getRealtimeRobotStatus, getRobotError, resetRobotError } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 
@@ -139,6 +139,65 @@ export const moveToCartesianWithStopCheck = async (
 //   2) 직선이 거부되면 J1 은 지금 값 그대로, 나머지 관절만 홈 값으로 MoveJ(팔 접기).
 //      J1 이 안 돌아 위에서 보면 토치가 로봇 몸쪽으로 곧게 당겨진다.
 //   3) 홈 MoveJ (J1 만 남은 회전, 팔이 접혀 반경이 작다).
+// [v1.1.262] 직선이 받아들여진 뒤 도중에 멈추는 경우(2026-10-16 P7 재교시 후, ry 0.3~0.7도)
+// 정지(motion done)를 도착으로 보고 홈 MoveJ 를 보내 code=14 로 거부됐고 팔 접기는 시도되지 않았다.
+// 직선이 '끝났다'고 나와도 홈 TCP 와의 거리와 컨트롤러 에러를 확인하고, 도착하지 않았거나 에러면
+// 에러 리셋 후 2) 팔 접기로 넘어간다.
+const HOME_LIN_ARRIVE_TOL_MM = 5;
+const verifyHomeLinArrival = async (
+  target: { x: number; y: number; z: number },
+): Promise<'arrived' | 'notArrived' | 'unknown'> => {
+  let st;
+  try {
+    st = await getRealtimeRobotStatus();
+  } catch (error) {
+    log_helpers.warn('homeFromVerticalEnd.verify.status', '도착 확인용 상태 조회 실패', { error: String(error) });
+    return 'unknown';
+  }
+  if (!st?.tcp || st.tcp.length < 3) {
+    log_helpers.warn('homeFromVerticalEnd.verify.noTcp', '도착 확인용 현재 TCP 없음', { reason: st?.reason ?? null });
+    return 'unknown';
+  }
+  const dist = Math.sqrt(
+    (st.tcp[0] - target.x) ** 2 + (st.tcp[1] - target.y) ** 2 + (st.tcp[2] - target.z) ** 2,
+  );
+  const errCode = st.error_code ?? 0;
+  if (dist <= HOME_LIN_ARRIVE_TOL_MM && errCode === 0) return 'arrived';
+  let err = null;
+  try {
+    err = await getRobotError();
+  } catch {
+    err = null;
+  }
+  log_helpers.warn('homeFromVerticalEnd.lin.notArrived', '수직 끝 -> 홈: 직선 이동이 홈 TCP 에 도착하지 않음', {
+    distanceMm: Number(dist.toFixed(1)),
+    tcp: st.tcp.slice(0, 3).map(v => Number(v.toFixed(2))),
+    errorCode: errCode,
+    mainCode: err?.main_code ?? null,
+    subCode: err?.sub_code ?? null,
+    message: err?.message ?? null,
+  });
+  return 'notArrived';
+};
+const resetErrorIfAny = async (): Promise<void> => {
+  let err = null;
+  try {
+    err = await getRobotError();
+  } catch {
+    err = null;
+  }
+  if (!err?.has_error && !(err?.main_code)) return;
+  log_helpers.warn('homeFromVerticalEnd.reset', '팔 접기 전 컨트롤러 에러 리셋', {
+    mainCode: err?.main_code ?? null,
+    subCode: err?.sub_code ?? null,
+  });
+  try {
+    await resetRobotError();
+  } catch (error) {
+    log_helpers.warn('homeFromVerticalEnd.reset.failed', '에러 리셋 실패', { error: String(error) });
+  }
+  await new Promise(resolve => setTimeout(resolve, 500));
+};
 export const moveHomeFromVerticalEnd = async (
   homePoint: {
     joints?: number[] | null;
@@ -170,10 +229,17 @@ export const moveHomeFromVerticalEnd = async (
     );
     if (lin.stopped) return lin;
     if (lin.success) {
-      log_helpers.info('homeFromVerticalEnd.lin.done', '수직 끝 -> 홈: 직선 이동 완료, 홈 관절 맞추기');
-      return await moveToJointWithStopCheck(homePoint.joints, speed, tool, user, stopRef);
+      const arrival = await verifyHomeLinArrival(homePoint.tcp);
+      if (arrival !== 'notArrived') {
+        log_helpers.info('homeFromVerticalEnd.lin.done', '수직 끝 -> 홈: 직선 이동 완료, 홈 관절 맞추기', { arrival });
+        return await moveToJointWithStopCheck(homePoint.joints, speed, tool, user, stopRef);
+      }
+      log_helpers.warn('homeFromVerticalEnd.lin.aborted', '수직 끝 -> 홈: 직선 이동이 도중에 멈춤 - 팔 접기 후 회전으로 진행');
+    } else {
+      log_helpers.warn('homeFromVerticalEnd.lin.rejected', '수직 끝 -> 홈: 직선 이동 거부 - 팔 접기 후 회전으로 진행');
     }
-    log_helpers.warn('homeFromVerticalEnd.lin.rejected', '수직 끝 -> 홈: 직선 이동 거부 - 팔 접기 후 회전으로 진행');
+    if (stopRef.current) return { success: false, stopped: true };
+    await resetErrorIfAny();
   }
   let current: number[] | null = null;
   try {

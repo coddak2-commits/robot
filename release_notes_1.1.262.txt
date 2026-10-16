@@ -1,0 +1,22 @@
+﻿v1.1.262 - 수직 끝(P1/P7) -> 홈: 직선이 도중에 멈춰도 팔 접기로 넘어가도록
+
+[수정] weldingCore/moveStopCheck.ts moveHomeFromVerticalEnd
+    적용: 용접 끝(P7), P1->P10 전환, 터치센싱 끝(P1/P7). 홈 버튼은 그대로.
+    문제(2026-10-16 16:15~16:18, P7 재교시 후 ry 0.3~0.7도):
+      홈 TCP 직선 이동이 받아들여진 뒤 0.6초 만에 멈춤(원래 P7 자세에서는 3.7초 걸려 정상 도착).
+      멈춤(motion done)을 도착으로 보고 홈 MoveJ 를 보냄 -> code=14(실행 실패) 거부.
+      1.1.261 의 팔 접기는 '처음부터 거부'될 때만 타서 시도되지 않음.
+    변경:
+      1) 직선이 끝났다고 나오면 현재 TCP 와 홈 TCP 거리(5mm 이내), 컨트롤러 에러(error_code=0) 확인
+      2) 도착하지 않았거나 에러면: 컨트롤러 에러 리셋 -> J1 고정 팔 접기 -> 홈 MoveJ
+      3) 처음부터 거부된 경우도 팔 접기 전에 에러가 있으면 리셋
+      4) 상태 조회가 안 되면(확인 불가) 기존대로 홈 MoveJ
+    로그(프런트): homeFromVerticalEnd.lin.notArrived(거리·TCP·main/sub code) / .lin.aborted / .reset
+
+[DB]
+    변경 없음.
+
+[현장 확인 항목] - 와이어 뺀 드라이런 먼저
+  - 원래 P7 자세: 지금처럼 직선으로 홈 복귀하는지(homeFromVerticalEnd.lin.done)
+  - 직선이 도중에 멈추는 자세: lin.notArrived -> reset -> fold -> rotate 순서로 홈에 오는지
+  - notArrived 로그의 main/sub code 로 직선이 멈춘 원인 확인

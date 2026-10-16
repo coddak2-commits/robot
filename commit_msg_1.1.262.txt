@@ -1,0 +1,8 @@
+v1.1.262: 수직 끝 -> 홈 직선이 도중에 멈추면 에러 리셋 후 팔 접기로 진행
+
+- weldingCore/moveStopCheck.ts: moveHomeFromVerticalEnd 직선 완료 후 홈 TCP 도착(5mm)·컨트롤러 에러 확인,
+  미도착/에러면 에러 리셋 후 J1 고정 접기 -> 홈 MoveJ
+- 버전 1.1.262
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011s5GmACAFtBqwjLSFKNRE6
