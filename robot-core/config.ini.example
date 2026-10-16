@@ -25,3 +25,8 @@ from=YOUR_SMTP_USER@example.com
 # 하며, 다르면 모든 API 요청이 401로 거부된다. 16자 이상의 무작위 값으로 설정할 것.
 [auth]
 jwt_secret=YOUR_JWT_SECRET_HERE
+
+# ZeroMQ 포트 (기본 5555/5556). Fairino 정품 펜던트(FR-HMI)는 5555를 adbd가 쓰므로 다른 값으로 바꿀 것.
+[zmq]
+cmd_port=5555
+pub_port=5556

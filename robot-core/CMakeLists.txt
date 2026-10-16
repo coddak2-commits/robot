@@ -20,13 +20,49 @@ if(MSVC)
 endif()
 
 # Fairino SDK paths (저장소에 포함됨)
-set(FAIRINO_SDK_DIR "${CMAKE_SOURCE_DIR}/../fairino-cpp-sdk-main/windows/libfairino")
-set(FAIRINO_INCLUDE_DIR "${FAIRINO_SDK_DIR}/include")
-set(FAIRINO_LIB_DIR "${FAIRINO_SDK_DIR}/lib/vs2022 x86-64/Release")
+if(WIN32)
+    set(FAIRINO_SDK_DIR "${CMAKE_SOURCE_DIR}/../fairino-cpp-sdk-main/windows/libfairino")
+    set(FAIRINO_INCLUDE_DIR "${FAIRINO_SDK_DIR}/include")
+    set(FAIRINO_LIB_DIR "${FAIRINO_SDK_DIR}/lib/vs2022 x86-64/Release")
+else()
+    # 리눅스: SDK가 zip으로 들어 있으므로 빌드 폴더에 풀어서 사용
+    # aarch64 = Fairino 정품 펜던트 FR-HMI(RK3588), 그 외 = x86
+    set(FAIRINO_SDK_DIR "${CMAKE_SOURCE_DIR}/../fairino-cpp-sdk-main/linux/libfairino")
+    set(FAIRINO_INCLUDE_DIR "${FAIRINO_SDK_DIR}/include")
+    if(NOT FAIRINO_LINUX_ARCH)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+            set(FAIRINO_LINUX_ARCH "arm3588")
+        else()
+            set(FAIRINO_LINUX_ARCH "x86")
+        endif()
+    endif()
+    set(FAIRINO_EXTRACT_DIR "${CMAKE_BINARY_DIR}/fairino-${FAIRINO_LINUX_ARCH}")
+    if(NOT EXISTS "${FAIRINO_EXTRACT_DIR}/lib")
+        file(MAKE_DIRECTORY "${FAIRINO_EXTRACT_DIR}")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E tar xf "${FAIRINO_SDK_DIR}/lib/${FAIRINO_LINUX_ARCH}.zip"
+            WORKING_DIRECTORY "${FAIRINO_EXTRACT_DIR}"
+            RESULT_VARIABLE FAIRINO_UNZIP_RESULT
+        )
+        if(NOT FAIRINO_UNZIP_RESULT EQUAL 0)
+            message(FATAL_ERROR "Fairino SDK 압축 해제 실패: ${FAIRINO_LINUX_ARCH}.zip")
+        endif()
+    endif()
+    file(GLOB FAIRINO_SO "${FAIRINO_EXTRACT_DIR}/lib/libfairino.so.*")
+    list(GET FAIRINO_SO 0 FAIRINO_SO)
+    message(STATUS "Fairino SDK (linux): ${FAIRINO_SO}")
+endif()
 
 # MariaDB Connector/C paths
 # vcpkg: vcpkg install libmariadb:x64-windows (CI 환경)
 # 로컬: C:/Program Files/MariaDB 11.4 설치 시 자동 감지
+# 리눅스: libmariadb-dev 패키지 (/usr/include/mariadb)
+if(NOT WIN32)
+    set(MARIADB_VIA_VCPKG FALSE)
+    find_path(MARIADB_INCLUDE_DIR mysql.h PATH_SUFFIXES mariadb mysql REQUIRED)
+    find_library(MARIADB_LIBRARY NAMES mariadb mariadbclient REQUIRED)
+    message(STATUS "MariaDB (linux): ${MARIADB_LIBRARY}")
+else()
 find_package(unofficial-libmariadb CONFIG QUIET)
 if(unofficial-libmariadb_FOUND)
     message(STATUS "MariaDB found via vcpkg")
@@ -42,10 +78,19 @@ else()
     set(MARIADB_INCLUDE_DIR "${MARIADB_DIR}/include/mysql")
     set(MARIADB_LIB_DIR "${MARIADB_DIR}/lib")
 endif()
+endif()
 
 # Find ZeroMQ via vcpkg
+if(WIN32)
 find_package(ZeroMQ CONFIG REQUIRED)
 find_package(cppzmq CONFIG REQUIRED)
+else()
+    # 리눅스: libzmq3-dev(pkg-config) + cppzmq-dev(zmq.hpp 헤더만 사용)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(ZMQ REQUIRED libzmq)
+    find_path(CPPZMQ_INCLUDE_DIR zmq.hpp REQUIRED)
+    find_package(Threads REQUIRED)
+endif()
 find_package(nlohmann_json CONFIG REQUIRED)
 
 # Include directories
@@ -55,6 +100,9 @@ include_directories(
 )
 if(NOT MARIADB_VIA_VCPKG)
     include_directories(${MARIADB_INCLUDE_DIR})
+endif()
+if(NOT WIN32)
+    include_directories(${CPPZMQ_INCLUDE_DIR} ${ZMQ_INCLUDE_DIRS})
 endif()
 
 # Source files (33개 .cpp를 src/robot_core_all.cpp 하나로 물리적 병합)
@@ -75,6 +123,7 @@ else()
 endif()
 
 # Link libraries
+if(WIN32)
 target_link_libraries(robot_core
     PRIVATE
     ${FAIRINO_LIB_DIR}/fairino.lib
@@ -91,7 +140,28 @@ if(MARIADB_VIA_VCPKG)
 else()
     target_link_libraries(robot_core PRIVATE ${MARIADB_LIB_DIR}/libmariadb.lib)
 endif()
+else()
+# 리눅스: libfairino.so.2 를 실행 파일 옆에 두고 거기서 찾도록 RPATH=$ORIGIN
+target_link_libraries(robot_core
+    PRIVATE
+    ${FAIRINO_SO}
+    ${ZMQ_LIBRARIES}
+    nlohmann_json::nlohmann_json
+    ${MARIADB_LIBRARY}
+    Threads::Threads
+)
+set_target_properties(robot_core PROPERTIES
+    BUILD_RPATH "$ORIGIN"
+    INSTALL_RPATH "$ORIGIN"
+)
+add_custom_command(TARGET robot_core POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${FAIRINO_SO}"
+    "$<TARGET_FILE_DIR:robot_core>/libfairino.so.2"
+)
+endif()
 
+if(WIN32)
 # Copy Fairino DLL to output directory
 add_custom_command(TARGET robot_core POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -128,3 +198,4 @@ endif()
 # Installation
 install(TARGETS robot_core DESTINATION bin)
 install(FILES "${FAIRINO_LIB_DIR}/fairino.dll" DESTINATION bin)
+endif()

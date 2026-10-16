@@ -23,6 +23,15 @@
 #include <windows.h>
 #include <shellapi.h>
 #endif
+#ifndef _WIN32
+// 리눅스: 실행 파일이 있는 폴더 (config.ini, logs, www 기준 위치)
+static std::string linuxExeDir() {
+    std::error_code ec;
+    auto p = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if (ec) return ".";
+    return p.parent_path().string();
+}
+#endif
 using json = nlohmann::json;
 // 클라이언트가 보낸 이동 파라미터는 로봇 SDK로 그대로 넘기기 전에
 // 반드시 안전 범위로 clamp한다 (vel/acc/ovl은 SDK 퍼센트 단위 0~100).
@@ -234,6 +243,15 @@ int runService() {
         std::cout << "[Main] Development mode - starting React dev server..." << std::endl;
         startFrontendDevServer();
     }
+#else
+    {
+        std::string wwwPath = linuxExeDir() + "/www";
+        if (std::filesystem::exists(wwwPath + "/index.html")) {
+            g_packagedMode = true;
+            g_webRoot = wwwPath;
+            std::cout << "[Main] Packaged mode detected - serving static files from: " << g_webRoot << std::endl;
+        }
+    }
 #endif
     ConfigService::instance().loadFromFile();
     {
@@ -261,7 +279,10 @@ int runService() {
     g_robotService = &robotService;
     g_zmqServer = &zmqServer;
     g_httpServer = &httpServer;
-    if (!zmqServer.start(5555, 5556)) {
+    // ZMQ 포트: config.ini [zmq] cmd_port / pub_port (기본 5555/5556)
+    const int zmqCmdPort = ConfigService::instance().getInt("zmq.cmd_port", 5555);
+    const int zmqPubPort = ConfigService::instance().getInt("zmq.pub_port", 5556);
+    if (!zmqServer.start(zmqCmdPort, zmqPubPort)) {
         std::cerr << "[Main] Failed to start ZeroMQ server" << std::endl;
         return 1;
     }
@@ -269,8 +290,8 @@ int runService() {
         std::cerr << "[Main] Failed to start HTTP server on port " << g_httpPort << std::endl;
     }
     std::cout << "[Main] Robot IP: " << g_robotIp << std::endl;
-    std::cout << "[Main] ZeroMQ Command port: 5555" << std::endl;
-    std::cout << "[Main] ZeroMQ Publisher port: 5556" << std::endl;
+    std::cout << "[Main] ZeroMQ Command port: " << zmqCmdPort << std::endl;
+    std::cout << "[Main] ZeroMQ Publisher port: " << zmqPubPort << std::endl;
     std::cout << "[Main] HTTP API port: " << g_httpPort << std::endl;
     std::cout << std::endl;
 #ifdef _WIN32
@@ -7183,6 +7204,7 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
         json data;
         data["app_version"] = APP_VERSION_STRING;
         data["build_date"] = __DATE__ " " __TIME__;
+#ifdef _WIN32
         data["platform"] = "Windows";
         data["architecture"] = "x64";
         char exePath[MAX_PATH] = {0};
@@ -7190,6 +7212,15 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
         std::string fullPath(exePath);
         size_t pos = fullPath.find_last_of("\\/");
         data["project_root"] = (pos != std::string::npos) ? fullPath.substr(0, pos) : fullPath;
+#else
+        data["platform"] = "Linux";
+#if defined(__aarch64__)
+        data["architecture"] = "arm64";
+#else
+        data["architecture"] = "x64";
+#endif
+        data["project_root"] = linuxExeDir();
+#endif
         data["update_server"] = "https://github.com/coddak2-commits/robot";
         auto uptimeSec = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - g_serverStartTime).count();
@@ -8118,7 +8149,7 @@ void FileLogger::init(const std::string& logDir, int maxFileSizeMB,
             exeDir = exeDir.substr(0, lastSlash);
             m_logDir = exeDir + "\\logs";
 #else
-            m_logDir = "./logs";
+            m_logDir = linuxExeDir() + "/logs";
 #endif
         }
         try {
@@ -8310,7 +8341,7 @@ bool ConfigService::loadFromFile(const std::string& filePath) {
             }
         }
 #else
-        path = "config.ini";
+        path = linuxExeDir() + "/config.ini";
 #endif
     }
     std::ifstream file(path);
@@ -10187,6 +10218,7 @@ static LONG WINAPI sehHandler(EXCEPTION_POINTERS* exInfo) {
     }
     return EXCEPTION_EXECUTE_HANDLER;
 }
+#endif
 static void terminateHandler() {
     FLOG_FATAL("ProcessStability", "Unhandled C++ exception (std::terminate called)");
     std::cerr << "[ProcessStability] Unhandled C++ exception (std::terminate called)" << std::endl;
@@ -10197,7 +10229,6 @@ static void terminateHandler() {
     }
     std::abort();
 }
-#endif
 void ProcessStability::installCrashHandlers(SafeShutdownManager* shutdownMgr) {
     g_shutdownMgr = shutdownMgr;
 #ifdef _WIN32
