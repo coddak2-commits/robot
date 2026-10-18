@@ -1,0 +1,8 @@
+v1.1.263: 터치센싱 끝(P1/P7) 빠져나오기를 용접 끝과 같은 기준(교시 + 터치 보정)으로
+
+- weldingCore/touchSensing.ts: 터치센싱 끝 빠져나오기 오프셋에 방금 잰 P1/P7 터치 보정을 더함
+  (2026-10-19 터치센싱 끝 홈 직선만 J1 1-23/4-1 로 멈추던 것)
+- 버전 1.1.263
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011s5GmACAFtBqwjLSFKNRE6

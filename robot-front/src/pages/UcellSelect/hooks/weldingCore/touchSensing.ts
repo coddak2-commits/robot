@@ -515,13 +515,24 @@ export async function executeTouchSensing(
               const exitSteps: { label: string; target: number[] }[] = [
                 { label: '뒤로', target: [back, center * 20, 0] },
               ];
+              // [v1.1.263] 빠져나오기 기준을 용접 끝(weldingExecution.ts exitFromVerticalEnd)과 같게
+              // '교시 + 방금 잰 터치 보정'으로 한다. 종전에는 교시 위치 기준이라 출발점이 터치 보정만큼
+              // (2026-10-19 P7 약 24mm) 달라, 같은 P7 자세에서 용접 끝 홈 직선은 되고 터치센싱 끝 홈 직선만
+              // J1 지령속도 초과(1-23)·J1 충돌(4-1)로 멈춰 팔 접기로 넘어갔다(08:01/08:03/08:03).
+              const lastTouch = touchResults.find(r => r.pointId === lastPoint!.id);
+              const touchBase = lastTouch ? [lastTouch.dx ?? 0, lastTouch.dy ?? 0, lastTouch.dz ?? 0] : [0, 0, 0];
+              log_touchSensing.info(
+                'touchSensing.homeReturn.exit.base',
+                `${lastPoint.name} 빠져나오기 기준: 교시 + 터치 보정`,
+                { touchBase: touchBase.map(n => Number(n.toFixed(2))), measured: !!lastTouch },
+              );
               let reached = [0, 0, 0];
               let allOk = true;
               for (const step of exitSteps) {
                 let ok = false;
                 for (const ratio of [1, 0.75, 0.5]) {
                   const v = reached.map((p, k) => p + (step.target[k] - p) * ratio);
-                  const r = await retractTo(1, [v[0], v[1], v[2], 0, 0, 0]);
+                  const r = await retractTo(1, [touchBase[0] + v[0], touchBase[1] + v[1], touchBase[2] + v[2], 0, 0, 0]);
                   if (r.stopped) {
                     retract = r;
                     break;
