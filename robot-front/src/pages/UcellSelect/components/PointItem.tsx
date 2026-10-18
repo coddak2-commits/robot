@@ -53,6 +53,7 @@ export interface PointItemProps {
   onApplyParamsToBlock: () => void;
   onApplyParamsToAll: () => void;
   onSaveJob: () => void;
+  onSavePoint: () => void;
 }
 export function PointItem({
   point,
@@ -75,6 +76,7 @@ export function PointItem({
   onApplyParamsToBlock,
   onApplyParamsToAll,
   onSaveJob,
+  onSavePoint,
 }: PointItemProps) {
   // 연속 입력(예: 1 -> 1.5) 시 늦게 도착한 이전 조회 결과가 덮어쓰지 않도록 요청 번호로 거른다.
   const gapLookupSeq = useRef(0);
@@ -290,6 +292,17 @@ export function PointItem({
             )}
             {point.id !== 'home' && (
               <>
+                <button
+                  onClick={e => {
+                    e.stopPropagation();
+                    onSavePoint();
+                  }}
+                  disabled={!point.isSaved}
+                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="이 포인트 값만 저장"
+                >
+                  저장
+                </button>
                 <button
                   onClick={e => {
                     e.stopPropagation();

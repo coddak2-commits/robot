@@ -28,6 +28,48 @@ const buildPointsData = (savedPoints: TeachingPoint[]): TeachingPointData[] =>
     gap: pt.gap ?? 0,
   }));
 
+// [v1.1.264] loadJob 과 savePoint 가 같은 변환을 쓰도록 분리.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const toTeachingPoint = (pt: any) => {
+  const tcpData = pt.tcp;
+  return {
+    id: pt.point_id,
+    // [v1.1.244] 이름은 DB 저장값 대신 현재 포인트 정의를 쓴다. 228~242 에 저장한 작업에
+    // '모서리' 이름이 남아 있어 4파트 화면에서 헷갈린다.
+    name: UCELL_POINT_DEFINITIONS.find(d => d.id === pt.point_id)?.name ?? pt.name,
+    order: pt.order,
+    tcp: tcpData ? {
+      x: tcpData.x,
+      y: tcpData.y,
+      z: tcpData.z,
+      rx: tcpData.rx,
+      ry: tcpData.ry,
+      rz: tcpData.rz,
+    } : null,
+    joints: pt.joints,
+    isSaved: true,
+    toolNum: pt.tool_num ?? 3,
+    userNum: pt.user_num ?? 0,
+    moveSpeed: pt.move_speed,
+    velMode: (pt.vel_mode ?? 0) as 0 | 1,
+    weldVoltage: pt.weld_voltage,
+    weldCurrent: pt.weld_current,
+    weavingType: pt.weaving_type,
+    weaveParams: pt.weave_params ? {
+      weaveFrequency: pt.weave_params.weaveFrequency ?? DEFAULT_WEAVE_PARAMS.weaveFrequency,
+      weaveRange: pt.weave_params.weaveRange ?? DEFAULT_WEAVE_PARAMS.weaveRange,
+      weaveLeftRange: pt.weave_params.weaveLeftRange ?? DEFAULT_WEAVE_PARAMS.weaveLeftRange,
+      weaveRightRange: pt.weave_params.weaveRightRange ?? DEFAULT_WEAVE_PARAMS.weaveRightRange,
+      weaveLeftStayTime: pt.weave_params.weaveLeftStayTime ?? DEFAULT_WEAVE_PARAMS.weaveLeftStayTime,
+      weaveRightStayTime: pt.weave_params.weaveRightStayTime ?? DEFAULT_WEAVE_PARAMS.weaveRightStayTime,
+      weaveCircleRadio: pt.weave_params.weaveCircleRadio ?? DEFAULT_WEAVE_PARAMS.weaveCircleRadio,
+      weaveYawAngle: pt.weave_params.weaveYawAngle ?? DEFAULT_WEAVE_PARAMS.weaveYawAngle,
+      weaveRotAngle: pt.weave_params.weaveRotAngle ?? DEFAULT_WEAVE_PARAMS.weaveRotAngle,
+    } : { ...DEFAULT_WEAVE_PARAMS },
+    gap: pt.gap ?? 0,
+  };
+};
+
 export interface UseJobManagementReturn {
   jobList: TeachingJob[];
   currentJobId: number | null;
@@ -45,6 +87,8 @@ export interface UseJobManagementReturn {
   // [v1.1.220] 기존 작업에 덮어쓰기. saveJob은 항상 새 작업을 만들기 때문에
   // 펜던트에서 불러온 작업을 고쳐 저장할 방법이 없었다.
   overwriteJob: (jobId: number, teachingPoints: TeachingPoint[], cellType: string, cellId: number, height: number, width: number, jobName: string) => Promise<boolean>;
+  // [v1.1.264] 포인트 하나만 저장. DB 의 작업을 읽어 그 포인트만 바꿔 다시 쓴다.
+  savePoint: (jobId: number, point: TeachingPoint) => Promise<boolean>;
   loadJob: (jobId: number) => Promise<{
     points: TeachingPoint[];
     cellType?: string;
@@ -149,6 +193,31 @@ export function useJobManagement(): UseJobManagementReturn {
       setIsSavingJob(false);
     }
   }, [fetchJobList]);
+  const savePoint = useCallback(async (jobId: number, point: TeachingPoint): Promise<boolean> => {
+    setIsSavingJob(true);
+    try {
+      const response = await getTeachingJob(jobId);
+      const jobData = response?.data;
+      if (!jobData) return false;
+      const dbPoints: TeachingPoint[] = (jobData.points ?? []).map(toTeachingPoint);
+      const merged = [...dbPoints.filter(pt => pt.id !== point.id), point]
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      await updateTeachingJob(jobId, {
+        name: jobData.name ?? '',
+        cell_type: jobData.cell_type,
+        cell_id: jobData.cell_id,
+        height: jobData.height,
+        width: jobData.width,
+        points: buildPointsData(merged),
+      });
+      return true;
+    } catch (error) {
+      console.error('포인트 저장 실패:', error);
+      return false;
+    } finally {
+      setIsSavingJob(false);
+    }
+  }, []);
   const loadJob = useCallback(async (jobId: number): Promise<{
     points: TeachingPoint[];
     cellType?: string;
@@ -163,46 +232,7 @@ export function useJobManagement(): UseJobManagementReturn {
         alert('작업 데이터를 불러올 수 없습니다.');
         return null;
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const loadedPoints: TeachingPoint[] = jobData.points.map((pt: any) => {
-        const tcpData = pt.tcp;
-        return {
-          id: pt.point_id,
-          // [v1.1.244] 이름은 DB 저장값 대신 현재 포인트 정의를 쓴다. 228~242 에 저장한 작업에
-          // '모서리' 이름이 남아 있어 4파트 화면에서 헷갈린다.
-          name: UCELL_POINT_DEFINITIONS.find(d => d.id === pt.point_id)?.name ?? pt.name,
-          order: pt.order,
-          tcp: tcpData ? {
-            x: tcpData.x,
-            y: tcpData.y,
-            z: tcpData.z,
-            rx: tcpData.rx,
-            ry: tcpData.ry,
-            rz: tcpData.rz,
-          } : null,
-          joints: pt.joints,
-          isSaved: true,
-          toolNum: pt.tool_num ?? 3,
-          userNum: pt.user_num ?? 0,
-          moveSpeed: pt.move_speed,
-          velMode: (pt.vel_mode ?? 0) as 0 | 1,
-          weldVoltage: pt.weld_voltage,
-          weldCurrent: pt.weld_current,
-          weavingType: pt.weaving_type,
-          weaveParams: pt.weave_params ? {
-            weaveFrequency: pt.weave_params.weaveFrequency ?? DEFAULT_WEAVE_PARAMS.weaveFrequency,
-            weaveRange: pt.weave_params.weaveRange ?? DEFAULT_WEAVE_PARAMS.weaveRange,
-            weaveLeftRange: pt.weave_params.weaveLeftRange ?? DEFAULT_WEAVE_PARAMS.weaveLeftRange,
-            weaveRightRange: pt.weave_params.weaveRightRange ?? DEFAULT_WEAVE_PARAMS.weaveRightRange,
-            weaveLeftStayTime: pt.weave_params.weaveLeftStayTime ?? DEFAULT_WEAVE_PARAMS.weaveLeftStayTime,
-            weaveRightStayTime: pt.weave_params.weaveRightStayTime ?? DEFAULT_WEAVE_PARAMS.weaveRightStayTime,
-            weaveCircleRadio: pt.weave_params.weaveCircleRadio ?? DEFAULT_WEAVE_PARAMS.weaveCircleRadio,
-            weaveYawAngle: pt.weave_params.weaveYawAngle ?? DEFAULT_WEAVE_PARAMS.weaveYawAngle,
-            weaveRotAngle: pt.weave_params.weaveRotAngle ?? DEFAULT_WEAVE_PARAMS.weaveRotAngle,
-          } : { ...DEFAULT_WEAVE_PARAMS },
-          gap: pt.gap ?? 0,
-        };
-      });
+      const loadedPoints: TeachingPoint[] = jobData.points.map(toTeachingPoint);
       setCurrentJobId(jobId);
       setIsJobListModalOpen(false);
       return {
@@ -293,6 +323,7 @@ export function useJobManagement(): UseJobManagementReturn {
     fetchJobList,
     saveJob,
     overwriteJob,
+    savePoint,
     loadJob,
     pendingDeleteJobIds,
     requestDeleteJob,

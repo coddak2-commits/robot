@@ -123,6 +123,7 @@ export function CellSelectionCore({
     setEditingJobName,
     fetchJobList,
     saveJob,
+    savePoint,
     loadJob,
     pendingDeleteJobIds,
     requestDeleteJob,
@@ -294,6 +295,21 @@ export function CellSelectionCore({
     height: selectedHeight ?? null,
     width: selectedWidth,
   });
+  // [v1.1.264] 포인트 하나만 저장. 불러온(또는 모두저장으로 만든) 작업이 있어야 한다.
+  const handleSavePoint = useCallback(async (pointId: string) => {
+    const pt = teachingPoints.find(p => p.id === pointId);
+    if (!pt) return;
+    if (!pt.isSaved) {
+      showAlert('위치가 저장되지 않은 포인트입니다.', { type: 'warning' });
+      return;
+    }
+    if (!currentJobId) {
+      showAlert('저장할 작업이 없습니다. 모두저장으로 작업을 먼저 만들어 주세요.', { type: 'warning' });
+      return;
+    }
+    const ok = await savePoint(currentJobId, pt);
+    showAlert(ok ? `${pt.name} 저장 완료` : `${pt.name} 저장 실패`, { type: ok ? 'success' : 'error' });
+  }, [teachingPoints, currentJobId, savePoint, showAlert]);
   const clearPathHistory = useCallback(() => {
     wsClearPathHistory();
     clearTrackingPath();
@@ -702,6 +718,7 @@ export function CellSelectionCore({
                       setIsJobListModalOpen(true);
                     }}
                     onSaveJob={handleSaveJob}
+                    onSavePoint={handleSavePoint}
                     onUpdatePointSpeed={updatePointSpeed}
                     onUpdatePointWeldParams={updatePointWeldParams}
                     onUpdatePointGap={updatePointGap}

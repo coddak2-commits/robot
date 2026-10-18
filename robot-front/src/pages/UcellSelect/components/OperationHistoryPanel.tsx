@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
-import { AlertTriangle, Edit3, Trash2, Check, X, Clock, FolderOpen, ChevronLeft, ChevronRight, Target, Shield, Settings, Wrench, History, RefreshCw, Save, Home, Circle, GripVertical, Play, Square, Pause, RotateCcw, Wifi, WifiOff, Zap, MapPin, Navigation, Crosshair } from 'lucide-react';
+import { AlertTriangle, Edit3, Trash2, Check, X, Clock, FolderOpen, ChevronLeft, ChevronRight, Target, Shield, Settings, Wrench, History, RefreshCw, Save, Home, Circle, GripVertical, Play, Square, Pause, RotateCcw, Wifi, WifiOff, Zap, MapPin, Navigation, Crosshair, Download } from 'lucide-react';
 import { WeldingLogData, getWeldingLogs, deleteWeldingLogs, updateWeldingLog, RealtimeRobotStatus, getRealtimeRobotStatus, getWeldingPartOrder } from '../../../lib';
 import Modal from 'react-modal';
 import { useAlert } from '../../../contexts';
 import { useGapAuth } from '../../../contexts/gapAuth';
-import { TeachingPoint, WeaveParams, WEAVING_TYPE_OPTIONS, UCellData, HEIGHT_OPTIONS } from '..';
+import { TeachingPoint, WeaveParams, WEAVING_TYPE_OPTIONS, UCellData, HEIGHT_OPTIONS, getPartConditionPointIds, getBlockName } from '..';
 import { Button } from '../../../components/common';
 import { RobotMoveData } from '../../../types/RobotData';
 import { useSortable, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -28,6 +28,76 @@ interface OperationHistoryPanelProps {
   onClose?: () => void;
 }
 const ITEMS_PER_PAGE = 10;
+// [v1.1.264] 작업내역 CSV 내보내기. 회차(로그) x 포인트 한 줄.
+const EXPORT_PAGE_SIZE = 100;
+const OPERATION_LABEL: Record<string, string> = {
+  welding: '용접',
+  dryrun: '드라이런',
+  simulation: '시뮬레이션',
+  touch_sensing: '터치센싱',
+};
+const RESULT_LABEL: Record<string, string> = {
+  success: '성공',
+  failed: '실패',
+  stopped: '중지',
+  pending: '진행중',
+};
+const CSV_HEADER = [
+  '로그ID', '시작', '종료', '작업명', '작업유형', '결과',
+  '파트', '포인트', '조건적용', '갭(mm)', '속도(cm/min)', '전류(A)', '전압(V)',
+  '위빙', '주파수(Hz)', '진폭(mm)', '좌진폭(mm)', '우진폭(mm)', '좌정지(ms)', '우정지(ms)',
+  '터치dx(mm)', '터치dy(mm)', '터치dz(mm)',
+];
+const csvCell = (v: unknown): string => {
+  if (v === null || v === undefined) return '';
+  const str = String(v);
+  return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+};
+const num = (v: unknown, digits?: number): string => {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return '';
+  return digits === undefined ? String(v) : v.toFixed(digits);
+};
+function buildCsv(logs: WeldingLogData[]): string {
+  const conditionIds = getPartConditionPointIds();
+  const rows: string[][] = [CSV_HEADER];
+  logs.forEach(log => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const points = (log.points_snapshot ?? []) as Record<string, any>[];
+    points.filter(pt => pt?.id && pt.id !== 'home').forEach(pt => {
+      const wp = (pt.weaveParams ?? {}) as Record<string, unknown>;
+      const touch = pt.touchOffset as { dx?: number; dy?: number; dz?: number } | null | undefined;
+      const weaving = WEAVING_TYPE_OPTIONS.find(o => o.value === pt.weavingType)?.label ?? (pt.weavingType ?? '');
+      const hasWeave = !!pt.weavingType && pt.weavingType !== 'none';
+      rows.push([
+        String(log.id ?? ''),
+        log.started_at ?? '',
+        log.completed_at ?? '',
+        log.job_name ?? '',
+        OPERATION_LABEL[log.operation_type] ?? log.operation_type,
+        RESULT_LABEL[log.result_status] ?? log.result_status,
+        getBlockName(pt.id),
+        String(pt.id).toUpperCase(),
+        conditionIds.has(pt.id) ? 'O' : '',
+        num(pt.gap),
+        num(pt.moveSpeed),
+        num(pt.weldCurrent),
+        num(pt.weldVoltage),
+        weaving,
+        hasWeave ? num(wp.weaveFrequency) : '',
+        hasWeave ? num(wp.weaveRange) : '',
+        hasWeave ? num(wp.weaveLeftRange) : '',
+        hasWeave ? num(wp.weaveRightRange) : '',
+        hasWeave ? num(wp.weaveLeftStayTime) : '',
+        hasWeave ? num(wp.weaveRightStayTime) : '',
+        touch ? num(touch.dx, 2) : '',
+        touch ? num(touch.dy, 2) : '',
+        touch ? num(touch.dz, 2) : '',
+      ]);
+    });
+  });
+  return '\uFEFF' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+}
+const pad2 = (n: number) => String(n).padStart(2, '0');
 export function OperationHistoryPanel({ onClose }: OperationHistoryPanelProps) {
   const { show: showAlert } = useAlert();
   const [logs, setLogs] = useState<WeldingLogData[]>([]);
@@ -86,6 +156,39 @@ export function OperationHistoryPanel({ onClose }: OperationHistoryPanelProps) {
       showAlert('작업 내역 삭제에 실패했습니다.', { type: 'error' });
     }
   };
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const all: WeldingLogData[] = [];
+      for (let offset = 0; ; offset += EXPORT_PAGE_SIZE) {
+        const result = await getWeldingLogs(EXPORT_PAGE_SIZE, offset);
+        all.push(...result.logs);
+        if (result.logs.length < EXPORT_PAGE_SIZE || all.length >= result.total) break;
+      }
+      if (all.length === 0) {
+        showAlert('내보낼 작업 내역이 없습니다.', { type: 'warning' });
+        return;
+      }
+      const blob = new Blob([buildCsv(all)], { type: 'text/csv;charset=utf-8' });
+      const d = new Date();
+      const name = `작업내역_${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}.csv`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showAlert(`${all.length}건 내보내기 완료 (${name})`, { type: 'success' });
+    } catch (error) {
+      console.error('작업 내역 내보내기 실패:', error);
+      showAlert('작업 내역 내보내기에 실패했습니다.', { type: 'error' });
+    } finally {
+      setExporting(false);
+    }
+  };
   const handleNameChange = (id: number, value: string) => {
     const original = logs.find(l => l.id === id);
     const originalName = original?.job_name || '';
@@ -135,6 +238,15 @@ export function OperationHistoryPanel({ onClose }: OperationHistoryPanelProps) {
               저장 ({editedNames.size})
             </button>
           )}
+          <button
+            onClick={handleExport}
+            disabled={exporting || total === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 border border-emerald-500/30 text-xs font-medium disabled:opacity-30 disabled:cursor-not-allowed"
+            title="전체 작업 내역을 포인트별로 CSV(엑셀) 파일로 저장"
+          >
+            <Download className={`w-3.5 h-3.5 ${exporting ? 'animate-pulse' : ''}`} />
+            엑셀 내보내기
+          </button>
           <button
             onClick={handleDelete}
             disabled={selectedIds.size === 0}

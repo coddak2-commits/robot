@@ -1,0 +1,10 @@
+v1.1.264: 작업내역 엑셀(CSV) 내보내기, 포인트별 저장 버튼
+
+- OperationHistoryPanel: 작업내역 전체를 회차 x 포인트 CSV 로 내보내기
+  (갭, 속도, 전류, 전압, 위빙, 터치 보정, 조건적용 표시)
+- PointItem: 포인트 하나만 저장하는 "저장" 버튼
+- useJobManagement: savePoint 추가, toTeachingPoint 분리
+- 버전 1.1.264
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011s5GmACAFtBqwjLSFKNRE6

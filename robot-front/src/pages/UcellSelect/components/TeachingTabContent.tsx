@@ -55,6 +55,7 @@ export interface TeachingTabContentProps {
   onStopWelding: () => void;
   onOpenJobList: () => void;
   onSaveJob: () => void;
+  onSavePoint: (pointId: string) => void;
   onUpdatePointSpeed: (pointId: string, speed: number, velMode?: 0 | 1) => void;
   onUpdatePointWeldParams: (pointId: string, voltage: number | null, current: number | null) => void;
   onUpdatePointGap: (pointId: string, gap: number) => void;
@@ -97,6 +98,7 @@ export function TeachingTabContent({
   onStopWelding,
   onOpenJobList,
   onSaveJob,
+  onSavePoint,
   onUpdatePointSpeed,
   onUpdatePointWeldParams,
   onUpdatePointGap,
@@ -311,6 +313,7 @@ export function TeachingTabContent({
             onApplyParamsToBlock={() => onApplyParamsToBlock(point.id)}
             onApplyParamsToAll={() => onApplyParamsToAll(point.id)}
             onSaveJob={onSaveJob}
+            onSavePoint={() => onSavePoint(point.id)}
           />
         ))}
         {}
@@ -341,6 +344,7 @@ export function TeachingTabContent({
                 onApplyParamsToBlock={() => onApplyParamsToBlock(point.id)}
                 onApplyParamsToAll={() => onApplyParamsToAll(point.id)}
                 onSaveJob={onSaveJob}
+                onSavePoint={() => onSavePoint(point.id)}
               />
             ))}
           </SortableContext>
