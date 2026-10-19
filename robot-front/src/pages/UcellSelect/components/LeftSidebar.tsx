@@ -30,9 +30,10 @@ export interface LeftSidebarProps {
   onAdminClick: () => void;
 }
 export function LeftSidebar({ selectedType, onTypeSelect, onNavigate, onAdminClick }: LeftSidebarProps) {
+  // [v1.1.268] compact 기준 1279x719 -> 1280x800 (정품 펜던트 FR-HMI 1280x800 화면에 맞춤)
   return (
     <>
-    <style>{`.sb-short{display:none}@media (max-width: 1279px), (max-height: 719px) { .sb-root.sb-root{width:72px} .sb-root button{min-height:40px;min-width:0;padding:6px 4px} .sb-full{display:none} .sb-short{display:inline} }`}</style>
+    <style>{`.sb-short{display:none}@media (max-width: 1280px), (max-height: 800px) { .sb-root.sb-root{width:72px} .sb-root button{min-height:40px;min-width:0;padding:6px 4px} .sb-full{display:none} .sb-short{display:inline} }`}</style>
     <div className="sb-root w-28 md:w-32 bg-gray-800/60 backdrop-blur-sm border-r border-gray-700/50 flex flex-col p-2 gap-2 flex-shrink-0 overflow-y-auto">
       <button
         onClick={() => onTypeSelect('normal')}

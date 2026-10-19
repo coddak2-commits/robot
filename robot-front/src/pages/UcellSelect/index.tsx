@@ -487,12 +487,13 @@ export function CellSelectionCore({
     ro.observe(el);
     return () => ro.disconnect();
   }, [activeTab, selectedCell]);
-  const canvasFitW = Math.max(200, Math.min(1100, canvasBox.w, (canvasBox.h - (window.innerWidth <= 1279 || window.innerHeight <= 719 ? 38 : 48)) * (1100 / 800)));
+  // [v1.1.268] compact 기준 1279x719 -> 1280x800 (정품 펜던트 FR-HMI 1280x800 화면에 맞춤)
+  const canvasFitW = Math.max(200, Math.min(1100, canvasBox.w, (canvasBox.h - (window.innerWidth <= 1280 || window.innerHeight <= 800 ? 38 : 48)) * (1100 / 800)));
   const canvasFitH = canvasFitW * (800 / 1100);
   const displayCells = selectedType === 'collar_plate' ? COLLAR_PLATE_CELLS : NORMAL_CELLS;
   return (
     <div ref={rootRef} style={rootH ? { height: rootH } : undefined} className="flex-1 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden flex flex-col">
-      <style>{`@media (max-width: 1279px), (max-height: 719px) { .tb-compact button, .tb-compact input { min-height: 40px; } .tb-compact button, .tb-compact label { flex-shrink: 0; } .cv-box.cv-box { padding: 8px; } .cv-cap.cv-cap { margin-top: 4px; } .cv-cap select { min-height: 28px; } .tb-job { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px !important; padding-left: 6px !important; padding-right: 6px !important; } .tb-compact .tb-tab { padding-left: 12px; padding-right: 12px; } .wp-circle { r: 10px; } .wp-num { font-size: 12px; } }`}</style>
+      <style>{`@media (max-width: 1280px), (max-height: 800px) { .tb-compact button, .tb-compact input { min-height: 40px; } .tb-compact button, .tb-compact label { flex-shrink: 0; } .cv-box.cv-box { padding: 8px; } .cv-cap.cv-cap { margin-top: 4px; } .cv-cap select { min-height: 28px; } .tb-job { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px !important; padding-left: 6px !important; padding-right: 6px !important; } .tb-compact .tb-tab { padding-left: 12px; padding-right: 12px; } .wp-circle { r: 10px; } .wp-num { font-size: 12px; } }`}</style>
       {hasRobotError && (
         <button
           onClick={async () => {

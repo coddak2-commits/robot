@@ -1,0 +1,7 @@
+v1.1.268: compact 배치 기준 1280x800 (정품 펜던트 화면)
+
+- Main / LeftSidebar / UcellSelect index: media query 1279x719 -> 1280x800
+- 버전 1.1.268
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011s5GmACAFtBqwjLSFKNRE6
