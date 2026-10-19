@@ -71,10 +71,11 @@ const Main: React.FC = () => {
       color: 'from-gray-500 to-slate-500',
     },
   ];
+  // [v1.1.269] compact 메뉴 카드 높이를 화면 높이에 맞춰 두 줄로 채운다(170px 고정 -> (화면높이-200)/2).
   // [v1.1.268] compact 기준 1279x719 -> 1280x800 (정품 펜던트 FR-HMI 1280x800 화면에 맞춤)
   return (
     <div className="mn-root min-h-screen bg-black p-6">
-      <style>{`@media (max-width: 1280px), (max-height: 800px) { .mn-root.mn-root { padding: 12px 12px 56px; } .mn-head.mn-head { margin-bottom: 12px; } .mn-head h1 { font-size: 28px; margin-bottom: 0; } .mn-grid.mn-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; } .mn-card.mn-card { min-height: 170px; padding: 12px; gap: 8px; } .mn-icon.mn-icon { width: 56px; height: 56px; } .mn-foot.mn-foot { padding: 8px; } }`}</style>
+      <style>{`@media (max-width: 1280px), (max-height: 800px) { .mn-root.mn-root { padding: 12px 12px 56px; } .mn-head.mn-head { margin-bottom: 12px; } .mn-head h1 { font-size: 28px; margin-bottom: 0; } .mn-grid.mn-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; } .mn-card.mn-card { min-height: calc((100vh - 200px) / 2); padding: 16px; gap: 14px; } .mn-icon.mn-icon { width: 80px; height: 80px; } .mn-foot.mn-foot { padding: 8px; } }`}</style>
       <div className="mn-head text-center mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">{t('mainTitle')}</h1>
         <p className="text-gray-400">{t('mainSubtitle')}</p>

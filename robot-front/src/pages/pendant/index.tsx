@@ -682,7 +682,9 @@ const PendantInner: React.FC = () => {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0d1220', color: '#fff', position: 'relative', overflow: 'hidden' }}>
+    <div className="pd-root" style={{ minHeight: '100vh', background: '#0d1220', color: '#fff', position: 'relative', overflow: 'hidden' }}>
+      {/* [v1.1.269] 장갑 끼고 누를 수 있게 포인트 번호 원을 키운다(기본 r12/14px -> r18/18px). */}
+      <style>{'.pd-root .wp-circle { r: 18px; } .pd-root .wp-num { font-size: 18px; }'}</style>
       <div style={{ position: 'relative', width: '100%', height: '100vh', boxSizing: 'border-box', paddingRight: DOCK_RESERVE, paddingLeft: hubReserve, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ position: 'relative', width: canvasW, height: canvasH }}>
         <UnifiedWorkspaceCanvas
@@ -711,19 +713,20 @@ const PendantInner: React.FC = () => {
           const inc = () => updatePointGap(seg.startId, Math.min(6, g + 1));
           return (
             <div key={seg.key} style={{
-              position: 'absolute', left, top, transform: 'translate(-50%, -50%) scale(0.7)', transformOrigin: 'center',
-              display: 'flex', alignItems: 'center', gap: 2,
-              background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', borderRadius: 4, padding: '1px 2px',
+              position: 'absolute', left, top, transform: 'translate(-50%, -50%)', transformOrigin: 'center',
+              // [v1.1.269] 갭 박스 확대(장갑 터치): 0.7배 축소 제거, -/+ 10px -> 32px
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', borderRadius: 8, padding: '3px 4px',
               zIndex: 5,
             }}>
               <button onClick={dec} disabled={g <= 0}
-                style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, overflow: 'visible', cursor: g <= 0 ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 'bold', opacity: g <= 0 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
+                style={{ width: 32, height: 32, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 6, overflow: 'visible', cursor: g <= 0 ? 'not-allowed' : 'pointer', fontSize: 20, fontWeight: 'bold', opacity: g <= 0 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
               >−</button>
               <button onClick={() => { setGapEditSeg({ startId: seg.startId, label: seg.label }); setGapEditValue(String(g)); }}
-                style={{ minWidth: 26, textAlign: 'center', fontSize: 18, lineHeight: 1, fontWeight: 'bold', background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer', padding: 0 }}
+                style={{ minWidth: 36, textAlign: 'center', fontSize: 24, lineHeight: 1, fontWeight: 'bold', background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer', padding: 0 }}
               >{g}</button>
               <button onClick={inc} disabled={g >= 6}
-                style={{ width: 10, height: 10, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 2, overflow: 'visible', cursor: g >= 6 ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 'bold', opacity: g >= 6 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
+                style={{ width: 32, height: 32, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 6, overflow: 'visible', cursor: g >= 6 ? 'not-allowed' : 'pointer', fontSize: 20, fontWeight: 'bold', opacity: g >= 6 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
               >+</button>
             </div>
           );
@@ -1025,30 +1028,31 @@ const PendantInner: React.FC = () => {
         position: 'fixed', right: 8, top: '46%', transform: 'translateY(-50%)', zIndex: 20, maxHeight: '72vh', overflowY: 'auto',
         display: 'flex', flexDirection: 'column', gap: 8,
         background: 'rgba(15, 23, 42, 0.9)', backdropFilter: 'blur(6px)',
-        border: '1px solid #334155', borderRadius: 12, padding: 10, minWidth: 140,
+        border: '1px solid #334155', borderRadius: 12, padding: 10, minWidth: 180,
+        // [v1.1.269] 실행 도크 버튼 확대(장갑 터치)
       }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#cbd5e1', cursor: 'pointer', padding: '4px 6px', background: dryRun ? '#78350f' : '#1e293b', borderRadius: 6 }}>
-          <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer' }} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, color: '#cbd5e1', cursor: 'pointer', padding: '10px 8px', background: dryRun ? '#78350f' : '#1e293b', borderRadius: 8 }}>
+          <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} style={{ width: 22, height: 22, cursor: 'pointer' }} />
           Dry Run (아크 OFF)
         </label>
         {/* [v1.1.220] 펜던트에도 터치센싱 버튼 추가. 훅에는 이미 있었는데 화면에만 없었다. */}
         <button onClick={handleStartTouchSensing} disabled={isWelding || isTouchSensing || isRobotMoving}
           style={{
-            padding: '14px', fontSize: 15, fontWeight: 'bold',
+            padding: '20px 14px', fontSize: 18, fontWeight: 'bold',
             background: isWelding || isTouchSensing || isRobotMoving ? '#334155' : '#7c3aed', color: '#fff', border: 'none',
             borderRadius: 8, cursor: isWelding || isTouchSensing || isRobotMoving ? 'not-allowed' : 'pointer',
           }}
         >{isTouchSensing ? '터치센싱 중...' : '터치센싱'}</button>
         <button onClick={startWithGapLookup} disabled={isWelding || isRobotMoving}
           style={{
-            padding: '14px', fontSize: 15, fontWeight: 'bold',
+            padding: '20px 14px', fontSize: 18, fontWeight: 'bold',
             background: isWelding || isRobotMoving ? '#334155' : (dryRun ? '#2b7ae6' : '#0a5'), color: '#fff', border: 'none',
             borderRadius: 8, cursor: isWelding || isRobotMoving ? 'not-allowed' : 'pointer',
           }}
         >{dryRun ? '경로 확인 시작' : '용접 시작'}</button>
         <button onClick={handleContinueWelding} disabled={isWelding || isRobotMoving}
           style={{
-            padding: '14px', fontSize: 15, fontWeight: 'bold',
+            padding: '20px 14px', fontSize: 18, fontWeight: 'bold',
             background: isWelding || isRobotMoving ? '#334155' : '#2b7ae6', color: '#fff', border: 'none',
             borderRadius: 8, cursor: isWelding || isRobotMoving ? 'not-allowed' : 'pointer',
           }}
@@ -1065,7 +1069,7 @@ const PendantInner: React.FC = () => {
       <button onClick={handleGlobalEmergencyStop}
         style={{
           position: 'fixed', right: 8, bottom: 8, zIndex: 40,
-          minWidth: 160, padding: '22px 18px', fontSize: 18, fontWeight: 'bold',
+          minWidth: 200, padding: '28px 22px', fontSize: 22, fontWeight: 'bold',
           background: '#dc2626', color: '#fff',
           border: '2px solid #fca5a5', borderRadius: 12,
           boxShadow: '0 4px 14px rgba(0,0,0,0.5)', cursor: 'pointer',
