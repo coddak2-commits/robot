@@ -5276,7 +5276,20 @@ void registerTeachingRoutes(
                 json body = json::parse(req.body);
                 TeachingJob job = DatabaseService::jsonToJob(body);
                 job.id = jobId;
-                if (dbService->updateJob(job)) {
+                bool ok = dbService->updateJob(job);
+                // [v1.1.265] 본문에 points 가 있으면 포인트도 저장한다. 예전에는 작업 정보만
+                // 바꾸고 points 는 버려서 자동 저장·덮어쓰기·포인트 저장이 DB 에 남지 않았다.
+                if (ok && body.contains("points") && body["points"].is_array()) {
+                    std::vector<TeachingPoint> points;
+                    for (const auto& pointJson : body["points"]) {
+                        TeachingPoint point = DatabaseService::jsonToPoint(pointJson);
+                        point.job_id = jobId;
+                        points.push_back(point);
+                    }
+                    ok = dbService->savePoints(jobId, points);
+                    job.total_points = static_cast<int>(points.size());
+                }
+                if (ok) {
                     response["status_code"] = 200;
                     response["data"] = DatabaseService::jobToJson(job);
                 } else {
@@ -5510,8 +5523,11 @@ void registerTeachingLogRoutes(
             if (req.has_param("job_id")) {
                 try { jobId = std::stoi(req.get_param_value("job_id")); } catch (...) {}
             }
-            auto logs = dbService->getWeldingLogs(limit, offset, jobId);
-            int total = dbService->getWeldingLogsCount(jobId);
+            // [v1.1.265] 기간 (YYYY-MM-DD, 양 끝 포함)
+            std::string fromDate = req.has_param("from") ? req.get_param_value("from") : "";
+            std::string toDate = req.has_param("to") ? req.get_param_value("to") : "";
+            auto logs = dbService->getWeldingLogs(limit, offset, jobId, fromDate, toDate);
+            int total = dbService->getWeldingLogsCount(jobId, fromDate, toDate);
             json logsArray = json::array();
             for (const auto& log : logs) {
                 logsArray.push_back(DatabaseService::weldingLogToJson(log));
@@ -7164,7 +7180,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.264"
+#define APP_VERSION_STRING "1.1.265"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -8488,7 +8504,24 @@ bool DatabaseService::connect(const std::string& host,
     }
     m_connected = true;
     std::cout << "[DatabaseService] Connected to MariaDB: " << m_host << ":" << m_port << "/" << m_database << std::endl;
+    ensurePointGapColumn();
     return true;
+}
+// [v1.1.265] teaching_points.gap 칼럼을 없으면 만든다(019). 만들지 못하면(권한 등)
+// gap 없이 예전 쿼리로 돈다. 작업 불러오기가 깨지지 않게 하려는 것.
+void DatabaseService::ensurePointGapColumn() {
+    executeQuery("ALTER TABLE teaching_points ADD COLUMN IF NOT EXISTS gap DOUBLE DEFAULT 0");
+    m_hasPointGap = false;
+    MYSQL_RES* result = executeSelect("SHOW COLUMNS FROM teaching_points LIKE 'gap'");
+    if (result) {
+        m_hasPointGap = mysql_fetch_row(result) != nullptr;
+        mysql_free_result(result);
+    }
+    if (m_hasPointGap) {
+        FLOG_INFO("DatabaseService", "teaching_points.gap 사용");
+    } else {
+        FLOG_ERROR("DatabaseService", "teaching_points.gap 칼럼 없음 - gap 저장 안 됨: " + m_lastError);
+    }
 }
 void DatabaseService::disconnect() {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -8758,7 +8791,7 @@ std::vector<TeachingPoint> DatabaseService::getPoints(int jobId) {
           << "tcp_x, tcp_y, tcp_z, tcp_rx, tcp_ry, tcp_rz, "
           << "joints, tool_num, user_num, move_speed, vel_mode, "
           << "weld_voltage, weld_current, weaving_type, weave_params, "
-          << "is_saved, is_completed, completed_at "
+          << "is_saved, is_completed, completed_at" << (m_hasPointGap ? ", gap " : " ")
           << "FROM teaching_points WHERE job_id = " << jobId << " ORDER BY `order`";
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return points;
@@ -8807,6 +8840,7 @@ std::vector<TeachingPoint> DatabaseService::getPoints(int jobId) {
         point.is_saved = row[col] ? (std::stoi(row[col]) != 0) : false; col++;
         point.is_completed = row[col] ? (std::stoi(row[col]) != 0) : false; col++;
         point.completed_at = row[col] ? row[col] : ""; col++;
+        if (m_hasPointGap) { point.gap = row[col] ? std::stod(row[col]) : 0; col++; }
         points.push_back(point);
     }
     return points;
@@ -8819,7 +8853,7 @@ TeachingPoint DatabaseService::getPoint(int id) {
           << "tcp_x, tcp_y, tcp_z, tcp_rx, tcp_ry, tcp_rz, "
           << "joints, tool_num, user_num, move_speed, vel_mode, "
           << "weld_voltage, weld_current, weaving_type, weave_params, "
-          << "is_saved, is_completed, completed_at "
+          << "is_saved, is_completed, completed_at" << (m_hasPointGap ? ", gap " : " ")
           << "FROM teaching_points WHERE id = " << id;
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return point;
@@ -8867,6 +8901,7 @@ TeachingPoint DatabaseService::getPoint(int id) {
         point.is_saved = row[col] ? (std::stoi(row[col]) != 0) : false; col++;
         point.is_completed = row[col] ? (std::stoi(row[col]) != 0) : false; col++;
         point.completed_at = row[col] ? row[col] : ""; col++;
+        if (m_hasPointGap) { point.gap = row[col] ? std::stod(row[col]) : 0; col++; }
     }
     return point;
 }
@@ -8880,7 +8915,8 @@ int DatabaseService::createPoint(const TeachingPoint& point) {
     query << "INSERT INTO teaching_points (job_id, point_id, name, `order`, "
           << "tcp_x, tcp_y, tcp_z, tcp_rx, tcp_ry, tcp_rz, joints, "
           << "tool_num, user_num, move_speed, vel_mode, "
-          << "weld_voltage, weld_current, weaving_type, weave_params, is_saved) VALUES ("
+          << "weld_voltage, weld_current, weaving_type, weave_params, is_saved"
+          << (m_hasPointGap ? ", gap" : "") << ") VALUES ("
           << point.job_id << ", "
           << "'" << escapeString(point.point_id) << "', "
           << "'" << escapeString(point.name) << "', "
@@ -8893,7 +8929,9 @@ int DatabaseService::createPoint(const TeachingPoint& point) {
           << point.weld_voltage << ", " << point.weld_current << ", "
           << "'" << escapeString(point.weaving_type) << "', "
           << "'" << escapeString(point.weave_params.dump()) << "', "
-          << (point.is_saved ? 1 : 0) << ")";
+          << (point.is_saved ? 1 : 0);
+    if (m_hasPointGap) query << ", " << point.gap;
+    query << ")";
     if (!executeQuery(query.str())) {
         return -1;
     }
@@ -8927,6 +8965,7 @@ bool DatabaseService::updatePoint(const TeachingPoint& point) {
           << "weave_params = '" << escapeString(point.weave_params.dump()) << "', "
           << "is_saved = " << (point.is_saved ? 1 : 0) << ", "
           << "is_completed = " << (point.is_completed ? 1 : 0);
+    if (m_hasPointGap) query << ", gap = " << point.gap;
     if (!point.completed_at.empty()) {
         query << ", completed_at = '" << escapeString(point.completed_at) << "'";
     }
@@ -8959,7 +8998,8 @@ bool DatabaseService::savePoints(int jobId, const std::vector<TeachingPoint>& po
         query << "INSERT INTO teaching_points (job_id, point_id, name, `order`, "
               << "tcp_x, tcp_y, tcp_z, tcp_rx, tcp_ry, tcp_rz, joints, "
               << "tool_num, user_num, move_speed, vel_mode, "
-              << "weld_voltage, weld_current, weaving_type, weave_params, is_saved) VALUES ("
+              << "weld_voltage, weld_current, weaving_type, weave_params, is_saved"
+              << (m_hasPointGap ? ", gap" : "") << ") VALUES ("
               << jobId << ", "
               << "'" << escapeString(point.point_id) << "', "
               << "'" << escapeString(point.name) << "', "
@@ -8972,7 +9012,9 @@ bool DatabaseService::savePoints(int jobId, const std::vector<TeachingPoint>& po
               << point.weld_voltage << ", " << point.weld_current << ", "
               << "'" << escapeString(point.weaving_type) << "', "
               << "'" << escapeString(point.weave_params.dump()) << "', "
-              << (point.is_saved ? 1 : 0) << ")";
+              << (point.is_saved ? 1 : 0);
+        if (m_hasPointGap) query << ", " << point.gap;
+        query << ")";
         if (!executeQuery(query.str())) {
             executeQuery("ROLLBACK");
             return false;
@@ -9016,6 +9058,7 @@ json DatabaseService::pointToJson(const TeachingPoint& point) {
         {"weld_current", point.weld_current},
         {"weaving_type", point.weaving_type},
         {"weave_params", point.weave_params},
+        {"gap", point.gap},
         {"is_saved", point.is_saved},
         {"is_completed", point.is_completed},
         {"completed_at", point.completed_at}
@@ -9057,6 +9100,7 @@ TeachingPoint DatabaseService::jsonToPoint(const json& j) {
     if (j.contains("weld_current")) point.weld_current = j["weld_current"].is_null() ? 0 : j["weld_current"].get<double>();
     if (j.contains("weaving_type")) point.weaving_type = j["weaving_type"].is_null() ? "" : j["weaving_type"].get<std::string>();
     if (j.contains("weave_params")) point.weave_params = j["weave_params"];
+    if (j.contains("gap") && j["gap"].is_number()) point.gap = j["gap"].get<double>();
     if (j.contains("is_saved")) point.is_saved = j["is_saved"].get<bool>();
     if (j.contains("is_completed")) point.is_completed = j["is_completed"].get<bool>();
     return point;
@@ -9533,7 +9577,28 @@ bool DatabaseService::updateWeldingPartOrder(const json& orderArray) {
 #include "robot_core_all.h"
 #include <iostream>
 #include <sstream>
-std::vector<WeldingLog> DatabaseService::getWeldingLogs(int limit, int offset, int jobId) {
+// [v1.1.265] 작업내역 기간 조건. YYYY-MM-DD 형식만 받는다(그 외는 무시).
+static bool isYmdDate(const std::string& s) {
+    if (s.size() != 10 || s[4] != '-' || s[7] != '-') return false;
+    for (size_t i = 0; i < s.size(); i++) {
+        if (i == 4 || i == 7) continue;
+        if (s[i] < '0' || s[i] > '9') return false;
+    }
+    return true;
+}
+static std::string weldingLogWhere(int jobId, const std::string& fromDate, const std::string& toDate) {
+    std::vector<std::string> conds;
+    if (jobId >= 0) conds.push_back("job_id = " + std::to_string(jobId));
+    if (isYmdDate(fromDate)) conds.push_back("started_at >= '" + fromDate + " 00:00:00'");
+    if (isYmdDate(toDate)) conds.push_back("started_at < DATE_ADD('" + toDate + "', INTERVAL 1 DAY)");
+    std::string w;
+    for (size_t i = 0; i < conds.size(); i++) {
+        w += (i == 0 ? " WHERE " : " AND ") + conds[i];
+    }
+    return w;
+}
+std::vector<WeldingLog> DatabaseService::getWeldingLogs(int limit, int offset, int jobId,
+                                                        const std::string& fromDate, const std::string& toDate) {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<WeldingLog> logs;
     std::ostringstream query;
@@ -9542,10 +9607,7 @@ std::vector<WeldingLog> DatabaseService::getWeldingLogs(int limit, int offset, i
           << "expected_duration_sec, actual_duration_sec, segments, "
           << "total_points, completed_points, weld_voltage, weld_current, "
           << "weaving_type, weave_params, points_snapshot, result_status, error_message, created_at "
-          << "FROM welding_logs";
-    if (jobId >= 0) {
-        query << " WHERE job_id = " << jobId;
-    }
+          << "FROM welding_logs" << weldingLogWhere(jobId, fromDate, toDate);
     query << " ORDER BY started_at DESC LIMIT " << limit << " OFFSET " << offset;
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return logs;
@@ -9602,13 +9664,10 @@ std::vector<WeldingLog> DatabaseService::getWeldingLogs(int limit, int offset, i
     }
     return logs;
 }
-int DatabaseService::getWeldingLogsCount(int jobId) {
+int DatabaseService::getWeldingLogsCount(int jobId, const std::string& fromDate, const std::string& toDate) {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::ostringstream query;
-    query << "SELECT COUNT(*) FROM welding_logs";
-    if (jobId >= 0) {
-        query << " WHERE job_id = " << jobId;
-    }
+    query << "SELECT COUNT(*) FROM welding_logs" << weldingLogWhere(jobId, fromDate, toDate);
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return 0;
     MySqlResultGuard resultGuard(result);

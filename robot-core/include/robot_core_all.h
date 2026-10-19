@@ -374,6 +374,7 @@ struct TeachingPoint {
     double weld_current = 0;
     std::string weaving_type;
     json weave_params;
+    double gap = 0;  // [v1.1.265] 갭(mm). teaching_points.gap
     bool is_saved = false;
     bool is_completed = false;
     std::string completed_at;
@@ -539,8 +540,9 @@ public:
     static WeldingConfig jsonToWeldingConfig(const json& j);
     json getWeldingPartOrder();
     bool updateWeldingPartOrder(const json& orderArray);
-    std::vector<WeldingLog> getWeldingLogs(int limit = 100, int offset = 0, int jobId = -1);
-    int getWeldingLogsCount(int jobId = -1);
+    std::vector<WeldingLog> getWeldingLogs(int limit = 100, int offset = 0, int jobId = -1,
+                                           const std::string& fromDate = "", const std::string& toDate = "");
+    int getWeldingLogsCount(int jobId = -1, const std::string& fromDate = "", const std::string& toDate = "");
     WeldingLog getWeldingLog(int id);
     int createWeldingLog(const WeldingLog& log);
     bool updateWeldingLog(const WeldingLog& log);
@@ -572,6 +574,8 @@ public:
 private:
     MYSQL* m_conn = nullptr;
     bool m_connected = false;
+    bool m_hasPointGap = false;  // [v1.1.265] teaching_points.gap 칼럼이 있는가
+    void ensurePointGapColumn();
     std::mutex m_mutex;
     std::string m_lastError;
     std::string m_host;

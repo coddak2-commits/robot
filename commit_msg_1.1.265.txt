@@ -1,0 +1,12 @@
+v1.1.265: 포인트 gap DB 저장, PUT 작업 저장 시 포인트 반영, 작업내역 기간 내보내기
+
+- robot-core: teaching_points.gap 칼럼 자동 생성(019), 포인트 조회/저장에 gap 포함
+- robot-core: PUT /teaching/jobs/{id} 본문 points 를 savePoints 로 저장
+  (자동 저장·덮어쓰기·포인트 저장이 DB 에 남지 않던 것)
+- robot-core: GET /welding-logs from/to 기간 조건
+- OperationHistoryPanel: 내보내기 기간 선택
+- database/migrations/019_add_teaching_point_gap(.sql, _rollback.sql)
+- 버전 1.1.265
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011s5GmACAFtBqwjLSFKNRE6

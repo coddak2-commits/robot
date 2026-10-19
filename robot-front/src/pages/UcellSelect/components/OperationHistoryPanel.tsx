@@ -98,6 +98,7 @@ function buildCsv(logs: WeldingLogData[]): string {
   return '\uFEFF' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
 }
 const pad2 = (n: number) => String(n).padStart(2, '0');
+const ymd = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 export function OperationHistoryPanel({ onClose }: OperationHistoryPanelProps) {
   const { show: showAlert } = useAlert();
   const [logs, setLogs] = useState<WeldingLogData[]>([]);
@@ -157,22 +158,28 @@ export function OperationHistoryPanel({ onClose }: OperationHistoryPanelProps) {
     }
   };
   const [exporting, setExporting] = useState(false);
+  // [v1.1.265] 내보내기 기간 (양 끝 포함)
+  const [exportFrom, setExportFrom] = useState(() => ymd(new Date()));
+  const [exportTo, setExportTo] = useState(() => ymd(new Date()));
   const handleExport = async () => {
+    if (!exportFrom || !exportTo || exportFrom > exportTo) {
+      showAlert('기간을 확인해 주세요. (시작일이 종료일보다 늦습니다)', { type: 'warning' });
+      return;
+    }
     setExporting(true);
     try {
       const all: WeldingLogData[] = [];
       for (let offset = 0; ; offset += EXPORT_PAGE_SIZE) {
-        const result = await getWeldingLogs(EXPORT_PAGE_SIZE, offset);
+        const result = await getWeldingLogs(EXPORT_PAGE_SIZE, offset, undefined, exportFrom, exportTo);
         all.push(...result.logs);
         if (result.logs.length < EXPORT_PAGE_SIZE || all.length >= result.total) break;
       }
       if (all.length === 0) {
-        showAlert('내보낼 작업 내역이 없습니다.', { type: 'warning' });
+        showAlert(`${exportFrom} ~ ${exportTo} 기간에 작업 내역이 없습니다.`, { type: 'warning' });
         return;
       }
       const blob = new Blob([buildCsv(all)], { type: 'text/csv;charset=utf-8' });
-      const d = new Date();
-      const name = `작업내역_${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}.csv`;
+      const name = `작업내역_${exportFrom.replace(/-/g, '')}-${exportTo.replace(/-/g, '')}.csv`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -238,11 +245,28 @@ export function OperationHistoryPanel({ onClose }: OperationHistoryPanelProps) {
               저장 ({editedNames.size})
             </button>
           )}
+          <input
+            type="date"
+            value={exportFrom}
+            max={exportTo || undefined}
+            onChange={e => setExportFrom(e.target.value)}
+            className="px-2 py-1 bg-gray-800 border border-gray-600 rounded-lg text-xs text-gray-200 [color-scheme:dark]"
+            title="내보내기 시작일"
+          />
+          <span className="text-xs text-gray-500">~</span>
+          <input
+            type="date"
+            value={exportTo}
+            min={exportFrom || undefined}
+            onChange={e => setExportTo(e.target.value)}
+            className="px-2 py-1 bg-gray-800 border border-gray-600 rounded-lg text-xs text-gray-200 [color-scheme:dark]"
+            title="내보내기 종료일"
+          />
           <button
             onClick={handleExport}
-            disabled={exporting || total === 0}
+            disabled={exporting}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 border border-emerald-500/30 text-xs font-medium disabled:opacity-30 disabled:cursor-not-allowed"
-            title="전체 작업 내역을 포인트별로 CSV(엑셀) 파일로 저장"
+            title="선택한 기간의 작업 내역을 포인트별로 CSV(엑셀) 파일로 저장"
           >
             <Download className={`w-3.5 h-3.5 ${exporting ? 'animate-pulse' : ''}`} />
             엑셀 내보내기

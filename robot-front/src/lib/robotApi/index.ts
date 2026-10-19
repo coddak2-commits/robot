@@ -1657,13 +1657,17 @@ export const updateWeldingPartOrder = async (order: WeldingPartOrderItem[]): Pro
 export const getWeldingLogs = async (
   limit: number = 100,
   offset: number = 0,
-  jobId?: number
+  jobId?: number,
+  fromDate?: string,  // [v1.1.265] YYYY-MM-DD (포함)
+  toDate?: string,    // [v1.1.265] YYYY-MM-DD (포함)
 ): Promise<{ logs: WeldingLogData[]; total: number }> => {
   try {
     const params: Record<string, unknown> = { limit, offset };
     if (jobId !== undefined) {
       params.job_id = jobId;
     }
+    if (fromDate) params.from = fromDate;
+    if (toDate) params.to = toDate;
     const response = await api.get('/welding-logs', { params });
     return response.data.data;
   } catch (error) {
