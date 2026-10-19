@@ -239,16 +239,21 @@ async function dwellAtPartStart(
 // 속도 환산은 배치와 같은 식: 명령% = (cpm / 15) x 0.431.
 // 20cpm = 0.575% = 약 3.3mm/s 라 10mm 에 약 3초. 아크 트래킹 보정 시작(위빙 8주기, 약 4초)
 // 전에 끝난다. 이동이 실패하면 경고만 남기고 그 자리에서 배치로 넘어간다.
-const VERTICAL_DROP_RISE_CPM = 20;
+// [v1.1.266] 고정 20cpm -> 수직 첫 포인트(P3/P9, 파트 조건 포인트) 속도의 +30% (사용자 요청 2026-10-19).
+// 갭에 따라 파트 속도가 바뀌므로 상승 속도도 따라가게 한다. 속도 값이 없으면 종전 20cpm.
+const VERTICAL_DROP_RISE_RATIO = 1.3;
+const VERTICAL_DROP_RISE_FALLBACK_CPM = 20;
 async function riseFromVerticalDrop(point: TeachingPoint, dropZ: number): Promise<void> {
   if (dropZ === 0 || !point.tcp) return;
   const t = point.touchOffset;
   const offset = t ? [t.dx, t.dy, t.dz, 0, 0, 0] : [0, 0, 0, 0, 0, 0];
-  const speedPct = Math.min(100, Math.max(0.1, (VERTICAL_DROP_RISE_CPM / 15) * WELD_BATCH_SPEED_SCALE));
+  const baseCpm = point.moveSpeed > 0 ? point.moveSpeed : VERTICAL_DROP_RISE_FALLBACK_CPM / VERTICAL_DROP_RISE_RATIO;
+  const riseCpm = baseCpm * VERTICAL_DROP_RISE_RATIO;
+  const speedPct = Math.min(100, Math.max(0.1, (riseCpm / 15) * WELD_BATCH_SPEED_SCALE));
   const mmPerSec = speedPct * SPEED_MM_PER_SEC_PER_PCT;
   log_weldingExecution.info(
     'welding.partStart.verticalRise',
-    `수직 시작 ${point.name}: 아래 ${-dropZ}mm 구간을 ${VERTICAL_DROP_RISE_CPM}cpm 으로 상승 `
+    `수직 시작 ${point.name}: 아래 ${-dropZ}mm 구간을 ${riseCpm.toFixed(1)}cpm(파트 ${baseCpm}cpm x ${VERTICAL_DROP_RISE_RATIO}) 으로 상승 `
     + `(${speedPct.toFixed(3)}%, ${mmPerSec.toFixed(2)}mm/s, 약 ${(-dropZ / mmPerSec).toFixed(1)}초)`,
   );
   try {
@@ -648,7 +653,8 @@ export async function executeWelding(
   // [v1.1.252] 3 -> 10mm (사용자 요청 2026-10-14). 아래 내린 구간은 riseFromVerticalDrop 이
   // 빠른 속도로 올라온다.
   // [v1.1.261] 10 -> 7mm (사용자 요청 2026-10-15). 20cpm 상승 구간도 내린 거리만큼이라 7mm 가 된다.
-  const VERTICAL_START_DROP_MM_4PART = 7;
+  // [v1.1.266] 7 -> 10mm (사용자 요청 2026-10-19). 상승 속도는 파트 속도 x 1.3.
+  const VERTICAL_START_DROP_MM_4PART = 10;
   const VERTICAL_START_POINT_IDS = ['p3', 'p9'];
   // [v1.1.243] 모서리 파트가 있을 때만. 4파트(227 구성)에서는 P3/P9 가 모서리 바닥이라
   // 10mm 내리면 바닥판으로 들어간다.

@@ -1,0 +1,8 @@
+v1.1.266: 수직 시작 내림 10mm, 상승 속도 파트 속도 x 1.3
+
+- weldingCore/weldingExecution.ts: 4파트 수직 시작 내림 7 -> 10mm
+- riseFromVerticalDrop: 고정 20cpm -> 수직 첫 포인트 속도 x 1.3 (값 없으면 20cpm)
+- 버전 1.1.266
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011s5GmACAFtBqwjLSFKNRE6

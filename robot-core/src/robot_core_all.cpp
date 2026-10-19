@@ -7180,7 +7180,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.265"
+#define APP_VERSION_STRING "1.1.266"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
