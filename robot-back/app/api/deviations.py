@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -26,8 +27,8 @@ def create_deviation(
 
 @router.get("/", response_model=list[DeviationEventOut])
 def list_deviations(
-    job_id: int | None = None,
-    level: int | None = None,
+    job_id: Optional[int] = None,
+    level: Optional[int] = None,
     limit: int = Query(200, le=2000),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),

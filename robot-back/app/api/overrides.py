@@ -1,3 +1,4 @@
+from typing import Optional
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -11,11 +12,11 @@ from app.schemas.welding import ParamOverrideCreate, ParamOverrideOut
 router = APIRouter(prefix="/api/overrides", tags=["overrides"])
 
 
-def _get_limit(db: Session, field: str) -> OverrideLimit | None:
+def _get_limit(db: Session, field: str) -> Optional[OverrideLimit]:
     return db.query(OverrideLimit).filter(OverrideLimit.field_name == field).first()
 
 
-def _validate_override_range(db: Session, field: str, original: Decimal, override: Decimal) -> str | None:
+def _validate_override_range(db: Session, field: str, original: Decimal, override: Decimal) -> Optional[str]:
     """오버라이드 값이 허용 범위 내인지 검사. 벗어나면 에러 메시지 반환"""
     lim = _get_limit(db, field)
     if not lim:
@@ -48,9 +49,9 @@ def create_override(
 
 @router.get("/", response_model=list[ParamOverrideOut])
 def list_overrides(
-    job_id: int | None = None,
-    posture: Posture | None = None,
-    gap_mm: Decimal | None = None,
+    job_id: Optional[int] = None,
+    posture: Optional[Posture] = None,
+    gap_mm: Optional[Decimal] = None,
     limit: int = Query(100, le=1000),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),

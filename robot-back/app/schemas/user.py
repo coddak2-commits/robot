@@ -1,3 +1,4 @@
+from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -14,7 +15,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     role: UserRole
     username: str
-    full_name: str | None = None
+    full_name: Optional[str] = None
 
 
 class UserOut(BaseModel):
@@ -22,27 +23,27 @@ class UserOut(BaseModel):
 
     id: int
     username: str
-    full_name: str | None
+    full_name: Optional[str]
     role: UserRole
-    email: EmailStr | None
+    email: Optional[EmailStr]
     is_active: bool
-    last_login_at: datetime | None
+    last_login_at: Optional[datetime]
     created_at: datetime
 
 
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     password: str = Field(min_length=8)
-    full_name: str | None = None
-    email: EmailStr | None = None
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
     role: UserRole = UserRole.operator
 
 
 class UserUpdate(BaseModel):
-    full_name: str | None = None
-    email: EmailStr | None = None
-    role: UserRole | None = None
-    is_active: bool | None = None
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
 
 
 class PasswordResetRequest(BaseModel):

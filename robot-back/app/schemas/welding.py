@@ -1,3 +1,4 @@
+from typing import Optional
 from datetime import datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -38,7 +39,7 @@ class WeldingParamBase(BaseModel):
     thickness_mm: Decimal
     joint_type: str = "fillet"
     source: DataSource = DataSource.lab
-    notes: str | None = None
+    notes: Optional[str] = None
 
 
 class WeldingParamCreate(WeldingParamBase):
@@ -46,17 +47,17 @@ class WeldingParamCreate(WeldingParamBase):
 
 
 class WeldingParamUpdate(BaseModel):
-    current_a: int | None = Field(default=None, gt=0)
-    voltage_v: Decimal | None = Field(default=None, gt=0)
-    speed_cpm: int | None = Field(default=None, gt=0)
-    stickout_mm: int | None = Field(default=None, ge=0)
-    weave_enabled: bool | None = None
-    weave_type: int | None = None
-    weave_freq_hz: Decimal | None = Field(default=None, gt=0)
-    weave_range_mm: Decimal | None = Field(default=None, gt=0)
-    weave_left_dwell_ms: int | None = Field(default=None, ge=0)
-    weave_right_dwell_ms: int | None = Field(default=None, ge=0)
-    notes: str | None = None
+    current_a: Optional[int] = Field(default=None, gt=0)
+    voltage_v: Optional[Decimal] = Field(default=None, gt=0)
+    speed_cpm: Optional[int] = Field(default=None, gt=0)
+    stickout_mm: Optional[int] = Field(default=None, ge=0)
+    weave_enabled: Optional[bool] = None
+    weave_type: Optional[int] = None
+    weave_freq_hz: Optional[Decimal] = Field(default=None, gt=0)
+    weave_range_mm: Optional[Decimal] = Field(default=None, gt=0)
+    weave_left_dwell_ms: Optional[int] = Field(default=None, ge=0)
+    weave_right_dwell_ms: Optional[int] = Field(default=None, ge=0)
+    notes: Optional[str] = None
 
 
 class WeldingParamOut(WeldingParamBase):
@@ -64,9 +65,9 @@ class WeldingParamOut(WeldingParamBase):
 
     id: int
     active: bool
-    deactivated_at: datetime | None
-    deactivated_by: int | None
-    deactivation_reason: str | None
+    deactivated_at: Optional[datetime]
+    deactivated_by: Optional[int]
+    deactivation_reason: Optional[str]
     created_at: datetime
     updated_at: datetime
 
@@ -78,9 +79,9 @@ class WeldingParamDeactivate(BaseModel):
 class ParamLookupResult(BaseModel):
     matched: bool
     fallback_level: int
-    warning: str | None = None
-    param: WeldingParamOut | None = None
-    candidates: list[WeldingParamOut] | None = None
+    warning: Optional[str] = None
+    param: Optional[WeldingParamOut] = None
+    candidates: Optional[list[WeldingParamOut]] = None
 
 
 # =====================================================================
@@ -97,43 +98,43 @@ class WeldingDefaultOut(BaseModel):
 
 
 class WeldingDefaultUpdate(BaseModel):
-    gas_flow_lpm: Decimal | None = None
-    preheat_sec: Decimal | None = None
-    postheat_sec: Decimal | None = None
+    gas_flow_lpm: Optional[Decimal] = None
+    preheat_sec: Optional[Decimal] = None
+    postheat_sec: Optional[Decimal] = None
 
 
 # =====================================================================
 # Jobs
 # =====================================================================
 class WeldingJobCreate(BaseModel):
-    job_name: str | None = None
-    cell_type: str | None = None
+    job_name: Optional[str] = None
+    cell_type: Optional[str] = None
     mode: JobMode = JobMode.real
-    dry_run_level: int | None = None
+    dry_run_level: Optional[int] = None
     speed_override_pct: int = 100
-    notes: str | None = None
+    notes: Optional[str] = None
 
 
 class WeldingJobUpdate(BaseModel):
-    status: JobStatus | None = None
-    notes: str | None = None
-    completed_at: datetime | None = None
+    status: Optional[JobStatus] = None
+    notes: Optional[str] = None
+    completed_at: Optional[datetime] = None
 
 
 class WeldingJobOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    job_name: str | None
-    cell_type: str | None
+    job_name: Optional[str]
+    cell_type: Optional[str]
     status: JobStatus
     mode: JobMode
-    dry_run_level: int | None
+    dry_run_level: Optional[int]
     speed_override_pct: int
-    started_by: int | None
-    started_at: datetime | None
-    completed_at: datetime | None
-    notes: str | None
+    started_by: Optional[int]
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
+    notes: Optional[str]
     created_at: datetime
     updated_at: datetime
 
@@ -170,16 +171,16 @@ class WeldPointGapOut(BaseModel):
 # =====================================================================
 class ParamOverrideCreate(BaseModel):
     job_id: int
-    point_code: str | None = None
+    point_code: Optional[str] = None
     posture: Posture
     gap_mm: Decimal
-    material: str | None = "SS400"
-    thickness_mm: Decimal | None = None
-    joint_type: str | None = "fillet"
+    material: Optional[str] = "SS400"
+    thickness_mm: Optional[Decimal] = None
+    joint_type: Optional[str] = "fillet"
     field_name: str
     original_value: Decimal
     override_value: Decimal
-    reason: str | None = None
+    reason: Optional[str] = None
 
     @field_validator("field_name")
     @classmethod
@@ -202,7 +203,7 @@ class ParamOverrideOut(ParamOverrideCreate):
 # =====================================================================
 class PromotionReviewRequest(BaseModel):
     action: str = Field(pattern="^(approve|reject)$")
-    note: str | None = None
+    note: Optional[str] = None
 
 
 class PromotionRequestOut(BaseModel):
@@ -212,20 +213,20 @@ class PromotionRequestOut(BaseModel):
     trigger_type: str
     posture: Posture
     gap_mm: Decimal
-    material: str | None
-    thickness_mm: Decimal | None
-    joint_type: str | None
+    material: Optional[str]
+    thickness_mm: Optional[Decimal]
+    joint_type: Optional[str]
     field_name: str
     current_value: Decimal
     requested_value: Decimal
     override_count: int
-    override_stddev_pct: Decimal | None
-    operator_count: int | None
-    reason: str | None
+    override_stddev_pct: Optional[Decimal]
+    operator_count: Optional[int]
+    reason: Optional[str]
     status: PromotionStatus
-    reviewed_by: int | None
-    reviewer_note: str | None
-    reviewed_at: datetime | None
+    reviewed_by: Optional[int]
+    reviewer_note: Optional[str]
+    reviewed_at: Optional[datetime]
     created_at: datetime
 
 
@@ -234,14 +235,14 @@ class PromotionRequestOut(BaseModel):
 # =====================================================================
 class DeviationEventCreate(BaseModel):
     job_id: int
-    point_code: str | None = None
+    point_code: Optional[str] = None
     level: int = Field(ge=1, le=3)
     field_name: str
     command_value: Decimal
     actual_value: Decimal
     deviation_pct: Decimal
     duration_sec: Decimal
-    action_taken: str | None = None
+    action_taken: Optional[str] = None
 
 
 class DeviationEventOut(DeviationEventCreate):
@@ -257,13 +258,13 @@ class DeviationEventOut(DeviationEventCreate):
 class StopEventCreate(BaseModel):
     job_id: int
     reason: str
-    stopped_point: str | None = None
-    notes: str | None = None
+    stopped_point: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class StopEventResume(BaseModel):
     resume_type: ResumeType
-    notes: str | None = None
+    notes: Optional[str] = None
 
 
 class StopEventOut(BaseModel):
@@ -273,13 +274,13 @@ class StopEventOut(BaseModel):
     job_id: int
     reason: str
     stopped_at: datetime
-    stopped_point: str | None
-    resumed_at: datetime | None
-    resumed_by: int | None
-    resume_type: ResumeType | None
-    approved_by: int | None
-    stop_duration_sec: int | None
-    notes: str | None
+    stopped_point: Optional[str]
+    resumed_at: Optional[datetime]
+    resumed_by: Optional[int]
+    resume_type: Optional[ResumeType]
+    approved_by: Optional[int]
+    stop_duration_sec: Optional[int]
+    notes: Optional[str]
 
 
 # =====================================================================
@@ -290,21 +291,21 @@ class AlarmThresholdOut(BaseModel):
 
     id: int
     field_name: str
-    warn_pct: Decimal | None
-    warn_duration_sec: Decimal | None
-    alert_pct: Decimal | None
-    alert_duration_sec: Decimal | None
-    stop_pct: Decimal | None
-    stop_duration_sec: Decimal | None
+    warn_pct: Optional[Decimal]
+    warn_duration_sec: Optional[Decimal]
+    alert_pct: Optional[Decimal]
+    alert_duration_sec: Optional[Decimal]
+    stop_pct: Optional[Decimal]
+    stop_duration_sec: Optional[Decimal]
 
 
 class AlarmThresholdUpdate(BaseModel):
-    warn_pct: Decimal | None = None
-    warn_duration_sec: Decimal | None = None
-    alert_pct: Decimal | None = None
-    alert_duration_sec: Decimal | None = None
-    stop_pct: Decimal | None = None
-    stop_duration_sec: Decimal | None = None
+    warn_pct: Optional[Decimal] = None
+    warn_duration_sec: Optional[Decimal] = None
+    alert_pct: Optional[Decimal] = None
+    alert_duration_sec: Optional[Decimal] = None
+    stop_pct: Optional[Decimal] = None
+    stop_duration_sec: Optional[Decimal] = None
 
 
 class OverrideLimitOut(BaseModel):
@@ -312,13 +313,13 @@ class OverrideLimitOut(BaseModel):
 
     id: int
     field_name: str
-    max_up_pct: Decimal | None
-    max_down_pct: Decimal | None
+    max_up_pct: Optional[Decimal]
+    max_down_pct: Optional[Decimal]
 
 
 class OverrideLimitUpdate(BaseModel):
-    max_up_pct: Decimal | None = None
-    max_down_pct: Decimal | None = None
+    max_up_pct: Optional[Decimal] = None
+    max_down_pct: Optional[Decimal] = None
 
 
 class PromotionDetectionConfigOut(BaseModel):
@@ -333,8 +334,8 @@ class PromotionDetectionConfigOut(BaseModel):
 
 
 class PromotionDetectionConfigUpdate(BaseModel):
-    min_override_count: int | None = None
-    max_stddev_pct: Decimal | None = None
-    observation_days: int | None = None
-    min_operator_count: int | None = None
-    preferred_operator_count: int | None = None
+    min_override_count: Optional[int] = None
+    max_stddev_pct: Optional[Decimal] = None
+    observation_days: Optional[int] = None
+    min_operator_count: Optional[int] = None
+    preferred_operator_count: Optional[int] = None

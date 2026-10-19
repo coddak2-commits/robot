@@ -1,11 +1,12 @@
 """APScheduler 기반 배치 스케줄러"""
+from typing import Optional
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.core.database import SessionLocal
 from app.utils.promotion_detector import detect_promotion_candidates
 
-_scheduler: BackgroundScheduler | None = None
+_scheduler: Optional[BackgroundScheduler] = None
 
 
 def _run_promotion_detection():

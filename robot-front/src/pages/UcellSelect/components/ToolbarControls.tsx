@@ -65,7 +65,11 @@ export function ToolbarControls({
   onHeightChange,
 }: ToolbarControlsProps) {
   return (
-    <div className="tb-compact flex flex-nowrap items-center gap-2 whitespace-nowrap overflow-x-auto scrollbar-hide min-w-0 flex-1 py-0.5">
+    <div className="tb-compact tb-toolbar flex flex-nowrap items-center gap-2 whitespace-nowrap overflow-x-auto scrollbar-hide min-w-0 flex-1 py-0.5">
+      {/* [v1.1.267] 버튼·체크박스가 줄어들어 글자가 밖으로 삐져나오지 않게 한다.
+          펜던트(1280 폭)는 index.tsx 의 compact 미디어쿼리(1279px 이하) 밖이라 기본 flex-shrink:1 로 눌렸다.
+          넘치는 부분은 가로 스크롤로 본다. */}
+      <style>{'.tb-toolbar > * { flex-shrink: 0; }'}</style>
       <button
         onClick={onToggleWsConnection}
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition ${

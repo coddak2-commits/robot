@@ -1,3 +1,4 @@
+from typing import Optional
 from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import String, Boolean, Enum, TIMESTAMP, Integer, DECIMAL, Text, JSON, ForeignKey, SmallInteger
@@ -54,16 +55,16 @@ class WeldingJob(Base):
     __tablename__ = "welding_jobs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_name: Mapped[str | None] = mapped_column(String(100))
-    cell_type: Mapped[str | None] = mapped_column(String(50))
+    job_name: Mapped[Optional[str]] = mapped_column(String(100))
+    cell_type: Mapped[Optional[str]] = mapped_column(String(50))
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.created)
     mode: Mapped[JobMode] = mapped_column(Enum(JobMode), default=JobMode.real)
-    dry_run_level: Mapped[int | None] = mapped_column(SmallInteger)
+    dry_run_level: Mapped[Optional[int]] = mapped_column(SmallInteger)
     speed_override_pct: Mapped[int] = mapped_column(Integer, default=100)
-    started_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    started_at: Mapped[datetime | None] = mapped_column(TIMESTAMP)
-    completed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP)
-    notes: Mapped[str | None] = mapped_column(Text)
+    started_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
@@ -92,10 +93,10 @@ class WeldingParam(Base):
     joint_type: Mapped[str] = mapped_column(String(30), default="fillet")
     source: Mapped[DataSource] = mapped_column(Enum(DataSource), default=DataSource.lab)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    deactivated_at: Mapped[datetime | None] = mapped_column(TIMESTAMP)
-    deactivated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    deactivation_reason: Mapped[str | None] = mapped_column(Text)
-    notes: Mapped[str | None] = mapped_column(Text)
+    deactivated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+    deactivated_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    deactivation_reason: Mapped[Optional[str]] = mapped_column(Text)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
@@ -121,17 +122,17 @@ class ParamOverride(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("welding_jobs.id", ondelete="CASCADE"), nullable=False)
-    point_code: Mapped[str | None] = mapped_column(String(10))
+    point_code: Mapped[Optional[str]] = mapped_column(String(10))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     posture: Mapped[Posture] = mapped_column(Enum(Posture), nullable=False)
     gap_mm: Mapped[Decimal] = mapped_column(DECIMAL(3, 1), nullable=False)
-    material: Mapped[str | None] = mapped_column(String(50))
-    thickness_mm: Mapped[Decimal | None] = mapped_column(DECIMAL(4, 1))
-    joint_type: Mapped[str | None] = mapped_column(String(30))
+    material: Mapped[Optional[str]] = mapped_column(String(50))
+    thickness_mm: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(4, 1))
+    joint_type: Mapped[Optional[str]] = mapped_column(String(30))
     field_name: Mapped[str] = mapped_column(String(50), nullable=False)
     original_value: Mapped[Decimal] = mapped_column(DECIMAL(8, 2), nullable=False)
     override_value: Mapped[Decimal] = mapped_column(DECIMAL(8, 2), nullable=False)
-    reason: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now())
 
 
@@ -145,21 +146,21 @@ class PromotionRequest(Base):
     trigger_type: Mapped[str] = mapped_column(String(20), default="auto_detect")
     posture: Mapped[Posture] = mapped_column(Enum(Posture), nullable=False)
     gap_mm: Mapped[Decimal] = mapped_column(DECIMAL(3, 1), nullable=False)
-    material: Mapped[str | None] = mapped_column(String(50))
-    thickness_mm: Mapped[Decimal | None] = mapped_column(DECIMAL(4, 1))
-    joint_type: Mapped[str | None] = mapped_column(String(30))
+    material: Mapped[Optional[str]] = mapped_column(String(50))
+    thickness_mm: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(4, 1))
+    joint_type: Mapped[Optional[str]] = mapped_column(String(30))
     field_name: Mapped[str] = mapped_column(String(50), nullable=False)
     current_value: Mapped[Decimal] = mapped_column(DECIMAL(8, 2), nullable=False)
     requested_value: Mapped[Decimal] = mapped_column(DECIMAL(8, 2), nullable=False)
     override_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    override_stddev_pct: Mapped[Decimal | None] = mapped_column(DECIMAL(5, 2))
-    operator_count: Mapped[int | None] = mapped_column(Integer)
-    related_jobs: Mapped[dict | None] = mapped_column(JSON)
-    reason: Mapped[str | None] = mapped_column(Text)
+    override_stddev_pct: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(5, 2))
+    operator_count: Mapped[Optional[int]] = mapped_column(Integer)
+    related_jobs: Mapped[Optional[dict]] = mapped_column(JSON)
+    reason: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[PromotionStatus] = mapped_column(Enum(PromotionStatus), default=PromotionStatus.pending)
-    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    reviewer_note: Mapped[str | None] = mapped_column(Text)
-    reviewed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP)
+    reviewed_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    reviewer_note: Mapped[Optional[str]] = mapped_column(Text)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now())
 
 
@@ -183,12 +184,12 @@ class AlarmThreshold(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     field_name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    warn_pct: Mapped[Decimal | None] = mapped_column(DECIMAL(4, 1))
-    warn_duration_sec: Mapped[Decimal | None] = mapped_column(DECIMAL(4, 1))
-    alert_pct: Mapped[Decimal | None] = mapped_column(DECIMAL(4, 1))
-    alert_duration_sec: Mapped[Decimal | None] = mapped_column(DECIMAL(4, 1))
-    stop_pct: Mapped[Decimal | None] = mapped_column(DECIMAL(4, 1))
-    stop_duration_sec: Mapped[Decimal | None] = mapped_column(DECIMAL(4, 1))
+    warn_pct: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(4, 1))
+    warn_duration_sec: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(4, 1))
+    alert_pct: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(4, 1))
+    alert_duration_sec: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(4, 1))
+    stop_pct: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(4, 1))
+    stop_duration_sec: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(4, 1))
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
 
@@ -197,8 +198,8 @@ class OverrideLimit(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     field_name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    max_up_pct: Mapped[Decimal | None] = mapped_column(DECIMAL(4, 1))
-    max_down_pct: Mapped[Decimal | None] = mapped_column(DECIMAL(4, 1))
+    max_up_pct: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(4, 1))
+    max_down_pct: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(4, 1))
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
 
@@ -210,14 +211,14 @@ class DeviationEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("welding_jobs.id", ondelete="CASCADE"), nullable=False)
-    point_code: Mapped[str | None] = mapped_column(String(10))
+    point_code: Mapped[Optional[str]] = mapped_column(String(10))
     level: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     field_name: Mapped[str] = mapped_column(String(50), nullable=False)
     command_value: Mapped[Decimal] = mapped_column(DECIMAL(6, 2), nullable=False)
     actual_value: Mapped[Decimal] = mapped_column(DECIMAL(6, 2), nullable=False)
     deviation_pct: Mapped[Decimal] = mapped_column(DECIMAL(5, 2), nullable=False)
     duration_sec: Mapped[Decimal] = mapped_column(DECIMAL(5, 2), nullable=False)
-    action_taken: Mapped[str | None] = mapped_column(String(50))
+    action_taken: Mapped[Optional[str]] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now())
 
 
@@ -228,13 +229,13 @@ class StopEvent(Base):
     job_id: Mapped[int] = mapped_column(ForeignKey("welding_jobs.id", ondelete="CASCADE"), nullable=False)
     reason: Mapped[str] = mapped_column(String(50), nullable=False)
     stopped_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now())
-    stopped_point: Mapped[str | None] = mapped_column(String(10))
-    resumed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP)
-    resumed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    resume_type: Mapped[ResumeType | None] = mapped_column(Enum(ResumeType))
-    approved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    stop_duration_sec: Mapped[int | None] = mapped_column(Integer)
-    notes: Mapped[str | None] = mapped_column(Text)
+    stopped_point: Mapped[Optional[str]] = mapped_column(String(10))
+    resumed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+    resumed_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    resume_type: Mapped[Optional[ResumeType]] = mapped_column(Enum(ResumeType))
+    approved_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    stop_duration_sec: Mapped[Optional[int]] = mapped_column(Integer)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
 
 
 class FallbackUsage(Base):
@@ -245,8 +246,8 @@ class FallbackUsage(Base):
     requested: Mapped[dict] = mapped_column(JSON, nullable=False)
     fallback_used: Mapped[dict] = mapped_column(JSON, nullable=False)
     fallback_level: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    warning_shown: Mapped[str | None] = mapped_column(String(20))
-    user_confirmed: Mapped[bool | None] = mapped_column(Boolean)
+    warning_shown: Mapped[Optional[str]] = mapped_column(String(20))
+    user_confirmed: Mapped[Optional[bool]] = mapped_column(Boolean)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now())
 

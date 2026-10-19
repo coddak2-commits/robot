@@ -1,0 +1,8 @@
+v1.1.267: 펜던트 툴바 버튼 글자 넘침 수정, robot-back Python 3.9 호환
+
+- ToolbarControls: 툴바 항목 flex-shrink 0 (1280 폭 펜던트에서 버튼이 눌리던 것)
+- robot-back: PEP 604 (X | None) -> Optional[X], 9개 파일
+- 버전 1.1.267
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011s5GmACAFtBqwjLSFKNRE6

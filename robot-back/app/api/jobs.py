@@ -1,3 +1,4 @@
+from typing import Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 @router.get("/", response_model=list[WeldingJobOut])
 def list_jobs(
-    status: JobStatus | None = None,
+    status: Optional[JobStatus] = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):

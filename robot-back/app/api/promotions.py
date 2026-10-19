@@ -1,3 +1,4 @@
+from typing import Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api/promotions", tags=["promotions"])
 
 @router.get("/", response_model=list[PromotionRequestOut])
 def list_promotions(
-    status: PromotionStatus | None = None,
+    status: Optional[PromotionStatus] = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
