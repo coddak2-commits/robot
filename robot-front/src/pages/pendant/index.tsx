@@ -715,18 +715,19 @@ const PendantInner: React.FC = () => {
             <div key={seg.key} style={{
               position: 'absolute', left, top, transform: 'translate(-50%, -50%)', transformOrigin: 'center',
               // [v1.1.269] 갭 박스 확대(장갑 터치): 0.7배 축소 제거, -/+ 10px -> 32px
-              display: 'flex', alignItems: 'center', gap: 4,
-              background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', borderRadius: 8, padding: '3px 4px',
+              // [v1.1.270] 우측 실행 도크와 겹쳐 좌우만 줄임: -/+ 폭 32 -> 22(높이 34 유지), 숫자 폭 36 -> 24, 간격 4 -> 1
+              display: 'flex', alignItems: 'center', gap: 1,
+              background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', borderRadius: 8, padding: '3px 2px',
               zIndex: 5,
             }}>
               <button onClick={dec} disabled={g <= 0}
-                style={{ width: 32, height: 32, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 6, overflow: 'visible', cursor: g <= 0 ? 'not-allowed' : 'pointer', fontSize: 20, fontWeight: 'bold', opacity: g <= 0 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
+                style={{ width: 22, height: 34, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 6, overflow: 'visible', cursor: g <= 0 ? 'not-allowed' : 'pointer', fontSize: 20, fontWeight: 'bold', opacity: g <= 0 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
               >−</button>
               <button onClick={() => { setGapEditSeg({ startId: seg.startId, label: seg.label }); setGapEditValue(String(g)); }}
-                style={{ minWidth: 36, textAlign: 'center', fontSize: 24, lineHeight: 1, fontWeight: 'bold', background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer', padding: 0 }}
+                style={{ minWidth: 24, textAlign: 'center', fontSize: 22, lineHeight: 1, fontWeight: 'bold', background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer', padding: 0 }}
               >{g}</button>
               <button onClick={inc} disabled={g >= 6}
-                style={{ width: 32, height: 32, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 6, overflow: 'visible', cursor: g >= 6 ? 'not-allowed' : 'pointer', fontSize: 20, fontWeight: 'bold', opacity: g >= 6 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
+                style={{ width: 22, height: 34, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#1e293b', color: '#fff', border: 'none', borderRadius: 6, overflow: 'visible', cursor: g >= 6 ? 'not-allowed' : 'pointer', fontSize: 20, fontWeight: 'bold', opacity: g >= 6 ? 0.4 : 1, padding: 0, lineHeight: 1 }}
               >+</button>
             </div>
           );

@@ -1,0 +1,7 @@
+v1.1.270: 펜던트 갭 박스 좌우 폭 축소 (실행 도크와 겹침)
+
+- pendant: 갭 박스 -/+ 폭 22, 숫자 폭 24, 간격 1
+- 버전 1.1.270
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011s5GmACAFtBqwjLSFKNRE6
