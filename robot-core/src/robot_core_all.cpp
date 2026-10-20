@@ -1314,9 +1314,19 @@ bool RobotService::checkConnection() {
         return false;
     }
 }
+// [v1.1.272] 잠금을 잡은 뒤 이미 연결돼 있으면 끊고 다시 붙지 않는다.
+// 2026-10-20 펜던트: 부팅 직후 첫 연결이 실패하자 모니터가 재연결에 들어가 m_mutex 를
+// 기다렸고, 그사이 화면이 보낸 /robot_sdk/connect 가 먼저 성공했다. 모니터는 잠금을 받자
+// 살아 있는 연결에 CloseRPC() -> RPC() 를 다시 했고 RPC() 가 돌아오지 않았다(14:25,
+// 14:34, 14:38 세 번). m_mutex 를 쥔 채 멈춰 이동·서보 ON 이 전부 대기, 상태 캐시도
+// 갱신되지 않아 위치저장이 같은 좌표로 들어갔다. 와이어·비상정지는 잠금을 안 써서 동작했다.
 bool RobotService::tryReconnect() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_lastIp.empty()) return false;
+    if (m_connected) {
+        FLOG_INFO("RobotMonitor", "Reconnect skipped: already connected ip=" + m_lastIp);
+        return true;
+    }
     FLOG_DEBUG("RobotMonitor", "Trying to reconnect to " + m_lastIp);
     std::cout << "[RobotService] Trying to reconnect to " << m_lastIp << "..." << std::endl;
     try {
@@ -7180,7 +7190,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.271"
+#define APP_VERSION_STRING "1.1.272"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

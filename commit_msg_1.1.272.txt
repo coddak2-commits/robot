@@ -1,0 +1,8 @@
+v1.1.272: 부팅 직후 연결 겹침으로 코어 멈춤 수정
+
+- core: tryReconnect 가 잠금 후 이미 연결돼 있으면 CloseRPC/RPC 하지 않고 성공 처리
+- front: 화면 시작 시 코어 자동 재연결 중이면 /robot_sdk/connect 를 보내지 않고 상태만 재확인
+- 버전 1.1.272
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LA3SBWxxgV7eeQNgpFRtoh

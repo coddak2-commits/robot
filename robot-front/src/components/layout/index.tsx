@@ -105,6 +105,8 @@ const Header: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isResettingError, setIsResettingError] = useState(false);
   const errorPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const statusRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const checkConnRef = useRef<((manual?: boolean) => Promise<void>) | null>(null);
   const startPolling = useCallback(() => {
     if (pollingIntervalRef.current) return;
     setIsPolling(true);
@@ -215,7 +217,14 @@ const Header: React.FC = () => {
       console.error('Mode change failed:', error);
     }
   };
-  const checkConnectionStatus = useCallback(async () => {
+  // [v1.1.272] 화면이 켜질 때(자동 확인)는 코어가 자동 재연결 중이면 연결 요청을 보내지 않고
+  // 3초마다 상태만 다시 본다. 코어의 시작 연결·자동 재연결과 이 요청이 겹쳐 코어가 멈춘 적이
+  // 있다(2026-10-20 펜던트). 재연결 버튼(manual)은 예전처럼 바로 연결 요청을 보낸다.
+  const checkConnectionStatus = useCallback(async (manual = false) => {
+    if (statusRetryRef.current) {
+      clearTimeout(statusRetryRef.current);
+      statusRetryRef.current = null;
+    }
     try {
       if (isMockMode()) {
         const res = await mockCheckConnection();
@@ -235,6 +244,11 @@ const Header: React.FC = () => {
           setConnText('연결성공');
           setInstanceCount(data?.instance_count ?? null);
           startPolling();
+        } else if (!manual && data?.auto_reconnect) {
+          setConnText('자동 재연결 대기');
+          statusRetryRef.current = setTimeout(() => {
+            checkConnRef.current?.();
+          }, 3000);
         } else {
           const connectRes = await axios.post('/robot_sdk/connect');
           const connectData = connectRes.data?.data;
@@ -257,9 +271,14 @@ const Header: React.FC = () => {
       setConnText('연결 실패');
     }
   }, [startPolling]);
+  checkConnRef.current = checkConnectionStatus;
   useEffect(() => {
     checkConnectionStatus();
     return () => {
+      if (statusRetryRef.current) {
+        clearTimeout(statusRetryRef.current);
+        statusRetryRef.current = null;
+      }
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
@@ -269,7 +288,7 @@ const Header: React.FC = () => {
   const handleManualReconnect = useCallback(async () => {
     setIsReconnecting(true);
     try {
-      await checkConnectionStatus();
+      await checkConnectionStatus(true);
     } finally {
       setLastAttemptAt(new Date());
       setIsReconnecting(false);
