@@ -33,21 +33,21 @@ const SEGMENTS: { key: string; startId: string; endId: string; label: string; of
   { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -25 },
   { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -25 },
   { key: 'p4-p3', startId: 'p4', endId: 'p3', label: '3-4', offsetX: -70 },
-  { key: 'p5-p6', startId: 'p5', endId: 'p6', label: '5-6', offsetY: 105 },
+  { key: 'p5-p6', startId: 'p5', endId: 'p6', label: '5-6', offsetY: 85 },
   { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 25 },
   { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 25 },
   { key: 'p10-p9', startId: 'p10', endId: 'p9', label: '9-10', offsetX: 70 },
-  { key: 'p11-p12', startId: 'p11', endId: 'p12', label: '11-12', offsetY: 105 },
+  { key: 'p11-p12', startId: 'p11', endId: 'p12', label: '11-12', offsetY: 85 },
 ];
 
 // [v1.1.243] 4파트(227 이전) 구성의 세그먼트. 수평은 시작점(P4/P10)에 갭을 저장한다.
 const SEGMENTS_4PART: typeof SEGMENTS = [
   { key: 'p1-p2', startId: 'p1', endId: 'p2', label: '1-2', offsetX: -25 },
   { key: 'p2-p3', startId: 'p2', endId: 'p3', label: '2-3', offsetX: -25 },
-  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 105 },
+  { key: 'p4-p6', startId: 'p4', endId: 'p6', label: '4-6', offsetY: 85 },
   { key: 'p7-p8', startId: 'p7', endId: 'p8', label: '7-8', offsetX: 25 },
   { key: 'p8-p9', startId: 'p8', endId: 'p9', label: '8-9', offsetX: 25 },
-  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 105 },
+  { key: 'p10-p12', startId: 'p10', endId: 'p12', label: '10-12', offsetY: 85 },
 ];
 const getSegments = () => (hasCornerParts() ? SEGMENTS : SEGMENTS_4PART);
 
@@ -96,7 +96,8 @@ const MAX_CANVAS_W = 1100;
 const MAX_CANVAS_H = 800;
 const MIN_CANVAS_W = 440;
 const MIN_CANVAS_H = 400;
-const DOCK_RESERVE = 170; // 우측 용접 실행 도크가 차지하는 폭
+// [v1.1.271] 170 -> 220. 1.1.269 에서 도크 폭을 180 으로 키워(+패딩·여백 약 210) 우측 갭 박스가 도크와 겹쳤다.
+const DOCK_RESERVE = 220; // 우측 용접 실행 도크가 차지하는 폭
 const HUB_RESERVE = 320; // 좁은 화면에서 중앙 허브를 좌측으로 뺄 때 쓰는 폭
 const BOUNDS = { minX: -420, maxX: 420, minY: -420, maxY: 420 }; // v1.1.187: 여백 확보와 U셀 크기 절충
 const worldToCanvas = (p: { x: number; y: number }, cw: number, ch: number) => ({
@@ -706,7 +707,8 @@ const PendantInner: React.FC = () => {
           const b = getSchematicPosition(seg.endId);
           const mid = worldToCanvas({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, canvasW, canvasH);
           const left = clampX(mid.x + (seg.offsetX ?? 0) * offScaleX);
-          const top = clampY(mid.y + (seg.offsetY ?? 0) * offScaleY);
+          // [v1.1.271] 하단 갭 박스(높이 약 40px)가 화면 아래로 잘려 105 -> 85, 위아래 여백도 박스 반 높이(28)로.
+          const top = Math.min(canvasH - 28, Math.max(28, mid.y + (seg.offsetY ?? 0) * offScaleY));
           const pt = teachingPoints.find(p => p.id === seg.startId);
           const g = pt?.gap ?? 0;
           const dec = () => updatePointGap(seg.startId, Math.max(0, g - 1));

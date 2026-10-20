@@ -1,0 +1,7 @@
+v1.1.271: 펜던트 우측 갭 박스·도크 겹침, 하단 갭 박스 잘림 수정
+
+- pendant: DOCK_RESERVE 170 -> 220, 하단 갭 offsetY 105 -> 85, 갭 박스 Y 여백 28
+- 버전 1.1.271
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011s5GmACAFtBqwjLSFKNRE6
