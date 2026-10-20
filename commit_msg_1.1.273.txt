@@ -1,0 +1,8 @@
+v1.1.273: 펜던트 메뉴에 프로그램 종료 추가
+
+- core: POST /system/pendant-shutdown (리눅스, localhost 전용). 아크·이동 중 거부, systemd-run 으로 vot-core/vot-back/mariadb 정지 + sync
+- front: 메뉴에 '프로그램 종료' 카드(platform=Linux 일 때만), 확인창·종료 대기·완료 안내
+- 버전 1.1.273
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LA3SBWxxgV7eeQNgpFRtoh

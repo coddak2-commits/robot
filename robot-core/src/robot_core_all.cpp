@@ -7187,10 +7187,12 @@ void registerSdkMotionTouchRoutes(
 #include <cstdlib>
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.272"
+#define APP_VERSION_STRING "1.1.273"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -7252,6 +7254,50 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
             std::chrono::steady_clock::now() - g_serverStartTime).count();
         data["uptime_seconds"] = uptimeSec;
         res.set_content(data.dump(), "application/json");
+    });
+    // [v1.1.273] 정품 펜던트(리눅스) 전용 프로그램 종료.
+    // 펜던트는 제어기 전원과 같이 켜지고 꺼져서, 그대로 끄면 코어·DB 가 쓰는 중에 전원이 나간다.
+    // 메뉴의 '프로그램 종료'가 이 요청을 보내면 vot-core·vot-back·mariadb 를 멈추고 sync 한다.
+    // 코어가 자기 자신도 멈춰야 하므로 systemd-run 으로 별도 작업에 넘기고(2초 뒤 실행) 바로 응답한다.
+    // 펜던트 자체 poweroff 는 바로 다시 켜져서 쓰지 않는다. 이 기기 화면(localhost)에서만 받는다.
+    // 아크 확인만 하고 로봇 잠금(m_mutex)을 쓰는 호출은 하지 않는다. 잠금이 막힌 상황에서도 종료돼야 한다.
+    server.Options("/system/pendant-shutdown", [](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        res.status = 200;
+    });
+    server.Post("/system/pendant-shutdown", [](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+#ifdef _WIN32
+        (void)req;
+        res.set_content(HttpRouteHelpers::makeStatusResponse(400, {{"message", "펜던트(리눅스)에서만 사용할 수 있습니다."}}).dump(), "application/json");
+#else
+        bool isLoopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        if (!isLoopback) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(403, {{"message", "펜던트 화면에서만 종료할 수 있습니다."}}).dump(), "application/json");
+            return;
+        }
+        if (g_arcActive.load()) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(409, {{"message", "용접 중에는 종료할 수 없습니다."}}).dump(), "application/json");
+            return;
+        }
+        if (g_robotService && g_robotService->isConnected()) {
+            ROBOT_STATE_PKG st = g_robotService->getCachedState();
+            if (st.robot_state == 2) {
+                res.set_content(HttpRouteHelpers::makeStatusResponse(409, {{"message", "로봇 이동 중에는 종료할 수 없습니다."}}).dump(), "application/json");
+                return;
+            }
+        }
+        std::string cmd = "systemd-run --no-block --collect sh -c 'sleep 2; systemctl stop vot-core vot-back mariadb; sync'";
+        if (geteuid() != 0) cmd = "sudo -n " + cmd;
+        FLOG_WARN("System", "Pendant shutdown requested: " + cmd);
+        int rc = std::system(cmd.c_str());
+        if (rc != 0) {
+            FLOG_ERROR("System", "Pendant shutdown command failed: rc=" + std::to_string(rc));
+            res.set_content(HttpRouteHelpers::makeStatusResponse(500, {{"message", "종료 명령 실패 (rc=" + std::to_string(rc) + ")"}}).dump(), "application/json");
+            return;
+        }
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, {{"stopping", true}}).dump(), "application/json");
+#endif
     });
     server.Options(R"(/logs.*)", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

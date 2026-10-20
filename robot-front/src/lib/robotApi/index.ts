@@ -591,6 +591,11 @@ export const startUpdate = async () => {
     throw error;
   }
 };
+// [v1.1.273] 펜던트(리눅스) 프로그램 종료. 응답: { status_code, data: { stopping } | { message } }
+export const shutdownPendant = async (): Promise<{ status_code: number; data?: { stopping?: boolean; message?: string } }> => {
+  const response = await api.post('/system/pendant-shutdown', {}, { timeout: 10000 });
+  return response.data;
+};
 export const getSystemInfo = async (): Promise<SystemInfo> => {
   try {
     const response = await api.get('/system/system-info');

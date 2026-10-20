@@ -1,0 +1,24 @@
+﻿v1.1.273 - 펜던트 메뉴에 '프로그램 종료' 추가
+
+[추가] robot-front: pages/main (메뉴)
+    - 코어가 리눅스(정품 펜던트)일 때만 '프로그램 종료' 카드 표시 (노트북 Windows 에는 안 보임)
+    - 누르면 확인창 -> 종료 -> "종료 중..." -> 코어가 멈추면 5초 뒤 "종료 완료, 제어기 전원을 꺼도 됩니다"
+    - 60초 안에 안 멈추거나 거부되면 사유 표시
+
+[추가] robot-core: POST /system/pendant-shutdown (리눅스 전용)
+    - 펜던트 화면(localhost)에서 온 요청만 받음
+    - 용접(아크) 중, 로봇 이동 중이면 거부
+    - systemd-run 으로 2초 뒤 vot-core·vot-back·mariadb 정지 + sync (운용 문서 6번 수동 절차와 같음)
+    - 로봇 잠금(m_mutex)을 쓰는 호출은 하지 않음 -> 1.1.272 이전처럼 잠금이 막힌 상황에서도 종료 가능
+    - 펜던트 poweroff 는 바로 다시 켜지므로 쓰지 않음
+
+[참고] 종료 후 제어기를 끄지 않고 다시 쓰려면 터미널에서
+    sudo systemctl start mariadb vot-back vot-core
+
+[DB]
+    변경 없음.
+
+[현장 확인 항목]
+  - 펜던트 메뉴에 '프로그램 종료' 카드가 보이는지 (노트북에는 안 보이는지)
+  - 종료 -> "종료 완료" 표시 후 systemctl status vot-core vot-back mariadb 가 inactive 인지
+  - 제어기 껐다 켠 뒤 정상 실행되는지
