@@ -144,6 +144,11 @@ export const moveToCartesianWithStopCheck = async (
 // 직선이 '끝났다'고 나와도 홈 TCP 와의 거리와 컨트롤러 에러를 확인하고, 도착하지 않았거나 에러면
 // 에러 리셋 후 2) 팔 접기로 넘어간다.
 const HOME_LIN_ARRIVE_TOL_MM = 5;
+// [v1.1.274] 수직 끝(P1/P7) 출발 홈 직선은 속도·가속을 낮춘다(30/100 -> 15/50).
+// P7 은 작업 범위 위쪽 끝이라 직선 초반에 J1 이 급하게 돌며 J1 지령속도 초과(1-23)·
+// J1 충돌(4-1, 토크 과다)이 나기 쉽다(2026-10-19 08:01/08:03). 용접 끝·파트 전환·터치센싱 끝이 쓴다.
+// 홈 버튼은 기본값(속도 최대 30, 가속 100) 그대로.
+export const VERTICAL_END_HOME_LIN = { linVel: 15, linAcc: 50 };
 const verifyHomeLinArrival = async (
   target: { x: number; y: number; z: number },
 ): Promise<'arrived' | 'notArrived' | 'unknown'> => {
@@ -207,17 +212,20 @@ export const moveHomeFromVerticalEnd = async (
     userNum?: number;
   },
   stopRef: React.MutableRefObject<boolean>,
+  opts?: { linVel?: number; linAcc?: number },
 ): Promise<{ success: boolean; stopped: boolean }> => {
   if (!homePoint.joints || homePoint.joints.length !== 6) return { success: false, stopped: false };
   const tool = homePoint.toolNum ?? 3;
   const user = homePoint.userNum ?? 0;
   const speed = homePoint.moveSpeed || 50;
   if (homePoint.tcp) {
-    log_helpers.info('homeFromVerticalEnd.lin', '수직 끝 -> 홈: 직선(LIN) 이동 시도');
+    const linVel = opts?.linVel ?? Math.min(speed, 30);
+    const linAcc = opts?.linAcc ?? 100;
+    log_helpers.info('homeFromVerticalEnd.lin', `수직 끝 -> 홈: 직선(LIN) 이동 시도 (속도 ${linVel}, 가속 ${linAcc})`);
     const lin = await moveToCartesianWithStopCheck(
       homePoint.tcp,
-      Math.min(speed, 30),
-      100,
+      linVel,
+      linAcc,
       100,
       -1,
       0,

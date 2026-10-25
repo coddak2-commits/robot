@@ -1,0 +1,9 @@
+v1.1.274: 홈 복귀 경로 정리 (홈 버튼 직선, 수직 끝 아래로 내려온 뒤 저속 직선)
+
+- front useRobotControl: 홈 버튼 빠지기 뒤 MoveJ 대신 moveHomeFromVerticalEnd (홈 TCP 직선 -> 도착 확인 -> 홈 MoveJ, 거부 시 팔 접기). 홈 MoveJ 곡선에 와이어 끝이 U셀 판을 긁어 휨
+- front weldingExecution/touchSensing: P1/P7 빠져나오기에 아래로 150mm 추가(거부 시 75/50%, 전부 거부면 생략)
+- front moveStopCheck: 수직 끝 홈 직선 속도·가속 15/50 (VERTICAL_END_HOME_LIN), 홈 버튼은 30/100 그대로
+- 버전 1.1.274
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LA3SBWxxgV7eeQNgpFRtoh

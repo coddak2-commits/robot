@@ -3,6 +3,7 @@ import { RealtimeRobotStatus, enableRobot, getRealtimeRobotStatus, stopRobotSDK 
 import { createLogger } from '../../../lib';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { executeRetract, executeMoveJ, executeHomeExitRetreat } from './moveHelpers';
+import { moveHomeFromVerticalEnd } from './weldingCore/moveStopCheck';
 
 const log_useRobotControl = createLogger('useRobotControl');
 export interface MoveToPointOptions {
@@ -142,8 +143,18 @@ export function useRobotControl(): UseRobotControlReturn {
           );
           if (!retractOk) return false;
         }
-        const moveJOk = await executeMoveJ(point, speed, toolNum, userNum, stopMoveRef, teachingRobotState?.joints);
-        if (!moveJOk) return false;
+        if (isHomeTarget && point.tcp && point.joints && point.joints.length === 6) {
+          // [v1.1.274] 홈 버튼: 빠진 뒤 홈 TCP 로 직선(MoveL) -> 도착 확인 후 홈 관절 MoveJ.
+          // 직선이 거부되거나 도중에 멈추면 팔 접기(J1 고정) -> 홈 MoveJ (weldingCore/moveStopCheck.ts).
+          // 종전 MoveJ 한 번은 관절이 함께 돌며 와이어 끝(스틱아웃 25mm)이 곡선으로 휩쓸려
+          // U셀 판을 긁고 휘었다(2026-10-26 현장, 와이어만 닿아 로봇 충돌 감지·로그에는 안 남음).
+          log_useRobotControl.info('moveToPoint.homeLin', '홈 버튼: 홈 TCP 로 직선(MoveL) 복귀');
+          const homeResult = await moveHomeFromVerticalEnd({ ...point, moveSpeed: speed }, stopMoveRef);
+          if (!homeResult.success) return false;
+        } else {
+          const moveJOk = await executeMoveJ(point, speed, toolNum, userNum, stopMoveRef, teachingRobotState?.joints);
+          if (!moveJOk) return false;
+        }
         totalTimer.end('moveToPoint.done', `${point.name} 이동 완료`);
         return true;
       } catch (error) {

@@ -6,7 +6,7 @@ import { setWeldingPartOrder } from '../..';
 import { WeldingResult, WeldingStartOptions, ClosestCenterlineResult } from './weldingCoreTypes';
 import { findClosestCenterlinePoint } from './pathFinding';
 import { saveStoppedLog, saveWeldingLog } from './loggingHelpers';
-import { moveToJointWithStopCheck, getWeaveTypeCode, calculateDistance, getMinimumWeavingDistance, moveHomeFromVerticalEnd } from './moveStopCheck';
+import { moveToJointWithStopCheck, getWeaveTypeCode, calculateDistance, getMinimumWeavingDistance, moveHomeFromVerticalEnd, VERTICAL_END_HOME_LIN } from './moveStopCheck';
 import { loadWeldingSettings } from './sequenceSettings';
 import { safeArcOn, setupAndStartWeave, endPartWelding, startPartWelding, safeEndWeave, safeArcOff } from './weaveHelpers';
 import { determinePointTouchOffset } from './weldingPointLoop';
@@ -419,6 +419,11 @@ async function retreatBaseX(
 // 기준은 끝점의 실제 자리(교시 + 터치 보정)다. 각 단계가 거부되면 그 단계 거리를
 // 75%, 50% 로 줄여 다시 시도하고(v1.1.257), 그래도 안 되면 남은 단계는 건너뛰고 false 를 돌려준다.
 // 쓰는 곳: 용접 마지막 종료, 파트 전환(횡단) 후퇴. 터치센싱 끝은 touchSensing.ts 에 같은 경로.
+// [v1.1.274] 뒤로 뺀 다음 '아래로' 150mm 를 다시 넣는다(높이만, 뒤로·가운데 값은 그대로).
+// 1.1.261 부터 홈은 MoveJ 가 아니라 홈 TCP 직선이라, 작업 범위 위쪽 끝(P7 Z 약 553)에서 바로
+// 직선을 시작하면 J1 이 급하게 돈다(1-23/4-1). 터치센싱 때 토치가 올라온 이음부 쪽 공간으로
+// 먼저 내려와 덜 뻗은 자세에서 홈 직선을 시작한다. 거부되면 75%, 50% 로 줄인다.
+const VERTICAL_EXIT_DOWN_MM = 150;
 const VERTICAL_END_POINT_IDS = ['p1', 'p7'];
 const VERTICAL_EXIT_BACK_MM = 20;
 // [v1.1.254] P7 은 뒤로 더 뺀다(2026-10-15 현장 요청).
@@ -441,12 +446,15 @@ async function exitFromVerticalEnd(point: TeachingPoint, speed: number): Promise
   const base = t ? [t.dx, t.dy, t.dz] : [0, 0, 0];
   const steps: { label: string; target: number[] }[] = [
     { label: '뒤로', target: [back, center * VERTICAL_EXIT_CENTER_MM, 0] },
+    { label: '아래로', target: [0, 0, -VERTICAL_EXIT_DOWN_MM] },
   ];
   let reached = [0, 0, 0];
   for (const step of steps) {
     let ok = false;
+    // '아래로'는 앞 단계에서 실제로 뺀 자리(reached) 그대로 높이만 내린다.
+    const target = step.label === '아래로' ? [reached[0], reached[1], step.target[2]] : step.target;
     for (const ratio of [1, 0.75, 0.5]) {
-      const v = reached.map((p, k) => p + (step.target[k] - p) * ratio);
+      const v = reached.map((p, k) => p + (target[k] - p) * ratio);
       let status: number | undefined;
       try {
         const res = await moveToCartesianPosition(
@@ -479,6 +487,11 @@ async function exitFromVerticalEnd(point: TeachingPoint, speed: number): Promise
         'welding.verticalExit.retry',
         `${point.name} 빠져나오기 ${step.label} 실패 (status=${status ?? '-'})${ratio > 0.5 ? ' - 더 짧게 재시도' : ''}`,
       );
+    }
+    if (!ok && step.label === '아래로') {
+      // 뒤로는 빠졌으니 그 자리에서 홈 직선으로 간다(1.1.273 까지와 같은 출발점).
+      log_weldingExecution.warn('welding.verticalExit.downSkipped', `${point.name} 아래로 실패 - 뺀 자리에서 홈으로 간다`);
+      return true;
     }
     if (!ok) {
       log_weldingExecution.warn(
@@ -1438,7 +1451,7 @@ export async function executeWelding(
           if (homePoint?.joints && !stopRef.current) {
             // [v1.1.261] 수직 끝(P1)에서는 직선 -> (거부 시) 팔 접기 -> 회전. moveHomeFromVerticalEnd 참고.
             const homeResult = useVerticalExit
-              ? await moveHomeFromVerticalEnd(homePoint, stopRef)
+              ? await moveHomeFromVerticalEnd(homePoint, stopRef, VERTICAL_END_HOME_LIN)
               : await moveToJointWithStopCheck(
                   homePoint.joints,
                   homePoint.moveSpeed || 50,
@@ -1948,7 +1961,7 @@ export async function executeWelding(
       const lastPointForHome = weldingPoints[weldingPoints.length - 1];
       if (isVerticalEndPointId(lastPointForHome?.id)) {
         // [v1.1.261] 수직 끝(P1/P7)에서는 직선 -> (거부 시) 팔 접기 -> 회전.
-        await moveHomeFromVerticalEnd(homePoint, stopRef);
+        await moveHomeFromVerticalEnd(homePoint, stopRef, VERTICAL_END_HOME_LIN);
       } else {
         await moveToJointWithStopCheck(
           homePoint.joints,
