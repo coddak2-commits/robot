@@ -284,6 +284,25 @@ export const moveHomeFromVerticalEnd = async (
 // 2) 가 거부되거나 도중에 멈추면 에러 리셋 후 멈춘다(그 자리에서 홈 직선을 다시 보내지 않는다).
 // P8 이 저장 안 됐거나, 뒤로 빠지기가 안 된 상태(X 차이 20mm 미만)면 종전처럼 바로 moveHomeFromVerticalEnd.
 const P7_VIA_P8_MIN_BACK_MM = 20;
+// [v1.1.280] 용접 끝 빠지기(weldingExecution.ts exitFromVerticalEnd)는 명령만 보내고 끝을 기다리지 않는다.
+// 1.1.279 는 빠지는 도중(0.5초 뒤) TCP 를 읽어 X 차이 -9.7mm 로 '안 빠짐' 판정 -> 바로 홈 직선 ->
+// 특이 자세로 J1 -176.39 까지 돌다 멈춤(2026-10-26 16:07). 터치센싱 끝은 끝까지 기다려서 정상이었다.
+// TCP 를 읽기 전에 이동이 끝날 때까지 기다린다.
+const waitMotionDone = async (stopRef: React.MutableRefObject<boolean>, timeout = 60000): Promise<boolean> => {
+  await new Promise(resolve => setTimeout(resolve, 200));
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    if (stopRef.current) return false;
+    try {
+      if ((await checkMotionDone())?.done) return true;
+    } catch {
+      // 다음 회차에 다시 확인
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  log_helpers.warn('homeViaP8.waitTimeout', '빠지기 이동 완료 대기 타임아웃');
+  return true;
+};
 export const moveHomeFromP7ViaP8 = async (
   p7Tcp: { x: number; y: number; z: number } | null | undefined,
   p8Point: {
@@ -299,6 +318,7 @@ export const moveHomeFromP7ViaP8 = async (
     log_helpers.warn('homeViaP8.noPoint', 'P7 또는 P8 TCP 없음 - 바로 홈으로 간다');
     return moveHomeFromVerticalEnd(homePoint, stopRef, opts);
   }
+  if (!(await waitMotionDone(stopRef))) return { success: false, stopped: true };
   let cur: number[] | null = null;
   try {
     const st = await getRealtimeRobotStatus();

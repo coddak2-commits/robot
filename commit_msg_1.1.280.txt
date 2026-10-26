@@ -1,0 +1,8 @@
+v1.1.280: 용접 끝 P7 -> 홈, 빠지기 완료를 기다린 뒤 P8 높이로
+
+- front moveStopCheck: moveHomeFromP7ViaP8 가 TCP 를 읽기 전에 이동 완료 대기
+- 1.1.279 용접 끝에서 빠지기 도중 위치를 읽어 '안 빠짐' 판정 -> 바로 홈 직선 -> 특이 자세 정지
+- 버전 1.1.280
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LA3SBWxxgV7eeQNgpFRtoh
