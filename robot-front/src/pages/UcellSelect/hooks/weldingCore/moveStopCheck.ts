@@ -276,8 +276,14 @@ export const moveHomeFromVerticalEnd = async (
 // 종전에는 MoveJ 한 번이라 관절이 함께 돌며 팔이 U셀 안쪽으로 부풀어 들어갔다.
 // 2026-10-26 08:58 / 09:10 홈 -> P10 MoveJ(J1 -1.95 -> -46.06, J4 -100.78 -> -124.28) 도중 4번 축 충돌(4-4).
 // 결과: 'ok' 도착 / 'rejected' 직선 거부·도중 멈춤(에러 리셋 후) / 'stopped' 정지 / 'failed' 마지막 관절 맞추기 실패.
+// [v1.1.277] P7 은 앞 접근점(Base +X 60mm, 자세는 P7 그대로)을 거쳐 들어간다. 거부되면 45 -> 30mm.
+// P7 은 뒷판에서 약 4mm(터치 find-dx -4.2mm)에 교시돼 있다(P1 약 45mm). 홈(아래 가운데)에서 P7(오른쪽 위 구석)까지
+// 대각선 직선 한 번이면 토치 각도가 바뀌며 판 가까이로 비스듬히 들어가 와이어가 U셀에 닿아 휘었다(2026-10-26).
+// 60mm 는 P7 에서 뒤로 빠질 때 성공하는 거리(80mm 부터 code=38). 접근점이 전부 거부되면 'rejected'.
+const LIN_APPROACH_BACK_MM: Record<string, number[]> = { p7: [60, 45, 30] };
 export const moveLinToPoint = async (
   point: {
+    id?: string;
     name?: string;
     joints?: number[] | null;
     tcp?: { x: number; y: number; z: number; rx: number; ry: number; rz: number } | null;
@@ -291,6 +297,30 @@ export const moveLinToPoint = async (
   const tool = point.toolNum ?? 3;
   const user = point.userNum ?? 0;
   const linVel = Math.min(speed, 30);
+  const approachSteps = LIN_APPROACH_BACK_MM[(point.id ?? '').toLowerCase()];
+  if (approachSteps) {
+    let approached = false;
+    for (const back of approachSteps) {
+      log_helpers.info('pointLin.approach', `${point.name ?? ''} 앞 접근점(Base +X ${back}mm)으로 직선 이동`);
+      const a = await moveToCartesianWithStopCheck(
+        point.tcp, linVel, 100, 100, -1, 1, [back, 0, 0, 0, 0, 0], undefined, tool, user, stopRef,
+      );
+      if (a.stopped) return 'stopped';
+      if (a.success) {
+        const t = point.tcp;
+        if ((await verifyHomeLinArrival({ x: t.x + back, y: t.y, z: t.z })) !== 'notArrived') {
+          approached = true;
+          break;
+        }
+        log_helpers.warn('pointLin.approach.notArrived', `${point.name ?? ''} 접근점 이동이 도중에 멈춤`);
+        await resetErrorIfAny();
+        return 'rejected';
+      }
+      log_helpers.warn('pointLin.approach.rejected', `${point.name ?? ''} 접근점 +X ${back}mm 거부`);
+      await resetErrorIfAny();
+    }
+    if (!approached) return 'rejected';
+  }
   log_helpers.info('pointLin', `${point.name ?? ''} 직선(MoveL) 이동 (속도 ${linVel})`);
   const lin = await moveToCartesianWithStopCheck(
     point.tcp, linVel, 100, 100, -1, 0, [0, 0, 0, 0, 0, 0], undefined, tool, user, stopRef,

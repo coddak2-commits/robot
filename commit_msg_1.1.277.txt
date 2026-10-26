@@ -1,0 +1,7 @@
+v1.1.277: 수동 이동으로 P7 갈 때 앞 접근점 경유
+
+- front moveStopCheck moveLinToPoint: P7 은 Base +X 60mm(거부 시 45/30) 접근점 -> 직선 진입. 홈 -> P7 대각선 직선에서 와이어가 판에 닿아 휨
+- 버전 1.1.277
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LA3SBWxxgV7eeQNgpFRtoh
