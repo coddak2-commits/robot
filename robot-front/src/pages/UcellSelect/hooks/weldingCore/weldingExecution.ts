@@ -6,7 +6,7 @@ import { setWeldingPartOrder } from '../..';
 import { WeldingResult, WeldingStartOptions, ClosestCenterlineResult } from './weldingCoreTypes';
 import { findClosestCenterlinePoint } from './pathFinding';
 import { saveStoppedLog, saveWeldingLog } from './loggingHelpers';
-import { moveToJointWithStopCheck, getWeaveTypeCode, calculateDistance, getMinimumWeavingDistance, moveHomeFromVerticalEnd, VERTICAL_END_HOME_LIN } from './moveStopCheck';
+import { moveToJointWithStopCheck, getWeaveTypeCode, calculateDistance, getMinimumWeavingDistance, moveHomeFromVerticalEnd, moveHomeFromP7ViaP8, VERTICAL_END_HOME_LIN } from './moveStopCheck';
 import { loadWeldingSettings } from './sequenceSettings';
 import { safeArcOn, setupAndStartWeave, endPartWelding, startPartWelding, safeEndWeave, safeArcOff } from './weaveHelpers';
 import { determinePointTouchOffset } from './weldingPointLoop';
@@ -1948,7 +1948,11 @@ export async function executeWelding(
     if (!stopRef.current && homePoint?.joints) {
       log_weldingExecution.info('welding.homeReturn', 'Home으로 복귀');
       const lastPointForHome = weldingPoints[weldingPoints.length - 1];
-      if (isVerticalEndPointId(lastPointForHome?.id)) {
+      if ((lastPointForHome?.id ?? '').toLowerCase() === 'p7') {
+        // [v1.1.279] P7 은 P8 높이까지 내려간 뒤 홈. moveStopCheck.ts moveHomeFromP7ViaP8 참고.
+        const p8 = teachingPoints.find(pt => pt.id.toLowerCase() === 'p8' && pt.isSaved && pt.tcp);
+        await moveHomeFromP7ViaP8(lastPointForHome?.tcp, p8, homePoint, stopRef, VERTICAL_END_HOME_LIN);
+      } else if (isVerticalEndPointId(lastPointForHome?.id)) {
         // [v1.1.261] 수직 끝(P1/P7)에서는 직선 -> (거부 시) 팔 접기 -> 회전.
         await moveHomeFromVerticalEnd(homePoint, stopRef, VERTICAL_END_HOME_LIN);
       } else {

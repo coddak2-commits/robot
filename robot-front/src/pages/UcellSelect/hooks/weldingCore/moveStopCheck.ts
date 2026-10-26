@@ -152,6 +152,7 @@ const HOME_LIN_ARRIVE_TOL_MM = 5;
 export const VERTICAL_END_HOME_LIN = { linVel: 30, linAcc: 100 };
 const verifyHomeLinArrival = async (
   target: { x: number; y: number; z: number },
+  what = '홈 TCP',
 ): Promise<'arrived' | 'notArrived' | 'unknown'> => {
   let st;
   try {
@@ -175,7 +176,7 @@ const verifyHomeLinArrival = async (
   } catch {
     err = null;
   }
-  log_helpers.warn('homeFromVerticalEnd.lin.notArrived', '수직 끝 -> 홈: 직선 이동이 홈 TCP 에 도착하지 않음', {
+  log_helpers.warn('homeFromVerticalEnd.lin.notArrived', `직선 이동이 ${what} 에 도착하지 않음`, {
     distanceMm: Number(dist.toFixed(1)),
     tcp: st.tcp.slice(0, 3).map(v => Number(v.toFixed(2))),
     errorCode: errCode,
@@ -271,6 +272,69 @@ export const moveHomeFromVerticalEnd = async (
   }
   log_helpers.info('homeFromVerticalEnd.rotate', '수직 끝 -> 홈: 홈 MoveJ');
   return await moveToJointWithStopCheck(homePoint.joints, speed, tool, user, stopRef);
+};
+// [v1.1.279] P7 -> 홈은 P8 높이까지 내려간 뒤 홈으로 간다(사용자 요청 2026-10-26).
+// P7 에서 홈 TCP 로 바로 가는 직선은 위치와 토치 자세(rx 약 130도 -> 홈 자세)가 한꺼번에 크게 바뀌며
+// 도중에 특이 자세를 지나 J1 이 -175.68 까지 돌다 멈췄다(2026-10-26 15:35, 1.1.278 터치센싱 끝).
+// 그 뒤 팔 접기(J1 -175.68 그대로)는 code=32, 홈 MoveJ 는 code=14 로 거부.
+//   1) (호출 전) P7 에서 뒤로 빠지기 - 종전 그대로.
+//   2) 빠진 거리(지금 TCP - P7 교시)를 그대로 유지한 채 P8 자세로 직선 이동.
+//      오른쪽 수직 용접(P9 -> P8 -> P7)을 거꾸로 내려가는 경로라 용접 때 매번 지나가는 자세다.
+//   3) 거기서 P8 에서 홈 가는 것과 같이 moveHomeFromVerticalEnd(홈 직선 -> 홈 관절 맞추기).
+// 2) 가 거부되거나 도중에 멈추면 에러 리셋 후 멈춘다(그 자리에서 홈 직선을 다시 보내지 않는다).
+// P8 이 저장 안 됐거나, 뒤로 빠지기가 안 된 상태(X 차이 20mm 미만)면 종전처럼 바로 moveHomeFromVerticalEnd.
+const P7_VIA_P8_MIN_BACK_MM = 20;
+export const moveHomeFromP7ViaP8 = async (
+  p7Tcp: { x: number; y: number; z: number } | null | undefined,
+  p8Point: {
+    tcp?: { x: number; y: number; z: number; rx: number; ry: number; rz: number } | null;
+    toolNum?: number;
+    userNum?: number;
+  } | null | undefined,
+  homePoint: Parameters<typeof moveHomeFromVerticalEnd>[0],
+  stopRef: React.MutableRefObject<boolean>,
+  opts?: { linVel?: number; linAcc?: number },
+): Promise<{ success: boolean; stopped: boolean }> => {
+  if (!p7Tcp || !p8Point?.tcp) {
+    log_helpers.warn('homeViaP8.noPoint', 'P7 또는 P8 TCP 없음 - 바로 홈으로 간다');
+    return moveHomeFromVerticalEnd(homePoint, stopRef, opts);
+  }
+  let cur: number[] | null = null;
+  try {
+    const st = await getRealtimeRobotStatus();
+    cur = st?.tcp && st.tcp.length >= 3 ? st.tcp : null;
+  } catch (error) {
+    log_helpers.warn('homeViaP8.status', '현재 TCP 조회 실패', { error: String(error) });
+  }
+  if (!cur) {
+    log_helpers.warn('homeViaP8.noTcp', '현재 TCP 없음 - 바로 홈으로 간다');
+    return moveHomeFromVerticalEnd(homePoint, stopRef, opts);
+  }
+  const d = [cur[0] - p7Tcp.x, cur[1] - p7Tcp.y, cur[2] - p7Tcp.z];
+  if (d[0] < P7_VIA_P8_MIN_BACK_MM) {
+    log_helpers.warn('homeViaP8.notBacked', `P7 에서 뒤로 빠지지 않음(X ${d[0].toFixed(1)}mm) - 바로 홈으로 간다`);
+    return moveHomeFromVerticalEnd(homePoint, stopRef, opts);
+  }
+  const p8 = p8Point.tcp;
+  const target = { ...p8, x: p8.x + d[0], y: p8.y + d[1], z: p8.z + d[2] };
+  const linVel = opts?.linVel ?? 30;
+  const linAcc = opts?.linAcc ?? 100;
+  log_helpers.info(
+    'homeViaP8.down',
+    `P7 -> P8 높이로 직선 이동 (빠진 거리 [${d.map(n => n.toFixed(1)).join(', ')}] 유지, 속도 ${linVel})`,
+  );
+  const down = await moveToCartesianWithStopCheck(
+    target, linVel, linAcc, 100, -1, 0, [0, 0, 0, 0, 0, 0], undefined,
+    p8Point.toolNum ?? homePoint.toolNum ?? 3, p8Point.userNum ?? homePoint.userNum ?? 0, stopRef,
+  );
+  if (down.stopped) return down;
+  if (!down.success || (await verifyHomeLinArrival(target, 'P8 높이 지점')) === 'notArrived') {
+    log_helpers.error('homeViaP8.down.failed', 'P8 높이로 내려가기 실패 - 에러 리셋 후 멈춤. 홈 버튼으로 복귀할 것');
+    await resetErrorIfAny();
+    return { success: false, stopped: false };
+  }
+  log_helpers.info('homeViaP8.home', 'P8 높이에서 홈으로');
+  return moveHomeFromVerticalEnd(homePoint, stopRef, opts);
 };
 // [v1.1.276] 수동 포인트 이동(포인트 버튼·도식 클릭): 저장 TCP 로 직선(MoveL) -> 도착 확인 -> 저장 관절 MoveJ(관절값 맞추기).
 // 종전에는 MoveJ 한 번이라 관절이 함께 돌며 팔이 U셀 안쪽으로 부풀어 들어갔다.

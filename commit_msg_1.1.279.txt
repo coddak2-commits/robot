@@ -1,0 +1,9 @@
+v1.1.279: P7 -> 홈은 P8 높이까지 내려간 뒤 홈
+
+- front moveStopCheck: moveHomeFromP7ViaP8 추가. 뒤로 빠진 거리를 유지한 채 P8 자세로 직선 -> 홈 직선 -> 홈 관절
+- touchSensing/weldingExecution: P7 끝 홈 복귀에 적용. P1 은 그대로
+- 1.1.278 터치센싱 끝 P7 -> 홈 직선 중 특이 자세(J1 -175.68)로 멈춘 문제
+- 버전 1.1.279
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LA3SBWxxgV7eeQNgpFRtoh
