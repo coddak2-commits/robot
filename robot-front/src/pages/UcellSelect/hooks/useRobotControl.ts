@@ -3,7 +3,7 @@ import { RealtimeRobotStatus, enableRobot, getRealtimeRobotStatus, stopRobotSDK 
 import { createLogger } from '../../../lib';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { executeRetract, executeMoveJ, executeHomeExitRetreat } from './moveHelpers';
-import { moveHomeFromVerticalEnd } from './weldingCore/moveStopCheck';
+import { moveHomeFromVerticalEnd, moveLinToPoint } from './weldingCore/moveStopCheck';
 
 const log_useRobotControl = createLogger('useRobotControl');
 export interface MoveToPointOptions {
@@ -151,6 +151,22 @@ export function useRobotControl(): UseRobotControlReturn {
           log_useRobotControl.info('moveToPoint.homeLin', '홈 버튼: 홈 TCP 로 직선(MoveL) 복귀');
           const homeResult = await moveHomeFromVerticalEnd({ ...point, moveSpeed: speed }, stopMoveRef);
           if (!homeResult.success) return false;
+        } else if (!isHomeTarget && point.tcp) {
+          // [v1.1.276] 포인트로 갈 때도 직선(MoveL). moveStopCheck.ts moveLinToPoint 참고.
+          const lin = await moveLinToPoint(point, speed, stopMoveRef);
+          if (lin === 'stopped' || lin === 'failed') return false;
+          if (lin === 'rejected') {
+            const goJ = window.confirm(
+              `${point.name ?? point.id} 직선 이동이 거부되었거나 도중에 멈췄습니다.\n관절 이동(MoveJ)으로 가면 팔이 U셀 안쪽으로 들어갈 수 있습니다.\n\n주변을 확인했으면 [확인], 멈추려면 [취소]를 누르세요.`,
+            );
+            if (!goJ) {
+              log_useRobotControl.info('moveToPoint.linCancel', '사용자 취소 - 이동 안 함');
+              return false;
+            }
+            log_useRobotControl.info('moveToPoint.linFallbackMoveJ', '사용자 확인 - MoveJ 로 이동');
+            const moveJOk = await executeMoveJ(point, speed, toolNum, userNum, stopMoveRef, teachingRobotState?.joints);
+            if (!moveJOk) return false;
+          }
         } else {
           const moveJOk = await executeMoveJ(point, speed, toolNum, userNum, stopMoveRef, teachingRobotState?.joints);
           if (!moveJOk) return false;

@@ -1,0 +1,9 @@
+v1.1.276: 포인트 이동(수동)도 직선(MoveL)으로
+
+- front moveStopCheck: moveLinToPoint (저장 TCP 직선 -> 도착 확인 -> 저장 관절 MoveJ)
+- front useRobotControl: 포인트 이동을 MoveJ 대신 moveLinToPoint, 거부·중단 시 확인창 후 MoveJ
+- 원인: 홈 -> P10 MoveJ 중 4번 축 충돌(4-4), 팔이 U셀 안으로 들어감
+- 버전 1.1.276
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LA3SBWxxgV7eeQNgpFRtoh

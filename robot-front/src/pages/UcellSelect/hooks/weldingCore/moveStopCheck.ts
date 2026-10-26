@@ -272,6 +272,44 @@ export const moveHomeFromVerticalEnd = async (
   log_helpers.info('homeFromVerticalEnd.rotate', '수직 끝 -> 홈: 홈 MoveJ');
   return await moveToJointWithStopCheck(homePoint.joints, speed, tool, user, stopRef);
 };
+// [v1.1.276] 수동 포인트 이동(포인트 버튼·도식 클릭): 저장 TCP 로 직선(MoveL) -> 도착 확인 -> 저장 관절 MoveJ(관절값 맞추기).
+// 종전에는 MoveJ 한 번이라 관절이 함께 돌며 팔이 U셀 안쪽으로 부풀어 들어갔다.
+// 2026-10-26 08:58 / 09:10 홈 -> P10 MoveJ(J1 -1.95 -> -46.06, J4 -100.78 -> -124.28) 도중 4번 축 충돌(4-4).
+// 결과: 'ok' 도착 / 'rejected' 직선 거부·도중 멈춤(에러 리셋 후) / 'stopped' 정지 / 'failed' 마지막 관절 맞추기 실패.
+export const moveLinToPoint = async (
+  point: {
+    name?: string;
+    joints?: number[] | null;
+    tcp?: { x: number; y: number; z: number; rx: number; ry: number; rz: number } | null;
+    toolNum?: number;
+    userNum?: number;
+  },
+  speed: number,
+  stopRef: React.MutableRefObject<boolean>,
+): Promise<'ok' | 'rejected' | 'stopped' | 'failed'> => {
+  if (!point.tcp || !point.joints || point.joints.length !== 6) return 'rejected';
+  const tool = point.toolNum ?? 3;
+  const user = point.userNum ?? 0;
+  const linVel = Math.min(speed, 30);
+  log_helpers.info('pointLin', `${point.name ?? ''} 직선(MoveL) 이동 (속도 ${linVel})`);
+  const lin = await moveToCartesianWithStopCheck(
+    point.tcp, linVel, 100, 100, -1, 0, [0, 0, 0, 0, 0, 0], undefined, tool, user, stopRef,
+  );
+  if (lin.stopped) return 'stopped';
+  if (!lin.success) {
+    log_helpers.warn('pointLin.rejected', `${point.name ?? ''} 직선 이동 거부`);
+    await resetErrorIfAny();
+    return 'rejected';
+  }
+  if ((await verifyHomeLinArrival(point.tcp)) === 'notArrived') {
+    log_helpers.warn('pointLin.notArrived', `${point.name ?? ''} 직선 이동이 도중에 멈춤`);
+    await resetErrorIfAny();
+    return 'rejected';
+  }
+  const j = await moveToJointWithStopCheck(point.joints, speed, tool, user, stopRef);
+  if (j.stopped) return 'stopped';
+  return j.success ? 'ok' : 'failed';
+};
 export const calculateDistance = (
   p1: { x: number; y: number; z: number } | null,
   p2: { x: number; y: number; z: number } | null
