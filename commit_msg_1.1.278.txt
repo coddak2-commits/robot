@@ -1,0 +1,8 @@
+v1.1.278: 수직 끝(P1/P7) 빠져나오기 아래로 150mm 삭제 (1.1.273 으로 되돌림)
+
+- front weldingExecution/touchSensing: 1.1.274 의 '아래로' 단계 삭제. 펜던트에서 P7 -> 홈 때 로봇이 이리저리 꺾임
+- 홈 버튼·포인트 이동 직선, P7 접근점은 유지
+- 버전 1.1.278
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LA3SBWxxgV7eeQNgpFRtoh

@@ -512,10 +512,9 @@ export async function executeTouchSensing(
               const center = lastIdLower === 'p7' ? -1 : 1;
               // [v1.1.258] P7 은 뒤로 60mm, 거부 시 45 -> 30 (weldingExecution.ts VERTICAL_EXIT_BACK_MM_P7 과 같게).
               const back = lastIdLower === 'p7' ? 60 : 20;
-              // [v1.1.274] 뒤로 뺀 다음 아래로 150mm (weldingExecution.ts VERTICAL_EXIT_DOWN_MM 과 같게).
+              // [v1.1.278] 1.1.274 의 '아래로 150mm' 삭제(weldingExecution.ts 같은 이유). 1.1.273 과 같음.
               const exitSteps: { label: string; target: number[] }[] = [
                 { label: '뒤로', target: [back, center * 20, 0] },
-                { label: '아래로', target: [0, 0, -150] },
               ];
               // [v1.1.263] 빠져나오기 기준을 용접 끝(weldingExecution.ts exitFromVerticalEnd)과 같게
               // '교시 + 방금 잰 터치 보정'으로 한다. 종전에는 교시 위치 기준이라 출발점이 터치 보정만큼
@@ -532,9 +531,8 @@ export async function executeTouchSensing(
               let allOk = true;
               for (const step of exitSteps) {
                 let ok = false;
-                const target = step.label === '아래로' ? [reached[0], reached[1], step.target[2]] : step.target;
                 for (const ratio of [1, 0.75, 0.5]) {
-                  const v = reached.map((p, k) => p + (target[k] - p) * ratio);
+                  const v = reached.map((p, k) => p + (step.target[k] - p) * ratio);
                   const r = await retractTo(1, [touchBase[0] + v[0], touchBase[1] + v[1], touchBase[2] + v[2], 0, 0, 0]);
                   if (r.stopped) {
                     retract = r;
@@ -555,13 +553,6 @@ export async function executeTouchSensing(
                   );
                 }
                 if (retract.stopped) break;
-                if (!ok && step.label === '아래로') {
-                  log_touchSensing.warn(
-                    'touchSensing.homeReturn.exit.downSkipped',
-                    `${lastPoint.name} 아래로 실패 - 뺀 자리에서 홈으로 간다`,
-                  );
-                  break;
-                }
                 if (!ok) {
                   allOk = false;
                   log_touchSensing.warn(
