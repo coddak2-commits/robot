@@ -148,7 +148,8 @@ const HOME_LIN_ARRIVE_TOL_MM = 5;
 // P7 은 작업 범위 위쪽 끝이라 직선 초반에 J1 이 급하게 돌며 J1 지령속도 초과(1-23)·
 // J1 충돌(4-1, 토크 과다)이 나기 쉽다(2026-10-19 08:01/08:03). 용접 끝·파트 전환·터치센싱 끝이 쓴다.
 // 홈 버튼은 기본값(속도 최대 30, 가속 100) 그대로.
-export const VERTICAL_END_HOME_LIN = { linVel: 15, linAcc: 50 };
+// [v1.1.275] 15/50 은 P7 -> 홈이 너무 느려 30/100 으로 원복(2026-10-26 현장). 아래로 150mm 는 유지.
+export const VERTICAL_END_HOME_LIN = { linVel: 30, linAcc: 100 };
 const verifyHomeLinArrival = async (
   target: { x: number; y: number; z: number },
 ): Promise<'arrived' | 'notArrived' | 'unknown'> => {
