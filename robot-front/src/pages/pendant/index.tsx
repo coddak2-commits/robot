@@ -9,6 +9,8 @@ import { setWeldingPartOrder, hasCornerParts } from '../UcellSelect';
 import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 import { playSaveOkBeep, playErrorBeep } from '../../lib/audio';
+import { CameraCaptureButton } from '../UcellSelect/components/CameraCaptureButton';
+import { autoCaptureBeforeWeld, collectPointGaps } from '../../lib/cameraApi';
 
 const CELL_CONFIG: UCellConfig = {
   type: 'normal',
@@ -607,6 +609,18 @@ const PendantInner: React.FC = () => {
   const startWithGapLookup = async () => {
     if (isWelding || isRobotMoving) return;
     try {
+      // [v1.1.284] 실제 용접 시작 직전 카메라 자동 촬영 (카메라 연결 시에만, 실패해도 용접 진행)
+      if (!dryRun) {
+        try {
+          await autoCaptureBeforeWeld({
+            job_id: currentJobId,
+            job_name: currentJobName,
+            part_gaps: collectPointGaps(teachingPoints),
+          });
+        } catch {
+          // 무시
+        }
+      }
       // 파트별 gap → 파라미터 조회
       const partGapMap = getPartGapMap();
       const lookups = await Promise.all(partGapMap.map(async pg => {
@@ -939,6 +953,8 @@ const PendantInner: React.FC = () => {
         <span style={{ fontSize: 12, color: '#cbd5e1' }}>
           {savedCount}/{teachingPoints.length - 1} 저장됨
         </span>
+        {/* [v1.1.284] 카메라(robot_camera)가 연결돼 있을 때만 보임 */}
+        <CameraCaptureButton jobId={currentJobId} jobName={currentJobName} points={teachingPoints} disabled={isWelding || isTouchSensing} />
       </div>
 
       {/* 우상단 알람 배지 + 로그아웃 */}

@@ -1,0 +1,7 @@
+v1.1.284: 펜던트 화면에도 카메라 촬영 버튼·용접 시작 자동 촬영
+
+- pendant/index.tsx: CameraCaptureButton 추가, startWithGapLookup 에 autoCaptureBeforeWeld (Dry Run 제외)
+- 버전 1.1.284
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcESmFgyg6uTk7yRDUY
