@@ -1,0 +1,16 @@
+[Unit]
+Description=VoT robot_camera (Orbbec Gemini 435Le)
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=linaro
+Environment=HOME=/home/linaro
+WorkingDirectory=/home/linaro/vot/robot/robot-camera/build-linux
+ExecStart=/home/linaro/vot/robot/robot-camera/build-linux/robot_camera /home/linaro/vot/robot/robot-core/build-linux/config.ini
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -35,6 +35,16 @@ try {
     & .\build_unity.bat
     if ($LASTEXITCODE -ne 0) { throw "robot-core build failed (exit $LASTEXITCODE)" }
 
+    # robot_camera: Orbbec SDK(robot-camera\third_party\orbbec)가 있을 때만 빌드. 없으면 카메라 빼고 진행
+    if (Test-Path (Join-Path $repoRoot "robot-camera\third_party\orbbec")) {
+        Step "[1b/5] Building robot-camera"
+        Set-Location (Join-Path $repoRoot "robot-camera")
+        & .\build_camera.bat
+        if ($LASTEXITCODE -ne 0) { throw "robot-camera build failed (exit $LASTEXITCODE)" }
+    } else {
+        Write-Host "robot-camera: Orbbec SDK not found, skipped" -ForegroundColor Yellow
+    }
+
     Step "[2/5] Building robot-front"
     Set-Location (Join-Path $repoRoot "robot-front")
     npm run build

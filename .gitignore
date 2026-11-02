@@ -60,4 +60,5 @@ config.ini
 !config.ini.example
 
 fairino-cpp-sdk-main/
+robot-camera/third_party/orbbec/
 

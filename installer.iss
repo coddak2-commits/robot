@@ -1,5 +1,5 @@
 ﻿#define MyAppName "Robot Welding Control"
-#define MyAppVersion "1.1.280"
+#define MyAppVersion "1.1.281"
 #define MyAppPublisher "Robot Welding"
 #define MyAppExeName "robot_core.exe"
 
@@ -41,6 +41,15 @@ Source: "robot-core\config.ini.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "robot-back\dist\robot-back.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; .env: 기존 설정 파일이 있으면 덮어쓰지 않음 (DB 계정 정보 보존)
 Source: "robot-back\env.deploy.ini"; DestDir: "{app}"; DestName: ".env"; Flags: onlyifdoesntexist
+
+; robot_camera (Orbbec 카메라, 과제용). SDK 가 없어 빌드 안 됐으면 건너뜀
+Source: "robot-camera\build\robot_camera.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "robot-camera\build\OrbbecSDK.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "robot-camera\build\msvcp140_1.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "robot-camera\build\msvcp140_2.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "robot-camera\build\concrt140.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "robot-camera\build\OrbbecSDKConfig.xml"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "robot-camera\build\extensions\*"; DestDir: "{app}\extensions"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 ; 앱과 백엔드를 함께 띄우는 런처
 Source: "launcher.bat"; DestDir: "{app}"; Flags: ignoreversion

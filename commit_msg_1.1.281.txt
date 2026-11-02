@@ -1,0 +1,11 @@
+v1.1.281: 카메라 촬영 프로그램 robot_camera 추가 (Gemini 435Le 1단계)
+
+- robot-camera: 별도 프로그램(HTTP 8002). 연결 상태, 깊이+컬러 촬영 저장, camera_captures DB 기록
+- 리눅스 build_camera_linux.sh + vot-camera.service, 윈도우 CMakeLists + build_camera.bat
+- launcher.bat / robot-core killRobotBack 에 robot_camera.exe 추가
+- installer.iss, release.ps1: Orbbec SDK 있을 때만 포함
+- database/migrations/020 (기록용), config.ini.example [camera]
+- 버전 1.1.281
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcESmFgyg6uTk7yRDUY

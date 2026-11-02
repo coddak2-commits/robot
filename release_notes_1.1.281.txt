@@ -1,0 +1,22 @@
+﻿v1.1.281 - 카메라 촬영 프로그램 robot_camera 추가 (Orbbec Gemini 435Le, 과제용 1단계)
+
+[추가] robot-camera/ (robot_core 와 별도 프로그램, HTTP 127.0.0.1:8002)
+    - 카메라(192.168.1.10:8090)에 5초마다 연결 시도. 카메라가 없어도 용접 프로그램에는 영향 없음
+    - GET  /camera/status    연결 여부, 시리얼, 펌웨어
+    - POST /camera/capture   깊이(mm 16비트 .pgm) + 컬러(.jpg) + 정보(.json) 저장, DB 기록
+    - GET  /camera/captures  최근 촬영 목록
+    - GET  /camera/file?id=N&kind=color|depth|meta  저장 파일 보기
+    - 저장 위치: 노트북 C:\Users\Public\Documents\RobotCamera, 펜던트 ~/vot/camera-data (날짜별 폴더)
+    - 설정: config.ini 의 [camera] (없으면 기본값)
+    - 화면 연동(촬영 버튼, 용접 시작 시 자동 촬영)은 다음 버전
+
+[변경] launcher.bat, robot-core: robot_camera.exe 같이 켜고 끔
+[변경] installer.iss, release.ps1: Orbbec SDK 가 있을 때만 robot_camera 포함
+
+[DB]
+    camera_captures 표 추가. robot_camera 가 켜질 때 자동 생성 (020 은 기록용)
+    기존 표는 변경 없음.
+
+[현장 확인 항목]
+  - 펜던트 A: robot_camera 빌드, vot-camera 서비스 실행, 촬영 시험
+  - 노트북: 카메라 연결 상태에서 http://localhost:8002/camera/status

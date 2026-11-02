@@ -30,3 +30,18 @@ jwt_secret=YOUR_JWT_SECRET_HERE
 [zmq]
 cmd_port=5555
 pub_port=5556
+
+# robot_camera (Orbbec Gemini 435Le, 과제용). 이 구역이 없으면 아래 기본값을 씀
+# data_dir 기본: Windows C:\Users\Public\Documents\RobotCamera, 리눅스 ~/vot/camera-data
+[camera]
+ip=192.168.1.10
+port=8090
+http_host=127.0.0.1
+http_port=8002
+#data_dir=
+depth_width=1280
+depth_height=800
+color_width=1280
+color_height=800
+fps=10
+warmup_frames=5
