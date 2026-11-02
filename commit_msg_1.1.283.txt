@@ -1,0 +1,9 @@
+v1.1.283: 카메라 촬영 버튼 + 용접 시작 시 자동 촬영
+
+- front: CameraCaptureButton (카메라 연결 시에만 표시, 실제 갭·메모 입력 후 촬영)
+- front: handleStartWelding 실제 용접 시작 직전 autoCaptureBeforeWeld (실패해도 용접 진행)
+- front: lib/cameraApi.ts (robot_camera 127.0.0.1:8002 호출, 로봇 TCP·관절 같이 저장)
+- 버전 1.1.283
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcESmFgyg6uTk7yRDUY

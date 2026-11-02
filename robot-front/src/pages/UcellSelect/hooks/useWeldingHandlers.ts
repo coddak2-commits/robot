@@ -1,6 +1,7 @@
 import { TeachingPoint, WeaveParams, PartWeldEnabled } from '..';
 import { RealtimeRobotStatus, emergencyStop } from '../../../lib';
 import { createLogger } from '../../../lib';
+import { autoCaptureBeforeWeld, collectPointGaps } from '../../../lib/cameraApi';
 import { useCallback } from 'react';
 import { getBlockPointIds, getPartConditionPointIds, getPartConditionPointId } from '..';
 import { TouchSensingOptions, TouchSensingResult, WeldingStartOptions, WeldingResult, ClosestCenterlineResult, UseWeldingOperationsReturn } from './weldingCore';
@@ -79,6 +80,19 @@ export function useWeldingHandlers({
 }: UseWeldingHandlersProps) {
   const handleStartWelding = useCallback(async () => {
     const isActualWelding = !(simulationMode || dryRunMode);
+    // [v1.1.283] 실제 용접 시작 직전(로봇이 홈, 터치센싱 전) 카메라 자동 촬영.
+    // 카메라가 연결돼 있을 때만, 실패해도 용접은 그대로 진행
+    if (isActualWelding) {
+      try {
+        await autoCaptureBeforeWeld({
+          job_id: currentJobId,
+          job_name: jobList.find(job => job.id === currentJobId)?.name ?? null,
+          part_gaps: collectPointGaps(teachingPoints),
+        });
+      } catch {
+        // 무시
+      }
+    }
     if (autoTouchSensing && isActualWelding) {
       log_useWeldingHandlers.info('welding.autoTouch.start', '용접 전 자동 터치센싱 시작');
       clearAllTouchOffsets();

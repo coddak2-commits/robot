@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { MapPin, History } from 'lucide-react';
 import { useTeachingPoints, useRobotControl, useJobManagement, useWeldingOperations, usePathTracking, useSchematicCalculations, usePathVisualization, useCenterlineNavigation, useWeldingHandlers, useWireControl, useCellSelectionHandlers, useAutoSavePoints } from './hooks';
 import { UnifiedWorkspaceCanvas, UCellConfig, TeachingTabContent, JobListModal, OperationHistoryPanel, LeftSidebar, SecondarySidebar, ToolbarControls } from './components/index';
+import { CameraCaptureButton } from './components/CameraCaptureButton';
 import { useRobotWebSocket } from '../../hooks';
 import { createLogger } from '../../lib';
 import { getTeachingJobs, getRealtimeRobotStatus, getWeldingPartOrder } from '../../lib';
@@ -576,6 +577,10 @@ export function CellSelectionCore({
               </div>
             )}
             <div className="tb-compact flex ml-auto flex-shrink-0 items-center">
+              {/* [v1.1.283] 카메라(robot_camera)가 연결돼 있을 때만 보임 */}
+              <span className="mr-2 flex items-center">
+                <CameraCaptureButton jobId={currentJobId} jobName={currentJobName} points={teachingPoints} disabled={isWelding} />
+              </span>
               {currentJobName && (
                 <div className="tb-job mr-4 px-3 py-1 text-xs font-bold rounded bg-slate-800/80 border border-slate-700 text-slate-300">
                   작업: <span className="text-white">{currentJobName}</span>
