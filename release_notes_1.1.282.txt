@@ -1,0 +1,14 @@
+﻿v1.1.282 - robot_camera: 카메라를 Gemini 435Le 로 바르게 인식해서 연결
+
+[수정] robot-camera/src/robot_camera.cpp
+    - 증상: 1.1.281 펜던트 시험에서 연결은 되지만 장치 이름이 'Orbbec Femto Mega' 로 나오고
+      촬영 시 'No matched profile found for: Depth Y16 1280x800 10fps' (2026-11-02)
+    - 원인: IP 직접 연결(createNetDevice)은 기종을 묻지 않고 기본 기종(Femto Mega)으로 연결함
+    - 변경: 네트워크 장치 목록을 켜고, 목록에서 IP(기본 192.168.1.10)가 같은 카메라를 골라 연결
+    - 설정 해상도가 없으면 카메라 기본 해상도로 한 번 더 시도
+
+[DB]
+    변경 없음.
+
+[현장 확인 항목]
+  - 펜던트 A: /camera/status 의 name 이 Gemini 435Le 인지, /camera/capture 가 ok:true 인지

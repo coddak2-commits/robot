@@ -27,7 +27,7 @@
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
-static const char *CAMERA_APP_VERSION = "1.1.281";
+static const char *CAMERA_APP_VERSION = "1.1.282";
 
 struct Settings {
     std::string dbHost = "localhost", dbUser = "root", dbPass, dbName = "robot_welding";
@@ -188,6 +188,8 @@ static const char *kCreateTable =
 class Camera {
 public:
     explicit Camera(const Settings &s) : s_(s) {
+        // IP 직접 연결(createNetDevice)은 기종을 Femto Mega 로 잘못 잡음 -> 네트워크 장치 목록에서 IP 로 골라 연결
+        ctx_.enableNetDeviceEnumeration(true);
         ctx_.registerDeviceChangedCallback([this](std::shared_ptr<ob::DeviceList> removed, std::shared_ptr<ob::DeviceList>) {
             std::lock_guard<std::mutex> lk(stateMx_);
             if (!connected_) return;
@@ -204,7 +206,14 @@ public:
         if (dropDevice_.exchange(false)) dev_.reset();
         if (dev_) return;
         try {
-            auto d = ctx_.createNetDevice(s_.camIp.c_str(), (uint16_t)s_.camPort);
+            auto list = ctx_.queryDeviceList();
+            std::shared_ptr<ob::Device> d;
+            for (uint32_t i = 0; i < list->getCount() && !d; i++) {
+                const char *ip = nullptr;
+                try { ip = list->getIpAddress(i); } catch (...) {}
+                if (ip && s_.camIp == ip) d = list->getDevice(i);
+            }
+            if (!d) { setError("장치 목록에 카메라 없음 (" + s_.camIp + ")"); return; }
             auto info = d->getDeviceInfo();
             std::lock_guard<std::mutex> sl(stateMx_);
             serial_ = info->getSerialNumber();
@@ -236,11 +245,20 @@ public:
         struct Busy { std::atomic<bool> &b; ~Busy() { b = false; } } guard{busy_};
         try {
             ob::Pipeline pipe(dev_);
-            auto cfg = std::make_shared<ob::Config>();
-            cfg->enableVideoStream(OB_STREAM_DEPTH, s_.depthW, s_.depthH, s_.fps, OB_FORMAT_Y16);
-            cfg->enableVideoStream(OB_STREAM_COLOR, s_.colorW, s_.colorH, s_.fps, OB_FORMAT_MJPG);
-            cfg->setFrameAggregateOutputMode(OB_FRAME_AGGREGATE_OUTPUT_ALL_TYPE_FRAME_REQUIRE);
-            pipe.start(cfg);
+            auto makeCfg = [](uint32_t dw, uint32_t dh, uint32_t cw, uint32_t ch, uint32_t fps) {
+                auto cfg = std::make_shared<ob::Config>();
+                cfg->enableVideoStream(OB_STREAM_DEPTH, dw, dh, fps, OB_FORMAT_Y16);
+                cfg->enableVideoStream(OB_STREAM_COLOR, cw, ch, fps, OB_FORMAT_MJPG);
+                cfg->setFrameAggregateOutputMode(OB_FRAME_AGGREGATE_OUTPUT_ALL_TYPE_FRAME_REQUIRE);
+                return cfg;
+            };
+            try {
+                pipe.start(makeCfg(s_.depthW, s_.depthH, s_.colorW, s_.colorH, s_.fps));
+            } catch (const ob::Error &e) {
+                // 설정 해상도가 없으면 카메라 기본 해상도로 다시 시도
+                logLine(std::string("[CAM] 설정 해상도 실패, 기본값으로 재시도: ") + e.getMessage());
+                pipe.start(makeCfg(OB_WIDTH_ANY, OB_HEIGHT_ANY, OB_WIDTH_ANY, OB_HEIGHT_ANY, OB_FPS_ANY));
+            }
             std::shared_ptr<ob::FrameSet> fs;
             int got = 0;
             auto t0 = std::chrono::steady_clock::now();

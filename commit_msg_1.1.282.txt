@@ -1,0 +1,8 @@
+v1.1.282: robot_camera 카메라 기종 인식 수정 (Femto Mega -> Gemini 435Le)
+
+- createNetDevice 대신 네트워크 장치 목록에서 IP 로 골라 연결 (기종이 Femto Mega 로 잡혀 깊이 1280x800 없음 오류)
+- 설정 해상도 실패 시 기본 해상도로 재시도
+- 버전 1.1.282
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcESmFgyg6uTk7yRDUY
