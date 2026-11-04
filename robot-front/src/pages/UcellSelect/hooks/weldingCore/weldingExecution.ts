@@ -1,4 +1,4 @@
-import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo, getPartConditionPointId, isCornerPartPoints } from '../..';
+import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo, getPartConditionPointId, isCornerPartPoints, addHorizontalSecondPass, HORIZONTAL_SECOND_PASS_Z_MM } from '../..';
 import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, findDx, pulseWireFeedMs, wireFeedDurationMs, WireDirection, splineMove, markArcOff, buildCraterFill } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
@@ -628,7 +628,19 @@ export async function executeWelding(
     return null;
   }
   const partWeldEnabled = options?.partWeldEnabled;
-  const executableParts = getExecutableParts(teachingPoints, partWeldEnabled);
+  const twoPassHorizontal = options?.twoPassHorizontal ?? false;
+  // [v1.1.285] 수평 2패스. addHorizontalSecondPass 주석 참고.
+  const executableParts = addHorizontalSecondPass(
+    getExecutableParts(teachingPoints, partWeldEnabled),
+    twoPassHorizontal,
+  );
+  if (twoPassHorizontal) {
+    log_weldingExecution.info(
+      'welding.twoPass',
+      `수평 2패스 ON: 수평 파트마다 1패스 직후 +Z ${HORIZONTAL_SECOND_PASS_Z_MM}mm 로 한 번 더`,
+      { parts: executableParts.filter(p => p.shouldExecute).map(p => p.name) },
+    );
+  }
   const weldingPoints = flattenExecutableParts(executableParts);
   const partBoundaryInfo = getPartBoundaryInfo(executableParts);
   // [v1.1.237] idx 포인트가 속한 파트의 조건(전류·전압·위빙·속도·트래킹)을 읽을 포인트.
@@ -685,6 +697,7 @@ export async function executeWelding(
       teachingPoints,
       currentTcp,
       partWeldEnabled,
+      twoPassHorizontal,
     );
     if (closestCenterlineResult) {
       startPointIndex = closestCenterlineResult.segmentStartIndex;

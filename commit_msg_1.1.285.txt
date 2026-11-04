@@ -1,0 +1,10 @@
+v1.1.285: 수평 2패스 체크박스 (+Z 5mm, 같은 조건)
+
+- UcellSelect/index.tsx: addHorizontalSecondPass, HORIZONTAL_SECOND_PASS_Z_MM=5, 2패스 체크 상태
+- weldingExecution.ts / pathFinding.ts: twoPassHorizontal 옵션으로 실행 파트에 2패스 추가
+- weldingPointLoop.ts: 터치 보정 보간 인덱스를 위치로 찾기
+- useWeldingHandlers.ts, pendant/index.tsx, TeachingTabContent.tsx: 체크박스와 옵션 전달
+- 버전 1.1.285
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcEAumGsE8jB2uWSe3Y

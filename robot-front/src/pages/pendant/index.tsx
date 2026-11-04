@@ -5,7 +5,7 @@ import { paramApi, Posture, WeldingParam, ParamLookupResult, deviationApi, overr
 import { isMockMode, mockCheckConnection } from '../../lib';
 import { pulseWireFeed, stopAllWireFeed, wireFeedDurationMs, WIRE_STOP_FAILED_MESSAGE } from '../../lib';
 import { getRobotError, resetRobotError, connectRobotSDK, getWeldingPartOrder } from '../../lib/robotApi/index';
-import { setWeldingPartOrder, hasCornerParts } from '../UcellSelect';
+import { setWeldingPartOrder, hasCornerParts, HORIZONTAL_SECOND_PASS_Z_MM } from '../UcellSelect';
 import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 import { playSaveOkBeep, playErrorBeep } from '../../lib/audio';
@@ -277,6 +277,8 @@ const PendantInner: React.FC = () => {
   // 원래는 아래쪽(약 367행)에 선언돼 있어서 훅에 상수를 넣을 수밖에 없었고,
   // 그 결과 '용접 계속'이 Dry Run 체크와 파트 패스 체크박스를 둘 다 무시했다.
   const [dryRun, setDryRun] = useState(false);
+  // [v1.1.285] 수평 2패스 체크 (체크 시에만 수평 파트마다 +Z 5mm 로 한 번 더)
+  const [twoPass, setTwoPass] = useState(false);
   const [partEnabled, setPartEnabled] = useState<[boolean, boolean, boolean, boolean]>([true, true, true, true]);
   const partWeldEnabledMap = useMemo(
     () => ({ 0: partEnabled[0], 1: partEnabled[1], 2: partEnabled[2], 3: partEnabled[3] }),
@@ -296,6 +298,7 @@ const PendantInner: React.FC = () => {
     manualMoveSpeed: MANUAL_SPEED_FOR_WELD,
     autoTouchSensing: false,
     partWeldEnabled: partWeldEnabledMap,
+    twoPassHorizontal: twoPass,
     currentJobId,
     jobList,
     showAlert,
@@ -678,6 +681,7 @@ const PendantInner: React.FC = () => {
         await startWelding(updated, teachingRobotState, dryRun, currentJobId ?? undefined, currentJob?.name, {
           partWeldEnabled,
           isDryRun: dryRun,
+          twoPassHorizontal: twoPass,
         });
       } finally {
         stopTracking();
@@ -1053,6 +1057,10 @@ const PendantInner: React.FC = () => {
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, color: '#cbd5e1', cursor: 'pointer', padding: '10px 8px', background: dryRun ? '#78350f' : '#1e293b', borderRadius: 8 }}>
           <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} style={{ width: 22, height: 22, cursor: 'pointer' }} />
           Dry Run (아크 OFF)
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, color: '#cbd5e1', cursor: isWelding ? 'not-allowed' : 'pointer', padding: '10px 8px', background: twoPass ? '#14532d' : '#1e293b', borderRadius: 8 }}>
+          <input type="checkbox" checked={twoPass} disabled={isWelding} onChange={e => setTwoPass(e.target.checked)} style={{ width: 22, height: 22, cursor: isWelding ? 'not-allowed' : 'pointer' }} />
+          수평 2패스 (+Z {HORIZONTAL_SECOND_PASS_Z_MM}mm)
         </label>
         {/* [v1.1.220] 펜던트에도 터치센싱 버튼 추가. 훅에는 이미 있었는데 화면에만 없었다. */}
         <button onClick={handleStartTouchSensing} disabled={isWelding || isTouchSensing || isRobotMoving}

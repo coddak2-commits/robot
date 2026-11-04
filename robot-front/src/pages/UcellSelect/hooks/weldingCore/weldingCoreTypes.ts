@@ -107,6 +107,8 @@ export interface WeldingStartOptions {
   isDryRun?: boolean;
   isWeldingTest?: boolean;
   partWeldEnabled?: PartWeldEnabled;
+  // [v1.1.285] 수평 2패스
+  twoPassHorizontal?: boolean;
 }
 export interface WeldingResult {
   operationType: 'welding' | 'dryrun' | 'simulation';

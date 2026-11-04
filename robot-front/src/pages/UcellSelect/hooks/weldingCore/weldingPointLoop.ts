@@ -32,11 +32,19 @@ export function determinePointTouchOffset(
   }
   if (hasStoredTouchOffsets && weldingPoints.length >= 2) {
     let interpolated: { dx: number; dy: number; dz: number } | null = null;
-    const prevWithOffset = weldingPoints.slice(0, pointIndex).reverse().find(p => p.touchOffset);
-    const nextWithOffset = weldingPoints.slice(pointIndex + 1).find(p => p.touchOffset);
+    // [v1.1.285] 수평 2패스는 같은 id 가 두 번 나온다. id 로 찾으면 1패스 자리를 잡으므로
+    // 위치(인덱스)로 찾는다. id 가 한 번씩만 나오는 경우 결과는 종전과 같다.
+    let prevIdx = -1;
+    for (let k = pointIndex - 1; k >= 0; k--) {
+      if (weldingPoints[k].touchOffset) { prevIdx = k; break; }
+    }
+    let nextIdx = -1;
+    for (let k = pointIndex + 1; k < weldingPoints.length; k++) {
+      if (weldingPoints[k].touchOffset) { nextIdx = k; break; }
+    }
+    const prevWithOffset = prevIdx >= 0 ? weldingPoints[prevIdx] : undefined;
+    const nextWithOffset = nextIdx >= 0 ? weldingPoints[nextIdx] : undefined;
     if (prevWithOffset && nextWithOffset) {
-      const prevIdx = weldingPoints.findIndex(p => p.id === prevWithOffset.id);
-      const nextIdx = weldingPoints.findIndex(p => p.id === nextWithOffset.id);
       const ratio = (pointIndex - prevIdx) / (nextIdx - prevIdx);
       interpolated = interpolateOffset(prevWithOffset.touchOffset, nextWithOffset.touchOffset, ratio);
     } else if (prevWithOffset) {

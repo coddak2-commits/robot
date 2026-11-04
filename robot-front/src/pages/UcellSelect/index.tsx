@@ -62,6 +62,8 @@ export function CellSelectionCore({
   const [activeTab, setActiveTab] = useState<'history' | 'teaching'>('teaching');
   const [manualMoveSpeed, setManualMoveSpeed] = useState(40);
   const [autoTouchSensing, setAutoTouchSensing] = useState(false);
+  // [v1.1.285] 수평 2패스 체크
+  const [twoPassHorizontal, setTwoPassHorizontal] = useState(false);
   // 갭 시스템 파라미터 조회용 작업 레벨 판두께 (18/20/22/23mm)
   const [hasRobotError, setHasRobotError] = useState(false);
   useEffect(() => {
@@ -264,6 +266,7 @@ export function CellSelectionCore({
     manualMoveSpeed,
     autoTouchSensing,
     partWeldEnabled,
+    twoPassHorizontal,
     currentJobId,
     jobList,
     showAlert,
@@ -713,6 +716,8 @@ export function CellSelectionCore({
                     onSpeedChange={setManualMoveSpeed}
                     onSimulationModeChange={setSimulationMode}
                     onDryRunModeChange={setDryRunMode}
+                    twoPassHorizontal={twoPassHorizontal}
+                    onTwoPassHorizontalChange={setTwoPassHorizontal}
                     onStartTouchSensing={handleStartTouchSensing}
                     onStopTouchSensing={stopTouchSensing}
                     onStartWelding={handleStartWelding}
@@ -934,6 +939,38 @@ export const getExecutableParts = (
       shouldExecute: savedPoints.length >= 2 && isEnabled,
     };
   });
+};
+// [v1.1.285] 수평 2패스(사용자 요청 2026-11-04). 각장이 5~5.5mm 로 목표(6.5~7mm)보다 작아
+// 수평 파트마다 1패스 직후 같은 방향으로 한 번 더 돈다. 화면의 '수평 2패스' 체크 시에만.
+// 2패스는 1패스 포인트를 base +Z 로 올린 복사본이다. 조건(전류·전압·속도·위빙)은 1패스와 같다.
+// 포인트 id 는 그대로 둔다(p4 진입, 같은 쪽/횡단 전환, 조건 포인트 판정이 id 로 돈다).
+// joints 는 비운다. robot-core 배치는 마지막 포인트에 joints 가 있으면 FK 로 tcp 를
+// 다시 계산해서 +Z 가 사라진다. 터치 보정은 1패스 값을 그대로 쓴다.
+export const HORIZONTAL_SECOND_PASS_Z_MM = 5;
+export const addHorizontalSecondPass = (
+  executableParts: ExecutablePart[],
+  enabled?: boolean,
+): ExecutablePart[] => {
+  if (!enabled) return executableParts;
+  const groups = getPartEnableGroups();
+  const result: ExecutablePart[] = [];
+  for (const part of executableParts) {
+    result.push(part);
+    if (!part.shouldExecute) continue;
+    const groupIndex = groups.findIndex(g => part.pointIds.every(p => g.includes(p)));
+    if (groupIndex !== 0 && groupIndex !== 2) continue;
+    result.push({
+      ...part,
+      name: `${part.name} 2패스`,
+      savedPoints: part.savedPoints.map(pt => ({
+        ...pt,
+        name: `${pt.name}(2패스)`,
+        joints: null,
+        tcp: pt.tcp ? { ...pt.tcp, z: pt.tcp.z + HORIZONTAL_SECOND_PASS_Z_MM } : pt.tcp,
+      })),
+    });
+  }
+  return result;
 };
 export const flattenExecutableParts = (executableParts: ExecutablePart[]): TeachingPoint[] => {
   const result: TeachingPoint[] = [];

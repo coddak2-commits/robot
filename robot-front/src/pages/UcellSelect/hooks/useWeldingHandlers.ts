@@ -15,6 +15,8 @@ interface UseWeldingHandlersProps {
   manualMoveSpeed: number;
   autoTouchSensing: boolean;
   partWeldEnabled: PartWeldEnabled;
+  // [v1.1.285] 수평 2패스 체크
+  twoPassHorizontal?: boolean;
   currentJobId: number | null;
   jobList: Array<{ id: number; name: string }>;
   showAlert: (
@@ -59,6 +61,7 @@ export function useWeldingHandlers({
   manualMoveSpeed,
   autoTouchSensing,
   partWeldEnabled,
+  twoPassHorizontal = false,
   currentJobId,
   jobList,
   showAlert,
@@ -137,7 +140,7 @@ export function useWeldingHandlers({
         simulationMode || dryRunMode,
         currentJobId ?? undefined,
         currentJob?.name,
-        { isDryRun: dryRunMode, partWeldEnabled },
+        { isDryRun: dryRunMode, partWeldEnabled, twoPassHorizontal },
       );
     } finally {
       stopTracking();
@@ -150,6 +153,7 @@ export function useWeldingHandlers({
     manualMoveSpeed,
     autoTouchSensing,
     partWeldEnabled,
+    twoPassHorizontal,
     currentJobId,
     jobList,
     showAlert,
@@ -182,6 +186,7 @@ export function useWeldingHandlers({
           manualMoveSpeed,
           isDryRun: dryRunMode,
           partWeldEnabled,
+          twoPassHorizontal,
         },
       );
     } finally {
@@ -196,6 +201,7 @@ export function useWeldingHandlers({
     currentJobId,
     jobList,
     partWeldEnabled,
+    twoPassHorizontal,
     showAlert,
     startWelding,
     startTracking,

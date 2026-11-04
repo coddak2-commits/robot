@@ -1,4 +1,4 @@
-import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo, PartWeldEnabled } from '../..';
+import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo, PartWeldEnabled, addHorizontalSecondPass } from '../..';
 import { createLogger } from '../../../../lib';
 import React from 'react';
 import { ClosestCenterlineResult } from './weldingCoreTypes';
@@ -7,9 +7,14 @@ const log_pathFinding = createLogger('pathFinding');
 export const findClosestCenterlinePoint = (
   teachingPoints: TeachingPoint[],
   currentTcp: number[],
-  partWeldEnabled?: PartWeldEnabled
+  partWeldEnabled?: PartWeldEnabled,
+  twoPassHorizontal?: boolean,
 ): ClosestCenterlineResult | null => {
-  const executableParts = getExecutableParts(teachingPoints, partWeldEnabled);
+  // [v1.1.285] 실행 경로(executeWelding)와 같은 배열이어야 인덱스가 맞는다.
+  const executableParts = addHorizontalSecondPass(
+    getExecutableParts(teachingPoints, partWeldEnabled),
+    twoPassHorizontal,
+  );
   const weldingPoints = flattenExecutableParts(executableParts);
   const { pointPartIndices } = getPartBoundaryInfo(executableParts);
   if (weldingPoints.length < 2) return null;
