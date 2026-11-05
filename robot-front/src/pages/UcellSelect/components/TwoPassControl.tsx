@@ -2,6 +2,7 @@
 // 체크하면 팝업이 뜬다. 체크된 상태에서는 옆의 요약 버튼으로 다시 연다.
 // 값을 비우면 1패스 값을 그대로 쓴다(위치 오프셋은 비울 수 없음). DB 에 저장하지 않는다.
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { SecondPassSettings, DEFAULT_SECOND_PASS_SETTINGS } from '..';
 
 type FieldKey = keyof SecondPassSettings;
@@ -106,7 +107,9 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
         >{summarizeSecondPass(settings)}</button>
       )}
 
-      {open && (
+      {/* [v1.1.287] 펜던트 실행 도크는 transform·overflow 가 걸려 있어 그 안의 fixed 팝업이
+          도크 폭(약 180px)에 갇혀 그려졌다. body 로 portal 해서 화면 전체에 그린다. */}
+      {open && createPortal(
         <div onClick={() => setOpen(false)} style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300,
@@ -164,7 +167,8 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
               >저장</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

@@ -1,0 +1,12 @@
+﻿v1.1.287 - 펜던트 화면 2패스 조건 팝업 크기 수정
+
+[수정] robot-front: components/TwoPassControl.tsx
+    - 펜던트 화면에서 2패스 조건 팝업이 실행 도크 폭(약 180px)에 갇혀 아주 작게 나오던 문제
+    - 원인: 실행 도크에 transform·overflow 가 걸려 있어 그 안의 fixed 팝업이 도크 안에만 그려짐
+    - 팝업을 화면 맨 위층(body)에 그리도록 변경. 동작은 그대로
+
+[robot-core]
+    버전 숫자만 변경
+
+[DB]
+    변경 없음.

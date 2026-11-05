@@ -1,0 +1,7 @@
+v1.1.287: 펜던트 화면 2패스 조건 팝업 크기 수정
+
+- components/TwoPassControl.tsx: 팝업을 createPortal 로 body 에 그림 (실행 도크 transform 안에 갇히던 문제)
+- 버전 1.1.287
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcEAumGsE8jB2uWSe3Y
