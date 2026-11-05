@@ -64,6 +64,8 @@ export function CellSelectionCore({
   const [autoTouchSensing, setAutoTouchSensing] = useState(false);
   // [v1.1.285] 수평 2패스 체크
   const [twoPassHorizontal, setTwoPassHorizontal] = useState(false);
+  // [v1.1.286] 2패스 수동 조건 (DB 없음)
+  const [twoPassSettings, setTwoPassSettings] = useState<SecondPassSettings>(DEFAULT_SECOND_PASS_SETTINGS);
   // 갭 시스템 파라미터 조회용 작업 레벨 판두께 (18/20/22/23mm)
   const [hasRobotError, setHasRobotError] = useState(false);
   useEffect(() => {
@@ -267,6 +269,7 @@ export function CellSelectionCore({
     autoTouchSensing,
     partWeldEnabled,
     twoPassHorizontal,
+    twoPassSettings,
     currentJobId,
     jobList,
     showAlert,
@@ -718,6 +721,8 @@ export function CellSelectionCore({
                     onDryRunModeChange={setDryRunMode}
                     twoPassHorizontal={twoPassHorizontal}
                     onTwoPassHorizontalChange={setTwoPassHorizontal}
+                    twoPassSettings={twoPassSettings}
+                    onTwoPassSettingsChange={setTwoPassSettings}
                     onStartTouchSensing={handleStartTouchSensing}
                     onStopTouchSensing={stopTouchSensing}
                     onStartWelding={handleStartWelding}
@@ -946,12 +951,45 @@ export const getExecutableParts = (
 // 포인트 id 는 그대로 둔다(p4 진입, 같은 쪽/횡단 전환, 조건 포인트 판정이 id 로 돈다).
 // joints 는 비운다. robot-core 배치는 마지막 포인트에 joints 가 있으면 FK 로 tcp 를
 // 다시 계산해서 +Z 가 사라진다. 터치 보정은 1패스 값을 그대로 쓴다.
+// [v1.1.286] 2패스 조건을 화면 팝업에서 수동으로 바꾼다(DB 없음, 화면을 새로 열면 초기화).
+// null 인 항목은 1패스 값을 그대로 쓴다. 위빙 폭을 바꾸면 좌/우 폭은 같은 비율로 바꾼다.
 export const HORIZONTAL_SECOND_PASS_Z_MM = 5;
+export interface SecondPassSettings {
+  offsetZ: number;
+  current: number | null;
+  voltage: number | null;
+  speed: number | null;
+  weaveRange: number | null;
+  weaveFreq: number | null;
+}
+export const DEFAULT_SECOND_PASS_SETTINGS: SecondPassSettings = {
+  offsetZ: HORIZONTAL_SECOND_PASS_Z_MM,
+  current: null,
+  voltage: null,
+  speed: null,
+  weaveRange: null,
+  weaveFreq: null,
+};
+const applySecondPassWeave = (wp: WeaveParams, s: SecondPassSettings): WeaveParams => {
+  if (s.weaveRange === null && s.weaveFreq === null) return wp;
+  const next: WeaveParams = { ...wp };
+  if (s.weaveFreq !== null) next.weaveFrequency = s.weaveFreq;
+  if (s.weaveRange !== null) {
+    const ratio = wp.weaveRange > 0 ? s.weaveRange / wp.weaveRange : 0;
+    next.weaveRange = s.weaveRange;
+    next.weaveLeftRange = ratio > 0 ? wp.weaveLeftRange * ratio : s.weaveRange / 2;
+    next.weaveRightRange = ratio > 0 ? wp.weaveRightRange * ratio : s.weaveRange / 2;
+  }
+  return next;
+};
 export const addHorizontalSecondPass = (
   executableParts: ExecutablePart[],
   enabled?: boolean,
+  settings?: SecondPassSettings,
 ): ExecutablePart[] => {
   if (!enabled) return executableParts;
+  const s = settings ?? DEFAULT_SECOND_PASS_SETTINGS;
+  const offsetZ = Number.isFinite(s.offsetZ) ? s.offsetZ : HORIZONTAL_SECOND_PASS_Z_MM;
   const groups = getPartEnableGroups();
   const result: ExecutablePart[] = [];
   for (const part of executableParts) {
@@ -966,7 +1004,11 @@ export const addHorizontalSecondPass = (
         ...pt,
         name: `${pt.name}(2패스)`,
         joints: null,
-        tcp: pt.tcp ? { ...pt.tcp, z: pt.tcp.z + HORIZONTAL_SECOND_PASS_Z_MM } : pt.tcp,
+        tcp: pt.tcp ? { ...pt.tcp, z: pt.tcp.z + offsetZ } : pt.tcp,
+        weldCurrent: pt.weldCurrent !== null && s.current !== null ? s.current : pt.weldCurrent,
+        weldVoltage: pt.weldVoltage !== null && s.voltage !== null ? s.voltage : pt.weldVoltage,
+        moveSpeed: s.speed !== null ? s.speed : pt.moveSpeed,
+        weaveParams: applySecondPassWeave(pt.weaveParams, s),
       })),
     });
   }

@@ -1,4 +1,4 @@
-import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo, getPartConditionPointId, isCornerPartPoints, addHorizontalSecondPass, HORIZONTAL_SECOND_PASS_Z_MM } from '../..';
+import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo, getPartConditionPointId, isCornerPartPoints, addHorizontalSecondPass, DEFAULT_SECOND_PASS_SETTINGS } from '../..';
 import { enableRobot, RealtimeRobotStatus, endWeave, WeldingLogSegment, arcOff, getRobotSettings, moveToCartesianPosition, getInverseKin, arcTraceControl, batchMoveL, BatchMovePoint, getWeldingPartOrder, clearStopLatch, findDx, pulseWireFeedMs, wireFeedDurationMs, WireDirection, splineMove, markArcOff, buildCraterFill } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
@@ -629,16 +629,21 @@ export async function executeWelding(
   }
   const partWeldEnabled = options?.partWeldEnabled;
   const twoPassHorizontal = options?.twoPassHorizontal ?? false;
+  const twoPassSettings = options?.twoPassSettings ?? DEFAULT_SECOND_PASS_SETTINGS;
   // [v1.1.285] 수평 2패스. addHorizontalSecondPass 주석 참고.
   const executableParts = addHorizontalSecondPass(
     getExecutableParts(teachingPoints, partWeldEnabled),
     twoPassHorizontal,
+    twoPassSettings,
   );
   if (twoPassHorizontal) {
+    const tp = twoPassSettings;
+    const same = '1패스와 같음';
     log_weldingExecution.info(
       'welding.twoPass',
-      `수평 2패스 ON: 수평 파트마다 1패스 직후 +Z ${HORIZONTAL_SECOND_PASS_Z_MM}mm 로 한 번 더`,
-      { parts: executableParts.filter(p => p.shouldExecute).map(p => p.name) },
+      `수평 2패스 ON: +Z ${tp.offsetZ}mm, 전류 ${tp.current ?? same}, 전압 ${tp.voltage ?? same}, `
+      + `속도 ${tp.speed ?? same}, 위빙 폭 ${tp.weaveRange ?? same}, 주파수 ${tp.weaveFreq ?? same}`,
+      { parts: executableParts.filter(p => p.shouldExecute).map(p => p.name), settings: tp },
     );
   }
   const weldingPoints = flattenExecutableParts(executableParts);
@@ -698,6 +703,7 @@ export async function executeWelding(
       currentTcp,
       partWeldEnabled,
       twoPassHorizontal,
+      twoPassSettings,
     );
     if (closestCenterlineResult) {
       startPointIndex = closestCenterlineResult.segmentStartIndex;

@@ -4,7 +4,8 @@ import { WeldingLogData, getWeldingLogs, deleteWeldingLogs, updateWeldingLog, Re
 import Modal from 'react-modal';
 import { useAlert } from '../../../contexts';
 import { useGapAuth } from '../../../contexts/gapAuth';
-import { TeachingPoint, WeaveParams, WEAVING_TYPE_OPTIONS, UCellData, HEIGHT_OPTIONS, HORIZONTAL_SECOND_PASS_Z_MM } from '..';
+import { TeachingPoint, WeaveParams, WEAVING_TYPE_OPTIONS, UCellData, HEIGHT_OPTIONS, SecondPassSettings, DEFAULT_SECOND_PASS_SETTINGS } from '..';
+import { TwoPassControl } from './TwoPassControl';
 import { Button } from '../../../components/common';
 import { RobotMoveData } from '../../../types/RobotData';
 import { useSortable, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -49,6 +50,8 @@ export interface TeachingTabContentProps {
   onDryRunModeChange: (enabled: boolean) => void;
   twoPassHorizontal?: boolean;
   onTwoPassHorizontalChange?: (enabled: boolean) => void;
+  twoPassSettings?: SecondPassSettings;
+  onTwoPassSettingsChange?: (settings: SecondPassSettings) => void;
   onStartTouchSensing: () => void;
   onStopTouchSensing: () => void;
   onStartWelding: () => void;
@@ -94,6 +97,8 @@ export function TeachingTabContent({
   onDryRunModeChange,
   twoPassHorizontal = false,
   onTwoPassHorizontalChange,
+  twoPassSettings = DEFAULT_SECOND_PASS_SETTINGS,
+  onTwoPassSettingsChange,
   onStartTouchSensing,
   onStopTouchSensing,
   onStartWelding,
@@ -213,20 +218,16 @@ export function TeachingTabContent({
             </div>
           </label>
           {/* [v1.1.285] 수평 2패스 */}
-          {onTwoPassHorizontalChange && (
-            <label className={`flex items-center justify-between p-2.5 mt-1.5 bg-gray-800/50 rounded-lg cursor-pointer hover:bg-gray-800/70 transition-colors ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}>
-              <div className="flex items-center gap-2">
-                <span className={`text-sm ${twoPassHorizontal ? 'text-green-300' : 'text-gray-300'}`}>수평 2패스</span>
-                <span className="text-xs text-gray-500">(+Z {HORIZONTAL_SECOND_PASS_Z_MM}mm, 같은 조건)</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={twoPassHorizontal}
+          {onTwoPassHorizontalChange && onTwoPassSettingsChange && (
+            <div className="mt-1.5">
+              <TwoPassControl
+                enabled={twoPassHorizontal}
+                onEnabledChange={onTwoPassHorizontalChange}
+                settings={twoPassSettings}
+                onSettingsChange={onTwoPassSettingsChange}
                 disabled={isRunning}
-                onChange={(e) => onTwoPassHorizontalChange(e.target.checked)}
-                className="w-5 h-5 cursor-pointer"
               />
-            </label>
+            </div>
           )}
         </div>
       )}

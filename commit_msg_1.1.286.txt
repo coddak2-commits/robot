@@ -1,0 +1,10 @@
+v1.1.286: 수평 2패스 조건 수동 조절 팝업
+
+- components/TwoPassControl.tsx: 2패스 체크박스 + 조건 팝업(위치/전류/전압/속도/위빙 폭/주파수)
+- UcellSelect/index.tsx: SecondPassSettings, addHorizontalSecondPass 에 조건 적용
+- weldingExecution.ts / pathFinding.ts / useWeldingHandlers.ts: twoPassSettings 전달
+- pendant/index.tsx, TeachingTabContent.tsx: TwoPassControl 사용
+- 버전 1.1.286
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcEAumGsE8jB2uWSe3Y

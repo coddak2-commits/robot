@@ -1,4 +1,4 @@
-import { TeachingPoint, PartWeldEnabled } from '../..';
+import { TeachingPoint, PartWeldEnabled, SecondPassSettings } from '../..';
 import { RealtimeRobotStatus, WeldingLogSegment } from '../../../../lib';
 import React from 'react';
 
@@ -109,6 +109,8 @@ export interface WeldingStartOptions {
   partWeldEnabled?: PartWeldEnabled;
   // [v1.1.285] 수평 2패스
   twoPassHorizontal?: boolean;
+  // [v1.1.286] 2패스 수동 조건 (null 항목은 1패스 값)
+  twoPassSettings?: SecondPassSettings;
 }
 export interface WeldingResult {
   operationType: 'welding' | 'dryrun' | 'simulation';

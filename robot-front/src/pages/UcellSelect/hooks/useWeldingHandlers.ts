@@ -1,4 +1,4 @@
-import { TeachingPoint, WeaveParams, PartWeldEnabled } from '..';
+import { TeachingPoint, WeaveParams, PartWeldEnabled, SecondPassSettings } from '..';
 import { RealtimeRobotStatus, emergencyStop } from '../../../lib';
 import { createLogger } from '../../../lib';
 import { autoCaptureBeforeWeld, collectPointGaps } from '../../../lib/cameraApi';
@@ -17,6 +17,7 @@ interface UseWeldingHandlersProps {
   partWeldEnabled: PartWeldEnabled;
   // [v1.1.285] 수평 2패스 체크
   twoPassHorizontal?: boolean;
+  twoPassSettings?: SecondPassSettings;
   currentJobId: number | null;
   jobList: Array<{ id: number; name: string }>;
   showAlert: (
@@ -62,6 +63,7 @@ export function useWeldingHandlers({
   autoTouchSensing,
   partWeldEnabled,
   twoPassHorizontal = false,
+  twoPassSettings,
   currentJobId,
   jobList,
   showAlert,
@@ -140,7 +142,7 @@ export function useWeldingHandlers({
         simulationMode || dryRunMode,
         currentJobId ?? undefined,
         currentJob?.name,
-        { isDryRun: dryRunMode, partWeldEnabled, twoPassHorizontal },
+        { isDryRun: dryRunMode, partWeldEnabled, twoPassHorizontal, twoPassSettings },
       );
     } finally {
       stopTracking();
@@ -154,6 +156,7 @@ export function useWeldingHandlers({
     autoTouchSensing,
     partWeldEnabled,
     twoPassHorizontal,
+    twoPassSettings,
     currentJobId,
     jobList,
     showAlert,
@@ -187,6 +190,7 @@ export function useWeldingHandlers({
           isDryRun: dryRunMode,
           partWeldEnabled,
           twoPassHorizontal,
+          twoPassSettings,
         },
       );
     } finally {
@@ -202,6 +206,7 @@ export function useWeldingHandlers({
     jobList,
     partWeldEnabled,
     twoPassHorizontal,
+    twoPassSettings,
     showAlert,
     startWelding,
     startTracking,
