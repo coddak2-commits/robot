@@ -1,0 +1,25 @@
+﻿v1.1.288 - Blackfly S 용접 중 촬영 프로그램 (과제용)
+
+[추가] robot-blackfly (새 별도 프로그램, robot_core 와 따로 실행)
+    - Blackfly S(BFS-U3-50S5C) 용접 중 촬영. HTTP 127.0.0.1:8003
+    - 실제 용접의 아크 ON 구간에만 촬영. Dry Run·시뮬레이션·용접 테스트, 파트 사이 이동 구간은 안 찍음
+    - 기본: 초당 1장, 절반 해상도(1224x1024) JPG(품질 85), 노출 1000us·게인 0dB 고정(자동 노출 안 씀)
+    - 저장: <카메라 저장 폴더>/날짜/bf_용접시각/시각_파트.jpg + frames.csv + run.json (DB 사용 안 함)
+      펜던트 ~/vot/camera-data, 노트북 C:\Users\Public\Documents\RobotCamera
+    - 남은 용량 2GB 아래면 저장 중지. 정지 신호가 안 와도 15분 지나면 스스로 멈춤
+    - 시험 촬영: POST /blackfly/snap, 노출 변경: POST /blackfly/config (재시작 시 config.ini 값으로 돌아감)
+    - config.ini [blackfly] 섹션으로 기본값 변경 가능 (없으면 위 기본값)
+    - 카메라나 프로그램이 없어도 용접에는 영향 없음
+    - 노트북: 설치 파일에 robot_blackfly.exe 포함(Spinnaker SDK 가 사무실 PC 에 있을 때만), launcher.bat 가 같이 실행
+      실행 DLL 은 노트북에 설치된 Spinnaker 사용
+    - 펜던트: build_blackfly_linux.sh + vot-blackfly.service + 99-blackfly.rules(USB 권한)
+
+[변경] robot-front
+    - lib/blackflyApi.ts 추가
+    - weldingExecution.ts: 아크 표시 ON/OFF 때 촬영 시작/정지 신호(응답 안 기다림), 중단·오류 때 정지 신호
+
+[robot-core]
+    - 종료 시 robot_blackfly.exe 도 같이 정리(Windows). 버전 숫자 변경
+
+[DB]
+    변경 없음.

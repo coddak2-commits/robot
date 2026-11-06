@@ -1,0 +1,2 @@
+# Blackfly S (FLIR/Teledyne, USB vendor 1e10): linaro 계정이 sudo 없이 USB 로 접근
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1e10", MODE="0666"

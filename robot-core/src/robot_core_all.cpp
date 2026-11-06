@@ -71,13 +71,13 @@ void startFrontendDevServer() {
     }
 }
 void killRobotBack() {
-    // launcher.bat가 별도로 띄운 robot-back.exe·robot_camera.exe는 robot_core.exe 종료만으로 안 꺼짐 -> 같이 정리
+    // launcher.bat가 별도로 띄운 robot-back.exe·robot_camera.exe·robot_blackfly.exe는 robot_core.exe 종료만으로 안 꺼짐 -> 같이 정리
     STARTUPINFOA killSi{};
     PROCESS_INFORMATION killPi{};
     killSi.cb = sizeof(killSi);
     killSi.dwFlags = STARTF_USESHOWWINDOW;
     killSi.wShowWindow = SW_HIDE;
-    std::string killCmd = "taskkill /F /IM robot-back.exe /IM robot_camera.exe";
+    std::string killCmd = "taskkill /F /IM robot-back.exe /IM robot_camera.exe /IM robot_blackfly.exe";
     std::vector<char> mutableKillCmd(killCmd.begin(), killCmd.end());
     mutableKillCmd.push_back('\0');
     if (CreateProcessA(nullptr, mutableKillCmd.data(), nullptr, nullptr, FALSE,
@@ -7192,7 +7192,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.287"
+#define APP_VERSION_STRING "1.1.288"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);

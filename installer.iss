@@ -1,5 +1,5 @@
 ﻿#define MyAppName "Robot Welding Control"
-#define MyAppVersion "1.1.287"
+#define MyAppVersion "1.1.288"
 #define MyAppPublisher "Robot Welding"
 #define MyAppExeName "robot_core.exe"
 
@@ -50,6 +50,10 @@ Source: "robot-camera\build\msvcp140_2.dll"; DestDir: "{app}"; Flags: ignorevers
 Source: "robot-camera\build\concrt140.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "robot-camera\build\OrbbecSDKConfig.xml"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "robot-camera\build\extensions\*"; DestDir: "{app}\extensions"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+
+; robot_blackfly (Blackfly S 용접 중 촬영, 과제용). Spinnaker SDK 가 없어 빌드 안 됐으면 건너뜀
+; 실행 DLL 은 노트북에 설치된 Spinnaker 를 씀 (launcher.bat 가 PATH 추가)
+Source: "robot-blackfly\build\robot_blackfly.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; 앱과 백엔드를 함께 띄우는 런처
 Source: "launcher.bat"; DestDir: "{app}"; Flags: ignoreversion

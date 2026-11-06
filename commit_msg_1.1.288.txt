@@ -1,0 +1,12 @@
+v1.1.288: Blackfly S 용접 중 촬영 프로그램(robot-blackfly)
+
+- robot-blackfly: robot_blackfly.cpp(HTTP 8003, 아크 ON 구간 초당 1장 JPG), CMakeLists, build_blackfly.bat,
+  build_blackfly_linux.sh, vot-blackfly.service, 99-blackfly.rules
+- robot-front: lib/blackflyApi.ts, weldingExecution.ts 아크 ON/OFF 때 촬영 시작/정지 신호
+- installer.iss, release.ps1, launcher.bat: Spinnaker SDK 있을 때만 포함·빌드·실행
+- robot-core: 종료 시 robot_blackfly.exe 정리
+- .gitignore: robot-blackfly/third_party/spinnaker/, .gitattributes: *.rules LF
+- 버전 1.1.288
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcEAumGsE8jB2uWSe3Y

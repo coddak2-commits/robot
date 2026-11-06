@@ -45,6 +45,16 @@ try {
         Write-Host "robot-camera: Orbbec SDK not found, skipped" -ForegroundColor Yellow
     }
 
+    # robot_blackfly: Spinnaker SDK(robot-blackfly\third_party\spinnaker)가 있을 때만 빌드. 없으면 빼고 진행
+    if (Test-Path (Join-Path $repoRoot "robot-blackfly\third_party\spinnaker")) {
+        Step "[1c/5] Building robot-blackfly"
+        Set-Location (Join-Path $repoRoot "robot-blackfly")
+        & .\build_blackfly.bat
+        if ($LASTEXITCODE -ne 0) { throw "robot-blackfly build failed (exit $LASTEXITCODE)" }
+    } else {
+        Write-Host "robot-blackfly: Spinnaker SDK not found, skipped" -ForegroundColor Yellow
+    }
+
     Step "[2/5] Building robot-front"
     Set-Location (Join-Path $repoRoot "robot-front")
     npm run build

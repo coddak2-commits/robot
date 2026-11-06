@@ -9,6 +9,7 @@ import { saveStoppedLog, saveWeldingLog } from './loggingHelpers';
 import { moveToJointWithStopCheck, getWeaveTypeCode, calculateDistance, getMinimumWeavingDistance, moveHomeFromVerticalEnd, moveHomeFromP7ViaP8, VERTICAL_END_HOME_LIN } from './moveStopCheck';
 import { loadWeldingSettings } from './sequenceSettings';
 import { safeArcOn, setupAndStartWeave, endPartWelding, startPartWelding, safeEndWeave, safeArcOff } from './weaveHelpers';
+import { blackflyStart, blackflyStop, newBlackflyRunId } from '../../../../lib/blackflyApi';
 import { determinePointTouchOffset } from './weldingPointLoop';
 
 const log_weldingExecution = createLogger('weldingCore.weldingExecution');
@@ -589,7 +590,21 @@ export async function executeWelding(
   jobName?: string,
   options?: WeldingStartOptions,
 ): Promise<WeldingResult | null> {
-  const { stopRef, setCurrentPointIndex, showAlert, setLastWeldingResult, setArcActive } = context;
+  const { stopRef, setCurrentPointIndex, showAlert, setLastWeldingResult, setArcActive: setArcActiveRaw } = context;
+  // [v1.1.288] Blackfly 촬영: 아크 표시가 켜지고 꺼질 때 촬영 시작/정지 신호를 보낸다.
+  // 실제 용접(아크 ON)일 때만 blackflyRunId 가 생긴다. Dry Run·시뮬레이션·용접 테스트는 보내지 않는다.
+  // 신호는 응답을 기다리지 않으므로 용접 흐름에 영향이 없다.
+  let blackflyRunId: string | null = null;
+  const setArcActive = (active: boolean) => {
+    setArcActiveRaw?.(active);
+    if (!blackflyRunId) return;
+    if (active) {
+      const part = executableParts[partBoundaryInfo.pointPartIndices[Math.max(0, lastPointIndex)]]?.name ?? 'part';
+      blackflyStart(blackflyRunId, part, jobName);
+    } else {
+      blackflyStop();
+    }
+  };
   // setCurrentPointIndex는 React state 갱신이라 이 함수 안에서 즉시 읽을 수 없다.
   // v1.1.133까지는 context.currentPointIndex(호출 시점에 복사된 숫자)를 읽어서,
   // 중단/실패 로그의 completedPoints가 항상 '용접 시작 직전 값'으로 기록됐다.
@@ -723,6 +738,7 @@ export async function executeWelding(
   // code=-4로 실패했을 때 아크가 66초 동안 켜진 채 남아 모재가 손상됐다. (v1.1.144)
   let arcMayBeOn = false;
   const handleStopped = async (completedPtIdx: number) => {
+    if (blackflyRunId) blackflyStop();
     if (arcMayBeOn) {
       arcMayBeOn = false;
       log_weldingExecution.warn('welding.stopped.shutdown', '중단 감지 — 아크/위빙 즉시 종료');
@@ -780,6 +796,7 @@ export async function executeWelding(
     const hasWelding = isWeldingTest
       ? false
       : !!(firstWeldPoint.weldVoltage && firstWeldPoint.weldCurrent);
+    if (hasWelding && !simMode) blackflyRunId = newBlackflyRunId();
     const hasWeaving = !!(firstWeldPoint.weavingType && firstWeldPoint.weavingType !== 'none');
     const weaveTypeCode = getWeaveTypeCode(firstWeldPoint.weavingType);
     // v1.1.131: 1.0으로 복원(=보정 없음). 거리 x 6 / cpm 은 mm와 cm/min 사이의
@@ -2097,6 +2114,7 @@ export async function executeWelding(
       }
     } catch {
     }
+    if (blackflyRunId) blackflyStop();
     try {
       const { emergencyWeldingShutdown } = await import('../../../../utils');
       await emergencyWeldingShutdown();

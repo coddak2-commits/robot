@@ -1,0 +1,19 @@
+[Unit]
+Description=VoT robot_blackfly (Blackfly S BFS-U3-50S5C)
+After=local-fs.target
+
+[Service]
+Type=simple
+User=linaro
+Environment=HOME=/home/linaro
+# 용접 프로그램보다 CPU 순위를 낮춤
+Nice=10
+# USB 카메라 버퍼 상한 (기본 16MB 는 500만 화소에 부족). + 는 root 권한으로 실행
+ExecStartPre=+/bin/sh -c 'echo 1000 > /sys/module/usbcore/parameters/usbfs_memory_mb'
+WorkingDirectory=/home/linaro/vot/robot/robot-blackfly/build-linux
+ExecStart=/home/linaro/vot/robot/robot-blackfly/build-linux/robot_blackfly /home/linaro/vot/robot/robot-core/build-linux/config.ini
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -61,4 +61,5 @@ config.ini
 
 fairino-cpp-sdk-main/
 robot-camera/third_party/orbbec/
+robot-blackfly/third_party/spinnaker/
 
