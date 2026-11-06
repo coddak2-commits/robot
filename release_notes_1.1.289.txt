@@ -1,0 +1,18 @@
+﻿v1.1.289 - 촬영 기록 USB 내보내기 (펜던트)
+
+[추가] 펜던트 화면(/pendant) '촬영 기록 USB 내보내기' 버튼 ('카메라 촬영' 버튼 옆)
+    - 펜던트에서 카메라 프로그램(robot_camera)이 돌 때만 보임. 노트북은 저장 폴더를 탐색기로 열면 되므로 안 보임
+    - 팝업: USB 인식 여부, 내보낼 파일 수·용량 표시 -> '내보내기'
+    - 처리(robot_camera): USB 연결(mount) -> ~/vot/camera-data 의 날짜 폴더(Gemini + Blackfly) 복사
+      -> sync 후 크기 대조 -> 확인된 파일만 펜던트에서 삭제 -> USB 해제(umount)
+    - USB 저장 위치: vot-camera-export/날짜/...  로그(robot_camera.log 등)는 옮기지 않음
+    - USB 공간 부족, 복사 실패, 크기 불일치면 펜던트 파일은 하나도 지우지 않음
+    - Blackfly 촬영 중이면 시작 안 함. 용접·터치센싱 중에는 버튼 비활성
+    - 끝나면 'USB 를 뽑아도 됩니다' 표시
+    - camera_captures(DB) 기록은 그대로 둠 (파일만 USB 로 이동)
+
+[robot-camera] robot_camera.cpp: /camera/export/status, /camera/export/start 추가 (리눅스 전용). 버전 1.1.289
+[robot-core] 버전 숫자만 변경
+[DB] 변경 없음.
+
+[펜던트 A 설치] 코어·화면 업데이트 + robot_camera 다시 빌드

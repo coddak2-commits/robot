@@ -11,6 +11,7 @@ import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 import { playSaveOkBeep, playErrorBeep } from '../../lib/audio';
 import { CameraCaptureButton } from '../UcellSelect/components/CameraCaptureButton';
+import { CameraExportButton } from '../UcellSelect/components/CameraExportButton';
 import { autoCaptureBeforeWeld, collectPointGaps } from '../../lib/cameraApi';
 
 const CELL_CONFIG: UCellConfig = {
@@ -964,6 +965,8 @@ const PendantInner: React.FC = () => {
         </span>
         {/* [v1.1.284] 카메라(robot_camera)가 연결돼 있을 때만 보임 */}
         <CameraCaptureButton jobId={currentJobId} jobName={currentJobName} points={teachingPoints} disabled={isWelding || isTouchSensing} />
+        {/* [v1.1.289] 촬영 기록 USB 내보내기 (펜던트에서 robot_camera 가 돌 때만 보임) */}
+        <CameraExportButton disabled={isWelding || isTouchSensing} />
       </div>
 
       {/* 우상단 알람 배지 + 로그아웃 */}

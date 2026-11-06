@@ -1,0 +1,8 @@
+v1.1.289: 촬영 기록 USB 내보내기 (펜던트)
+
+- robot-camera/src/robot_camera.cpp: Exporter (USB mount -> 복사 -> 크기 대조 -> 삭제 -> umount), /camera/export/status·start
+- robot-front: lib/cameraApi.ts 내보내기 API, components/CameraExportButton.tsx, pendant/index.tsx 버튼 추가
+- 버전 1.1.289
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcEAumGsE8jB2uWSe3Y

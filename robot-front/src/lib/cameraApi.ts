@@ -94,6 +94,42 @@ export async function captureCamera(input: CameraCaptureInput, timeoutMs = 15000
   }
 }
 
+// [v1.1.289] 촬영 기록 USB 내보내기 (펜던트 전용, robot_camera 가 처리)
+export interface CameraExportStatus {
+  ok: boolean;
+  supported: boolean;
+  running: boolean;
+  phase: 'idle' | 'start' | 'mount' | 'copy' | 'verify' | 'delete' | 'unmount' | 'done' | 'error';
+  message: string;
+  error: string;
+  usb_device?: string;
+  pending_files?: number;
+  pending_bytes?: number;
+  total_files: number;
+  done_files: number;
+  total_bytes: number;
+  done_bytes: number;
+  deleted_files: number;
+  dest: string;
+}
+
+/** 내보내기 상태. scan=true 면 내보낼 파일 수·용량도 계산. 프로그램이 없으면 null */
+export async function getCameraExportStatus(scan = false, timeoutMs = 3000): Promise<CameraExportStatus | null> {
+  try {
+    return await fetchJson<CameraExportStatus>(`/camera/export/status${scan ? '?scan=1' : ''}`, { method: 'GET' }, timeoutMs);
+  } catch {
+    return null;
+  }
+}
+
+export async function startCameraExport(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    return await fetchJson<{ ok: boolean; error?: string }>('/camera/export/start', { method: 'POST' }, 5000);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** 용접 시작 직전 자동 촬영. 카메라가 연결돼 있을 때만, 실패해도 용접은 그대로 진행 */
 export async function autoCaptureBeforeWeld(input: Omit<CameraCaptureInput, 'trigger'>): Promise<void> {
   const st = await getCameraStatus();

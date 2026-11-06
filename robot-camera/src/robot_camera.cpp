@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -19,15 +20,19 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
-static const char *CAMERA_APP_VERSION = "1.1.282";
+static const char *CAMERA_APP_VERSION = "1.1.289";
 
 struct Settings {
     std::string dbHost = "localhost", dbUser = "root", dbPass, dbName = "robot_welding";
@@ -344,6 +349,203 @@ private:
     std::string serial_, firmware_, name_, lastError_;
 };
 
+// ---------------- [v1.1.289] 촬영 기록 USB 내보내기 (리눅스 펜던트 전용) ----------------
+// 버튼 하나로: USB 연결 -> 날짜 폴더(YYYYMMDD, Gemini+Blackfly) 복사 -> sync -> 크기 대조
+// -> 확인된 파일만 펜던트에서 삭제 -> USB 해제. 공간 부족·복사 실패면 아무것도 지우지 않음.
+// Blackfly 가 촬영 중이면 시작하지 않음. camera_captures 행은 그대로 둠(파일 경로만 남음).
+class Exporter {
+public:
+    explicit Exporter(const Settings &s) : s_(s) {}
+    ~Exporter() { if (th_.joinable()) th_.join(); }
+
+    json status(bool scan) {
+        json j;
+        {
+            std::lock_guard<std::mutex> lk(mx_);
+            j = {{"ok", true}, {"running", running_}, {"phase", phase_}, {"message", message_}, {"error", error_},
+                 {"total_files", totalFiles_}, {"done_files", doneFiles_}, {"total_bytes", totalBytes_},
+                 {"done_bytes", doneBytes_}, {"deleted_files", deletedFiles_}, {"dest", dest_}};
+        }
+#ifdef _WIN32
+        j["supported"] = false;
+#else
+        j["supported"] = true;
+        j["usb_device"] = findUsbDevice();
+        if (scan && !j["running"].get<bool>()) {
+            auto files = pendingFiles();
+            long long bytes = 0;
+            for (auto &f : files) bytes += f.second;
+            j["pending_files"] = (long long)files.size();
+            j["pending_bytes"] = bytes;
+        }
+#endif
+        return j;
+    }
+
+    bool start(std::string &err) {
+#ifdef _WIN32
+        err = "노트북에서는 지원하지 않습니다 (저장 폴더를 탐색기에서 여세요)";
+        return false;
+#else
+        std::lock_guard<std::mutex> lk(mx_);
+        if (running_) { err = "이미 내보내는 중입니다"; return false; }
+        if (blackflyRecording()) { err = "Blackfly 가 촬영 중입니다. 용접이 끝난 뒤 하세요"; return false; }
+        if (findUsbDevice().empty()) { err = "USB 를 찾지 못했습니다. 꽂았는지 확인하세요"; return false; }
+        if (th_.joinable()) th_.join();
+        running_ = true;
+        phase_ = "start"; message_ = "시작"; error_.clear();
+        totalFiles_ = doneFiles_ = totalBytes_ = doneBytes_ = deletedFiles_ = 0;
+        th_ = std::thread([this] { run(); });
+        return true;
+#endif
+    }
+
+private:
+#ifndef _WIN32
+    static const char *mountPoint() { return "/mnt/usb"; }
+
+    static std::string findUsbDevice() {
+        for (char c = 'a'; c <= 'z'; c++) {
+            std::string base = std::string("/dev/sd") + c;
+            if (fs::exists(base + "1")) return base + "1";
+            if (fs::exists(base)) return base;
+        }
+        return "";
+    }
+    static bool isMounted() {
+        std::ifstream in("/proc/mounts");
+        std::string dev, mp, rest;
+        while (in >> dev >> mp && std::getline(in, rest))
+            if (mp == mountPoint()) return true;
+        return false;
+    }
+    static bool blackflyRecording() {
+        httplib::Client cli("127.0.0.1", 8003);
+        cli.set_connection_timeout(1, 0);
+        cli.set_read_timeout(2, 0);
+        auto r = cli.Get("/blackfly/status");
+        if (!r || r->status != 200) return false;
+        json j = json::parse(r->body, nullptr, false);
+        return j.is_object() && j.value("recording", false);
+    }
+    // 내보낼 파일: data_dir 아래 YYYYMMDD 폴더 안의 모든 파일 (로그·sdk-log 제외)
+    std::vector<std::pair<fs::path, long long>> pendingFiles() {
+        std::vector<std::pair<fs::path, long long>> out;
+        std::error_code ec;
+        for (auto &d : fs::directory_iterator(s_.dataDir, ec)) {
+            std::string name = d.path().filename().string();
+            if (!d.is_directory() || name.size() != 8 || !std::all_of(name.begin(), name.end(), ::isdigit)) continue;
+            for (auto &f : fs::recursive_directory_iterator(d.path(), ec))
+                if (f.is_regular_file()) out.emplace_back(f.path(), (long long)f.file_size());
+        }
+        return out;
+    }
+    void setPhase(const std::string &p, const std::string &m) {
+        std::lock_guard<std::mutex> lk(mx_);
+        phase_ = p; message_ = m;
+        logLine("[EXPORT] " + m);
+    }
+    void finish(const std::string &err, bool unmount) {
+        if (unmount) {
+            std::system("sync");
+            if (std::system((std::string("sudo -n umount ") + mountPoint()).c_str()) != 0 && isMounted()) {
+                std::string e = err.empty() ? "USB 해제 실패. 터미널에서 cd ~ && sync && sudo umount /mnt/usb" : err;
+                std::lock_guard<std::mutex> lk(mx_);
+                error_ = e; phase_ = "error"; message_ = e; running_ = false;
+                logLine("[EXPORT] " + e);
+                return;
+            }
+        }
+        std::lock_guard<std::mutex> lk(mx_);
+        running_ = false;
+        if (!err.empty()) { error_ = err; phase_ = "error"; message_ = err; logLine("[EXPORT] 실패: " + err); }
+        else { phase_ = "done"; message_ = "완료. USB 를 뽑아도 됩니다"; logLine("[EXPORT] 완료"); }
+    }
+
+    void run() {
+        try {
+            auto files = pendingFiles();
+            long long total = 0;
+            for (auto &f : files) total += f.second;
+            {
+                std::lock_guard<std::mutex> lk(mx_);
+                totalFiles_ = (long long)files.size(); totalBytes_ = total;
+            }
+            if (files.empty()) { finish("내보낼 촬영 기록이 없습니다", false); return; }
+
+            setPhase("mount", "USB 연결 중");
+            if (!isMounted()) {
+                std::string dev = findUsbDevice();
+                std::system((std::string("sudo -n mkdir -p ") + mountPoint()).c_str());
+                std::string opt = "-o uid=" + std::to_string(getuid()) + ",gid=" + std::to_string(getgid()) + " ";
+                if (std::system(("sudo -n mount " + opt + dev + " " + mountPoint()).c_str()) != 0 &&
+                    std::system(("sudo -n mount " + dev + " " + mountPoint()).c_str()) != 0) {
+                    finish("USB 연결(mount) 실패: " + dev, false);
+                    return;
+                }
+            }
+            std::error_code ec;
+            auto sp = fs::space(mountPoint(), ec);
+            if (ec || (long long)sp.available < total + 50LL * 1024 * 1024) {
+                finish("USB 공간 부족: 필요 " + std::to_string(total / (1024 * 1024) + 50) + "MB, 남음 " +
+                       std::to_string(ec ? 0 : (long long)(sp.available / (1024 * 1024))) + "MB", true);
+                return;
+            }
+
+            fs::path destRoot = fs::path(mountPoint()) / "vot-camera-export";
+            { std::lock_guard<std::mutex> lk(mx_); dest_ = destRoot.string(); }
+            setPhase("copy", "복사 중");
+            std::vector<std::pair<fs::path, fs::path>> copied;
+            for (auto &f : files) {
+                fs::path rel = fs::relative(f.first, s_.dataDir, ec);
+                fs::path dst = destRoot / rel;
+                fs::create_directories(dst.parent_path(), ec);
+                if (!fs::copy_file(f.first, dst, fs::copy_options::overwrite_existing, ec) || ec) {
+                    finish("복사 실패: " + rel.string() + " (" + ec.message() + "). 펜던트 파일은 지우지 않았습니다", true);
+                    return;
+                }
+                copied.emplace_back(f.first, dst);
+                std::lock_guard<std::mutex> lk(mx_);
+                doneFiles_++; doneBytes_ += f.second;
+            }
+
+            setPhase("verify", "USB 기록 확인 중");
+            std::system("sync");
+            for (auto &c : copied) {
+                std::error_code e1, e2;
+                auto a = fs::file_size(c.first, e1), b = fs::file_size(c.second, e2);
+                if (e1 || e2 || a != b) {
+                    finish("크기 불일치: " + c.second.filename().string() + ". 펜던트 파일은 지우지 않았습니다", true);
+                    return;
+                }
+            }
+
+            setPhase("delete", "펜던트에서 삭제 중");
+            std::set<fs::path> dirs;
+            for (auto &c : copied) {
+                std::error_code e;
+                if (fs::remove(c.first, e)) { std::lock_guard<std::mutex> lk(mx_); deletedFiles_++; }
+                for (fs::path p = c.first.parent_path(); p != fs::path(s_.dataDir) && p.has_parent_path(); p = p.parent_path()) dirs.insert(p);
+            }
+            // 깊은 폴더부터 비었으면 지움
+            for (auto it = dirs.rbegin(); it != dirs.rend(); ++it) { std::error_code e; if (fs::is_empty(*it, e)) fs::remove(*it, e); }
+
+            setPhase("unmount", "USB 해제 중");
+            finish("", true);
+        } catch (const std::exception &e) {
+            finish(std::string("오류: ") + e.what(), isMounted());
+        }
+    }
+#endif
+
+    const Settings &s_;
+    std::mutex mx_;
+    std::thread th_;
+    bool running_ = false;
+    std::string phase_ = "idle", message_, error_, dest_;
+    long long totalFiles_ = 0, doneFiles_ = 0, totalBytes_ = 0, doneBytes_ = 0, deletedFiles_ = 0;
+};
+
 static std::string jsonText(const json &req, const char *key) {
     if (!req.contains(key) || req[key].is_null()) return "NULL";
     return req[key].is_string() ? req[key].get<std::string>() : req[key].dump();
@@ -366,6 +568,7 @@ int main(int argc, char **argv) {
     Db db(s);
     if (db.exec(kCreateTable)) logLine("[DB] camera_captures 준비");
     Camera cam(s);
+    Exporter exporter(s);
 
     std::atomic<bool> running{true};
     std::thread worker([&] {
@@ -455,6 +658,16 @@ int main(int argc, char **argv) {
         if (!f) return sendJson(res, {{"ok", false}, {"error", "파일 없음"}}, 404);
         std::string data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
         res.set_content(data, mime);
+    });
+
+    // [v1.1.289] 촬영 기록 USB 내보내기
+    svr.Get("/camera/export/status", [&](const httplib::Request &req, httplib::Response &res) {
+        sendJson(res, exporter.status(req.has_param("scan") && req.get_param_value("scan") == "1"));
+    });
+    svr.Post("/camera/export/start", [&](const httplib::Request &, httplib::Response &res) {
+        std::string err;
+        if (!exporter.start(err)) return sendJson(res, {{"ok", false}, {"error", err}}, 409);
+        sendJson(res, {{"ok", true}});
     });
 
     logLine("[HTTP] " + s.httpHost + ":" + std::to_string(s.httpPort));
