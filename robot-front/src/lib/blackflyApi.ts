@@ -16,7 +16,7 @@ function fireAndForget(path: string, body?: unknown, timeoutMs = 1000): void {
     signal: ctrl.signal,
   })
     .catch(() => {})
-    .finally(() => clearTimeout(timer));
+    .then(() => clearTimeout(timer));
 }
 
 /** 용접 1회를 구분하는 id (폴더 이름) */

@@ -1,0 +1,4 @@
+v1.1.288: blackflyApi.ts 빌드 오류 수정 (Promise.finally 미지원 -> then)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcEAumGsE8jB2uWSe3Y
