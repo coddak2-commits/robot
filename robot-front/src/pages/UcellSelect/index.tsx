@@ -961,6 +961,9 @@ export interface SecondPassSettings {
   speed: number | null;
   weaveRange: number | null;
   weaveFreq: number | null;
+  // [v1.1.290] 체류(ms). 왼쪽 수평([P4,P5,P6]) 기준. 오른쪽 수평은 1패스처럼 좌우를 바꿔 넣는다
+  weaveLeftStay: number | null;
+  weaveRightStay: number | null;
 }
 export const DEFAULT_SECOND_PASS_SETTINGS: SecondPassSettings = {
   offsetZ: HORIZONTAL_SECOND_PASS_Z_MM,
@@ -969,10 +972,17 @@ export const DEFAULT_SECOND_PASS_SETTINGS: SecondPassSettings = {
   speed: null,
   weaveRange: null,
   weaveFreq: null,
+  weaveLeftStay: null,
+  weaveRightStay: null,
 };
-const applySecondPassWeave = (wp: WeaveParams, s: SecondPassSettings): WeaveParams => {
-  if (s.weaveRange === null && s.weaveFreq === null) return wp;
+const applySecondPassWeave = (wp: WeaveParams, s: SecondPassSettings, mirror: boolean): WeaveParams => {
+  if (s.weaveRange === null && s.weaveFreq === null && s.weaveLeftStay === null && s.weaveRightStay === null) return wp;
   const next: WeaveParams = { ...wp };
+  // 오른쪽 수평(mirror)은 입력한 좌/우 체류를 바꿔 넣는다 (1패스 300/0 <-> 0/300 과 같은 방식)
+  const leftStay = mirror ? s.weaveRightStay : s.weaveLeftStay;
+  const rightStay = mirror ? s.weaveLeftStay : s.weaveRightStay;
+  if (leftStay !== null) next.weaveLeftStayTime = leftStay;
+  if (rightStay !== null) next.weaveRightStayTime = rightStay;
   if (s.weaveFreq !== null) next.weaveFrequency = s.weaveFreq;
   if (s.weaveRange !== null) {
     const ratio = wp.weaveRange > 0 ? s.weaveRange / wp.weaveRange : 0;
@@ -1008,7 +1018,7 @@ export const addHorizontalSecondPass = (
         weldCurrent: pt.weldCurrent !== null && s.current !== null ? s.current : pt.weldCurrent,
         weldVoltage: pt.weldVoltage !== null && s.voltage !== null ? s.voltage : pt.weldVoltage,
         moveSpeed: s.speed !== null ? s.speed : pt.moveSpeed,
-        weaveParams: applySecondPassWeave(pt.weaveParams, s),
+        weaveParams: applySecondPassWeave(pt.weaveParams, s, groupIndex === 2),
       })),
     });
   }

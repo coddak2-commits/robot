@@ -657,7 +657,8 @@ export async function executeWelding(
     log_weldingExecution.info(
       'welding.twoPass',
       `수평 2패스 ON: +Z ${tp.offsetZ}mm, 전류 ${tp.current ?? same}, 전압 ${tp.voltage ?? same}, `
-      + `속도 ${tp.speed ?? same}, 위빙 폭 ${tp.weaveRange ?? same}, 주파수 ${tp.weaveFreq ?? same}`,
+      + `속도 ${tp.speed ?? same}, 위빙 폭 ${tp.weaveRange ?? same}, 주파수 ${tp.weaveFreq ?? same}, `
+      + `체류(왼쪽 수평 기준) ${tp.weaveLeftStay ?? same}/${tp.weaveRightStay ?? same}`,
       { parts: executableParts.filter(p => p.shouldExecute).map(p => p.name), settings: tp },
     );
   }

@@ -1,0 +1,9 @@
+v1.1.290: 수평 2패스 조건에 체류 시간(좌/우) 추가
+
+- UcellSelect/index.tsx: SecondPassSettings weaveLeftStay/weaveRightStay, 오른쪽 수평은 좌우 바꿔 적용
+- TwoPassControl.tsx: 좌/우 체류 입력칸, 요약 표시
+- weldingExecution.ts: 로그에 체류 기록
+- 버전 1.1.290
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcEAumGsE8jB2uWSe3Y

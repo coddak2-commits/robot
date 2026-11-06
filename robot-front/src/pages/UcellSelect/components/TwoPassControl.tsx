@@ -14,6 +14,9 @@ const FIELDS: { key: FieldKey; label: string; unit: string; min: number; max: nu
   { key: 'speed', label: '속도', unit: 'cpm', min: 5, max: 100, nullable: true },
   { key: 'weaveRange', label: '위빙 폭', unit: 'mm', min: 0, max: 20, nullable: true },
   { key: 'weaveFreq', label: '위빙 주파수', unit: 'Hz', min: 0.1, max: 10, nullable: true },
+  // [v1.1.290] 왼쪽 수평 기준. 오른쪽 수평은 좌우를 바꿔 넣음
+  { key: 'weaveLeftStay', label: '좌 체류', unit: 'ms', min: 0, max: 2000, nullable: true },
+  { key: 'weaveRightStay', label: '우 체류', unit: 'ms', min: 0, max: 2000, nullable: true },
 ];
 
 export const summarizeSecondPass = (s: SecondPassSettings): string => {
@@ -23,6 +26,8 @@ export const summarizeSecondPass = (s: SecondPassSettings): string => {
   if (s.speed !== null) parts.push(`${s.speed}cpm`);
   if (s.weaveRange !== null) parts.push(`위빙 ${s.weaveRange}mm`);
   if (s.weaveFreq !== null) parts.push(`${s.weaveFreq}Hz`);
+  if (s.weaveLeftStay !== null || s.weaveRightStay !== null)
+    parts.push(`체류 ${s.weaveLeftStay ?? '-'}/${s.weaveRightStay ?? '-'}`);
   return `+${s.offsetZ}mm · ${parts.length ? parts.join('/') : '1패스 조건'}`;
 };
 
@@ -123,7 +128,8 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
               <button onClick={() => setOpen(false)} style={{ background: 'none', color: '#94a3b8', border: 'none', fontSize: 22, cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
-              비워 두면 1패스 값을 그대로 씁니다. 화면을 새로 열면 초기화됩니다.
+              비워 두면 1패스 값을 그대로 씁니다. 화면을 새로 열면 초기화됩니다.<br />
+              체류는 왼쪽 수평(P4~P6) 기준이고, 오른쪽 수평은 좌우를 바꿔 넣습니다.
             </div>
             <div style={{ display: 'flex', gap: 12 }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
