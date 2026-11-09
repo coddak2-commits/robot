@@ -5554,6 +5554,19 @@ void registerTeachingLogRoutes(
         }
         res.set_content(response.dump(), "application/json");
     });
+    // [v1.1.292] 누적 작업 시간 (설정 화면). /welding-logs/(\d+) 와 겹치지 않는다.
+    server.Get("/welding-logs/summary", [dbService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        json response;
+        if (dbService && dbService->isConnected()) {
+            response["status_code"] = 200;
+            response["data"] = dbService->getWeldingWorkSummary();
+        } else {
+            response["status_code"] = 500;
+            response["message"] = "Database not connected";
+        }
+        res.set_content(response.dump(), "application/json");
+    });
     server.Get(R"(/welding-logs/(\d+))", [dbService](const httplib::Request& req, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         int logId;
@@ -7192,7 +7205,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.291"
+#define APP_VERSION_STRING "1.1.292"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -9733,6 +9746,37 @@ int DatabaseService::getWeldingLogsCount(int jobId, const std::string& fromDate,
         count = std::stoi(row[0]);
     }
     return count;
+}
+// [v1.1.292] 설정 화면 '누적 작업 시간'. 실제 용접 기록(operation_type='welding')만 합산하고
+// 드라이런·시뮬레이션은 뺀다. 완료·중단·실패는 모두 넣는다(중간에 멈춰도 장비를 쓴 시간).
+// actual_duration_sec 은 작업 1회 시작~끝(터치센싱·이동·홈 복귀 포함)이라 아크 시간이 아니다.
+// 이번 달 = DB 서버 시계 기준 이번 달 1일 0시부터.
+json DatabaseService::getWeldingWorkSummary() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    json out = {{"total_sec", 0.0}, {"total_count", 0}, {"success_count", 0},
+                {"month_sec", 0.0}, {"month_count", 0}};
+    const std::string monthStart = "DATE_FORMAT(NOW(), '%Y-%m-01')";
+    std::ostringstream query;
+    query << "SELECT COUNT(*), COALESCE(SUM(actual_duration_sec), 0), "
+          << "COALESCE(SUM(result_status = 'success'), 0), "
+          << "COALESCE(SUM(started_at >= " << monthStart << "), 0), "
+          << "COALESCE(SUM(CASE WHEN started_at >= " << monthStart << " THEN actual_duration_sec ELSE 0 END), 0) "
+          << "FROM welding_logs WHERE operation_type = 'welding'";
+    MYSQL_RES* result = executeSelect(query.str());
+    if (!result) return out;
+    MySqlResultGuard resultGuard(result);
+    MYSQL_ROW row = mysql_fetch_row(result);
+    if (!row) return out;
+    auto toD = [](const char* s) -> double {
+        if (!s) return 0.0;
+        try { return std::stod(s); } catch (...) { return 0.0; }
+    };
+    out["total_count"] = static_cast<int>(toD(row[0]));
+    out["total_sec"] = toD(row[1]);
+    out["success_count"] = static_cast<int>(toD(row[2]));
+    out["month_count"] = static_cast<int>(toD(row[3]));
+    out["month_sec"] = toD(row[4]);
+    return out;
 }
 WeldingLog DatabaseService::getWeldingLog(int id) {
     std::lock_guard<std::mutex> lock(m_mutex);

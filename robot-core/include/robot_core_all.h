@@ -543,6 +543,8 @@ public:
     std::vector<WeldingLog> getWeldingLogs(int limit = 100, int offset = 0, int jobId = -1,
                                            const std::string& fromDate = "", const std::string& toDate = "");
     int getWeldingLogsCount(int jobId = -1, const std::string& fromDate = "", const std::string& toDate = "");
+    // [v1.1.292] 실제 용접 누적 작업 시간·횟수 (전체 / 이번 달)
+    json getWeldingWorkSummary();
     WeldingLog getWeldingLog(int id);
     int createWeldingLog(const WeldingLog& log);
     bool updateWeldingLog(const WeldingLog& log);

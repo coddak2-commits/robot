@@ -6,9 +6,10 @@ export interface StatusCardProps {
   value: string;
   valueColor?: string;
   label: string;
+  sub?: string;
 }
 export const StatusCard: React.FC<StatusCardProps> = ({
-  icon, bgColor, value, valueColor = 'text-white', label,
+  icon, bgColor, value, valueColor = 'text-white', label, sub,
 }) => (
   <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl p-4 border border-gray-700/50">
     <div className="flex items-center gap-3">
@@ -18,6 +19,7 @@ export const StatusCard: React.FC<StatusCardProps> = ({
       <div>
         <div className={`text-lg font-bold ${valueColor}`}>{value}</div>
         <div className="text-gray-400 text-sm">{label}</div>
+        {sub && <div className="text-gray-500 text-xs">{sub}</div>}
       </div>
     </div>
   </div>

@@ -1404,6 +1404,23 @@ export const getWeldingLogs = async (
     throw error;
   }
 };
+// [v1.1.292] 실제 용접 누적 작업 시간 (드라이런 제외, 완료·중단·실패 포함). 기기마다 자기 DB 기준
+export interface WeldingWorkSummary {
+  total_sec: number;
+  total_count: number;
+  success_count: number;
+  month_sec: number;
+  month_count: number;
+}
+export const getWeldingWorkSummary = async (): Promise<WeldingWorkSummary | null> => {
+  try {
+    const response = await api.get('/welding-logs/summary');
+    return response.data?.data ?? null;
+  } catch (error) {
+    console.error('누적 작업 시간 조회 오류:', error);
+    return null;
+  }
+};
 export const createWeldingLog = async (log: Omit<WeldingLogData, 'id' | 'created_at'>): Promise<WeldingLogData> => {
   try {
     const response = await api.post('/welding-logs', log);

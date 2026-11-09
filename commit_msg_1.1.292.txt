@@ -1,0 +1,8 @@
+v1.1.292: 설정 화면 '누적 작업 시간' (실제 용접 기록 합산)
+
+- robot-core: GET /welding-logs/summary, DatabaseService::getWeldingWorkSummary
+- robot-front: 가동 시간 카드 -> 누적 작업 시간 + 이번 달 시간·횟수
+- 버전 1.1.292
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcEAumGsE8jB2uWSe3Y

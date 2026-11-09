@@ -1,11 +1,17 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Users, Sliders, Shield, Save, Clock, Cpu, Wifi, Download, Database } from 'lucide-react';
 import { PageLayout, LoadingScreen } from '../../components/common/index';
 import { useSystemSettingsData } from './hooks/useSystemSettingsData';
 import { useLang } from '../../contexts';
 import { StatusCard_StatusCard as StatusCard, UserManagementTab_UserManagementTab as UserManagementTab, UserModal_UserModal as UserModal, RobotSettingsTab_RobotSettingsTab as RobotSettingsTab, WeldingDefaultsTab_WeldingDefaultsTab as WeldingDefaultsTab, SystemEnvTab_SystemEnvTab as SystemEnvTab, UpdateTab_UpdateTab as UpdateTab } from './components';
-import { SystemConfig } from '../../lib';
+import { SystemConfig, getWeldingWorkSummary, WeldingWorkSummary } from '../../lib';
 import { VersionInfo, UpdateCheckResponse, UpdateStatus, SystemInfo, RobotSettingsData, RobotErrorData, RobotErrorEvent, UserData } from '../../lib';
+// [v1.1.292] 초 -> 'N시간 M분'
+const formatWorkTime = (sec: number): string => {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+};
 const SystemSettings: React.FC = () => {
   const {
     activeTab,
@@ -40,6 +46,11 @@ const SystemSettings: React.FC = () => {
     handleSaveConfig,
     fetchRobotError,
   } = useSystemSettingsData();
+  // [v1.1.292] '가동 시간'(코어 켜진 뒤 시간, 재시작하면 0) 대신 실제 용접 누적 작업 시간
+  const [workSummary, setWorkSummary] = useState<WeldingWorkSummary | null>(null);
+  useEffect(() => {
+    getWeldingWorkSummary().then(setWorkSummary);
+  }, []);
   const { t } = useLang();
   const tabs = [
     { id: 'users' as TabType, label: t('tabUsers'), icon: Users },
@@ -77,12 +88,9 @@ const SystemSettings: React.FC = () => {
         <StatusCard
           icon={<Clock className="w-6 h-6 text-yellow-400" />}
           bgColor="bg-yellow-500/20"
-          value={
-            systemInfo?.uptime_seconds != null
-              ? `${Math.floor(systemInfo.uptime_seconds / 86400)}일 ${Math.floor((systemInfo.uptime_seconds % 86400) / 3600)}시간`
-              : '---'
-          }
-          label="가동 시간"
+          value={workSummary ? formatWorkTime(workSummary.total_sec) : '---'}
+          label="누적 작업 시간"
+          sub={workSummary ? `이번 달 ${formatWorkTime(workSummary.month_sec)} · ${workSummary.month_count}회` : undefined}
         />
       </div>
       {}
