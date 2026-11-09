@@ -1,69 +1,5 @@
-import { AxiosError } from 'axios';
 import { Axios as api, createLogger } from '../lib';
 const log = createLogger('apiRetry');
-interface RetryOptions {
-  maxRetries?: number;
-  baseDelay?: number;
-  maxDelay?: number;
-  retryServerErrors?: boolean;
-}
-function isNetworkError(error: AxiosError): boolean {
-  return (
-    !error.response &&
-    (error.code === 'ECONNREFUSED' ||
-      error.code === 'ERR_NETWORK' ||
-      error.code === 'ECONNABORTED' ||
-      error.message?.includes('Network Error') ||
-      error.message?.includes('timeout'))
-  );
-}
-function isRetryable(error: AxiosError, retryServerErrors: boolean): boolean {
-  if (isNetworkError(error)) return true;
-  if (retryServerErrors && error.response && error.response.status >= 500) return true;
-  return false;
-}
-function getBackoffDelay(attempt: number, baseDelay: number, maxDelay: number): number {
-  const exponentialDelay = baseDelay * Math.pow(2, attempt);
-  const jitter = Math.random() * baseDelay * 0.5;
-  return Math.min(exponentialDelay + jitter, maxDelay);
-}
-export async function withRetry<T>(
-  apiCall: () => Promise<T>,
-  options: RetryOptions = {},
-): Promise<T> {
-  const {
-    maxRetries = 3,
-    baseDelay = 1000,
-    maxDelay = 10000,
-    retryServerErrors = false,
-  } = options;
-  let lastError: Error | null = null;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await apiCall();
-    } catch (error) {
-      lastError = error as Error;
-      const axiosError = error as AxiosError;
-      if (!isRetryable(axiosError, retryServerErrors)) {
-        throw error;
-      }
-      if (attempt >= maxRetries) {
-        log.error('retry.exhausted', `API 재시도 소진 (${maxRetries}회)`, {
-          url: axiosError.config?.url,
-          code: axiosError.code,
-        });
-        throw error;
-      }
-      const delay = getBackoffDelay(attempt, baseDelay, maxDelay);
-      log.warn('retry.attempt', `API 재시도 ${attempt + 1}/${maxRetries} (${delay.toFixed(0)}ms 후)`, {
-        url: axiosError.config?.url,
-        code: axiosError.code,
-      });
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-  throw lastError;
-}
 export async function emergencyWeldingShutdown(): Promise<{
   success: boolean;
   steps: Array<{ step: string; result: number; error?: string }>;
@@ -249,28 +185,6 @@ export const formatDate = (dateStr?: string): string => {
     month: 'long',
     day: 'numeric',
   });
-};
-export const formatTime = (dateStr?: string): string => {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleTimeString('ko-KR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
-export const formatRelativeTime = (dateStr?: string): string => {
-  if (!dateStr) return '-';
-  const now = new Date();
-  const date = new Date(dateStr);
-  const diffMs = now.getTime() - date.getTime();
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHour = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHour / 24);
-  if (diffSec < 60) return '방금 전';
-  if (diffMin < 60) return `${diffMin}분 전`;
-  if (diffHour < 24) return `${diffHour}시간 전`;
-  if (diffDay < 7) return `${diffDay}일 전`;
-  return formatDate(dateStr);
 };
 export interface DevDebugConfig {
   storageKey?: string;
@@ -747,11 +661,3 @@ export const getStatusBg = (status: string): string =>
   `${statusConfigs[status]?.bgColor || defaultConfig.bgColor} ${
     statusConfigs[status]?.borderColor || defaultConfig.borderColor
   }`;
-export const getStatusLabel = (status: string): string =>
-  statusConfigs[status]?.label || defaultConfig.label;
-export const getStatusBadgeClasses = (status: string): string => {
-  const config = statusConfigs[status] || defaultConfig;
-  return `${config.bgColor} ${config.color} ${config.borderColor} border`;
-};
-export const getFullStatusConfig = (status: string): StatusConfig =>
-  statusConfigs[status] || defaultConfig;

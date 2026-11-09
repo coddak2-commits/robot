@@ -3,19 +3,6 @@ import { Axios as api } from '../http';
 import { RobotJoints, RobotTCF, RobotMoveData, RobotStatusResponse } from '@/types/RobotData';
 export { axios, api };
 export type { AxiosResponse };
-export const getRobotStatus = async (): Promise<RobotStatusResponse> => {
-  try {
-    const response = await api.get('/robot_sdk/realtime');
-    return {
-      status_code: 200,
-      message: 'success',
-      data: response.data,
-    } as RobotStatusResponse;
-  } catch (error) {
-    console.error('로봇 상태 조회 오류:', error);
-    throw error;
-  }
-};
 export const checkRobotConnection = async (): Promise<RobotConnectionStatus> => {
   try {
     const response = await api.get('/robot_sdk/connection_status');
@@ -95,15 +82,6 @@ export const enableRobot = async () => {
     return response.data;
   } catch (error) {
     console.error('로봇 활성화 오류:', error);
-    throw error;
-  }
-};
-export const disableRobot = async () => {
-  try {
-    const response = await api.post('/robot_sdk/robot/disable');
-    return response.data;
-  } catch (error) {
-    console.error('로봇 비활성화 오류:', error);
     throw error;
   }
 };
@@ -450,81 +428,6 @@ export const moveRobot = async (
           ovl = DEFAULT_MOVE_PARAMS.ovl, ...rest } = options;
   return moveRobotToLocation({ ...rest, speed, acc, ovl });
 };
-export const moveRobotWithJoints = (
-  joints: Partial<RobotJoints>, speed?: string, acc?: string, ovl?: string,
-) => moveRobot({ joints, speed, acc, ovl });
-export const moveRobotWithTCF = (
-  tcf: Partial<RobotTCF>, speed?: string, acc?: string, ovl?: string,
-) => moveRobot({ tcf, speed, acc, ovl });
-export const moveRobotWithBoth = (
-  joints: Partial<RobotJoints>, tcf: Partial<RobotTCF>,
-  speed?: string, acc?: string, ovl?: string,
-) => moveRobot({ joints, tcf, speed, acc, ovl });
-const executeWithStopCheck = async (
-  operation: () => Promise<any>,
-  operationName: string,
-  shouldStopCallback?: () => boolean,
-): Promise<void> => {
-  if (shouldStopCallback && shouldStopCallback()) {
-    throw new Error('STOP_REQUESTED');
-  }
-  const stopPromise = new Promise<never>((_, reject) => {
-    const checkStop = () => {
-      if (shouldStopCallback && shouldStopCallback()) {
-        reject(new Error('STOP_REQUESTED'));
-      } else {
-        setTimeout(checkStop, 10);
-      }
-    };
-    checkStop();
-  });
-  try {
-    await Promise.race([operation(), stopPromise]);
-  } catch (error) {
-    if (error instanceof Error && error.message === 'STOP_REQUESTED') {
-      console.log(`${operationName} 중 정지 요청에 의해 중단되었습니다.`);
-      return;
-    }
-    throw error;
-  }
-};
-export const runUcellTestSequence = async (
-  sequence: Array<RobotMoveData>,
-  shouldStopCallback?: () => boolean,
-): Promise<void> => {
-  for (let i = 0; i < sequence.length; i++) {
-    const step = sequence[i];
-    if (!step) { console.error(`${i + 1}번째 좌표 데이터가 없습니다.`); continue; }
-    console.log(`${i + 1}번째 좌표 이동 시작`);
-    await executeWithStopCheck(
-      () => moveRobotToLocation(step), `${i + 1}번째 좌표 이동`, shouldStopCallback,
-    );
-    console.log(`${i + 1}번째 좌표 이동 완료`);
-    if (i < sequence.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-  }
-};
-export const waitForMoveComplete = async (
-  timeoutMs = 300000, pollIntervalMs = 500
-): Promise<{ success: boolean; message: string }> => {
-  const startTime = Date.now();
-  await new Promise(resolve => setTimeout(resolve, 500));
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const status = await getRealtimeRobotStatus();
-      if (!status.connected) return { success: false, message: '로봇 연결이 끊어졌습니다.' };
-      if (status.robot_state === 1 || status.robot_state === null) return { success: true, message: '이동 완료' };
-      if (status.error_code && status.error_code !== 0)
-        return { success: false, message: `오류 발생: ${status.error_message || status.error_code}` };
-      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
-    } catch (error) {
-      console.warn('이동 상태 확인 중 오류:', error);
-      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
-    }
-  }
-  return { success: false, message: '이동 타임아웃 (5분 초과)' };
-};
 export const getRobotPoints = async (): Promise<RobotPointsResponse> => {
   try {
     const jobs = await getTeachingJobs();
@@ -711,18 +614,6 @@ export const updateTeachingJob = async (jobId: number, data: CreateTeachingJobRe
     throw error;
   }
 };
-export const updateTeachingJobStatus = async (jobId: number, status: string, currentPointIndex?: number) => {
-  try {
-    const response = await api.patch(`/teaching/jobs/${jobId}/status`, {
-      status,
-      current_point_index: currentPointIndex,
-    });
-    return response.data;
-  } catch (error) {
-    console.error('작업 상태 변경 오류:', error);
-    throw error;
-  }
-};
 export const updateTeachingJobName = async (jobId: number, name: string) => {
   try {
     const response = await api.patch(`/teaching/jobs/${jobId}/name`, { name });
@@ -741,63 +632,6 @@ export const deleteTeachingJob = async (jobId: number) => {
     throw error;
   }
 };
-export const addPathRecord = async (
-  jobId: number,
-  data: {
-    tcp_x?: number;
-    tcp_y?: number;
-    tcp_z?: number;
-    tcp_rx?: number;
-    tcp_ry?: number;
-    tcp_rz?: number;
-    joints?: number[];
-    point_index?: number;
-    is_welding?: boolean;
-  }
-) => {
-  try {
-    const response = await api.post(`/teaching/jobs/${jobId}/path`, data);
-    return response.data;
-  } catch (error) {
-    console.error('경로 기록 추가 오류:', error);
-    throw error;
-  }
-};
-export const getPathRecords = async (jobId: number, limit = 1000, offset = 0) => {
-  try {
-    const response = await api.get(`/teaching/jobs/${jobId}/path?limit=${limit}&offset=${offset}`);
-    return response.data;
-  } catch (error) {
-    console.error('경로 기록 조회 오류:', error);
-    throw error;
-  }
-};
-export const clearPathRecords = async (jobId: number) => {
-  try {
-    const response = await api.delete(`/teaching/jobs/${jobId}/path`);
-    return response.data;
-  } catch (error) {
-    console.error('경로 기록 삭제 오류:', error);
-    throw error;
-  }
-};
-export const wireSearchStart = async (params: WireSearchParams = {}) => {
-  try {
-    const response = await api.post('/welding/wire-search/start', {
-      ref_pos: params.ref_pos ?? 1,
-      search_vel: params.search_vel ?? 10,
-      search_dis: params.search_dis ?? 100,
-      auto_back_flag: params.auto_back_flag ?? 0,
-      auto_back_vel: params.auto_back_vel ?? 10,
-      auto_back_dis: params.auto_back_dis ?? 100,
-      offset_flag: params.offset_flag ?? 1,
-    });
-    return response.data;
-  } catch (error) {
-    console.error('와이어 서치 시작 오류:', error);
-    throw error;
-  }
-};
 export const wireSearchEnd = async (params: WireSearchParams = {}) => {
   try {
     const response = await api.post('/welding/wire-search/end', {
@@ -812,33 +646,6 @@ export const wireSearchEnd = async (params: WireSearchParams = {}) => {
     return response.data;
   } catch (error) {
     console.error('와이어 서치 종료 오류:', error);
-    throw error;
-  }
-};
-export const wireSearchWait = async (varname = 'RES0') => {
-  try {
-    const response = await api.post('/welding/wire-search/wait', { varname }, {
-      timeout: 60000,
-    });
-    return response.data;
-  } catch (error) {
-    console.error('와이어 서치 대기 오류:', error);
-    throw error;
-  }
-};
-export const touchSearch = async (params: TouchSearchParams): Promise<TouchSearchResult> => {
-  try {
-    const response = await api.post('/robot_sdk/move/touch-search', {
-      direction: params.direction,
-      search_dis: params.search_dis ?? 100,
-      search_vel: params.search_vel ?? 10,
-      back_dis: params.back_dis ?? 10,
-    }, {
-      timeout: 120000,
-    });
-    return response.data;
-  } catch (error) {
-    console.error('터치 센싱 오류:', error);
     throw error;
   }
 };
@@ -878,25 +685,6 @@ export const findDz = async (direction: 1 | -1): Promise<FindDeltaResult> => {
     return response.data;
   } catch (error) {
     console.error('FindDz 오류:', error);
-    throw error;
-  }
-};
-export const getWireSearchOffset = async (
-  seamType = 0,
-  method = 0,
-  varNameRef = ['REF0', '#', '#', '#', '#', '#'],
-  varNameRes = ['RES0', '#', '#', '#', '#', '#']
-) => {
-  try {
-    const response = await api.post('/welding/wire-search/offset', {
-      seam_type: seamType,
-      method,
-      var_name_ref: varNameRef,
-      var_name_res: varNameRes,
-    });
-    return response.data;
-  } catch (error) {
-    console.error('와이어 서치 오프셋 계산 오류:', error);
     throw error;
   }
 };
@@ -1229,18 +1017,6 @@ export const deleteUser = async (userId: number): Promise<void> => {
     throw error;
   }
 };
-export const login = async (username: string, password: string): Promise<UserData> => {
-  try {
-    const response = await api.post('/auth/login', { username, password });
-    if (response.data.status_code !== 200) {
-      throw new Error(response.data.message || '로그인 실패');
-    }
-    return response.data.data;
-  } catch (error) {
-    console.error('로그인 오류:', error);
-    throw error;
-  }
-};
 export const logout = async (): Promise<void> => {
   try {
     await api.post('/auth/logout');
@@ -1417,34 +1193,6 @@ export const arcOff = async (
     throw error;
   }
 };
-export const setWeldingCurrent = async (current: number, ioType = 0, aoIndex = 0, blend = 0) => {
-  try {
-    const response = await api.post('/api/welding/current', {  // core 등록 경로. v1.1.134까지 '/welding/current/set'으로 불러 404였음
-      current,
-      io_type: ioType,
-      ao_index: aoIndex,
-      blend,
-    });
-    return response.data;
-  } catch (error) {
-    console.error('용접 전류 설정 오류:', error);
-    throw error;
-  }
-};
-export const setWeldingVoltage = async (voltage: number, ioType = 0, aoIndex = 0, blend = 0) => {
-  try {
-    const response = await api.post('/api/welding/voltage', {  // core 등록 경로. v1.1.134까지 '/welding/voltage/set'으로 불러 404였음
-      voltage,
-      io_type: ioType,
-      ao_index: aoIndex,
-      blend,
-    });
-    return response.data;
-  } catch (error) {
-    console.error('용접 전압 설정 오류:', error);
-    throw error;
-  }
-};
 export const setWeldingParams = async (
   current: number,
   voltage: number,
@@ -1463,24 +1211,6 @@ export const setWeldingParams = async (
     return response.data;
   } catch (error) {
     console.error('용접 파라미터 설정 오류:', error);
-    throw error;
-  }
-};
-export const gasStart = async (ioType = 0) => {
-  try {
-    const response = await api.post('/welding/gas/start', { io_type: ioType });
-    return response.data;
-  } catch (error) {
-    console.error('가스 송출 시작 오류:', error);
-    throw error;
-  }
-};
-export const gasStop = async (ioType = 0) => {
-  try {
-    const response = await api.post('/welding/gas/stop', { io_type: ioType });
-    return response.data;
-  } catch (error) {
-    console.error('가스 송출 정지 오류:', error);
     throw error;
   }
 };
@@ -1539,12 +1269,6 @@ export const arcTraceControl = async (params: ArcTraceParams = {}) => {
     console.error('아크 트래킹 제어 오류:', error);
     throw error;
   }
-};
-export const arcTraceOn = async (params: Omit<ArcTraceParams, 'flag'> = {}) => {
-  return arcTraceControl({ ...params, flag: 1 });
-};
-export const arcTraceOff = async () => {
-  return arcTraceControl({ flag: 0 });
 };
 export interface BatchMovePoint {
   joints?: number[];
@@ -1674,15 +1398,6 @@ export const getWeldingLogs = async (
     if (fromDate) params.from = fromDate;
     if (toDate) params.to = toDate;
     const response = await api.get('/welding-logs', { params });
-    return response.data.data;
-  } catch (error) {
-    console.error('용접 로그 조회 오류:', error);
-    throw error;
-  }
-};
-export const getWeldingLog = async (logId: number): Promise<WeldingLogData> => {
-  try {
-    const response = await api.get(`/welding-logs/${logId}`);
     return response.data.data;
   } catch (error) {
     console.error('용접 로그 조회 오류:', error);

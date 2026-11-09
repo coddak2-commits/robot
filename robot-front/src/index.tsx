@@ -11,7 +11,6 @@ import { LoadingPage_LoadingPage as LoadingPage } from './components';
 import { AlertProvider, UpdaterProvider, useUpdaterContext, ThemeProvider, LangProvider } from './contexts';
 import { GapAuthProvider } from './contexts/gapAuth';
 import { AlertModal_AlertModal as AlertModal, ErrorBoundary_ErrorBoundary as ErrorBoundary, NetworkStatusBanner_NetworkStatusBanner as NetworkStatusBanner, UpdateDialog_UpdateDialog as UpdateDialog } from './components/common';
-import { ReportHandler } from 'web-vitals';
 initDevDebugHelper();
 initAuditOverlay();
 const rootElement = document.getElementById('root');
@@ -84,15 +83,3 @@ function App() {
   );
 }
 export const App_App = App;
-const reportWebVitals = (onPerfEntry?: ReportHandler): void => {
-  if (onPerfEntry && onPerfEntry instanceof Function) {
-    import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
-      getCLS(onPerfEntry);
-      getFID(onPerfEntry);
-      getFCP(onPerfEntry);
-      getLCP(onPerfEntry);
-      getTTFB(onPerfEntry);
-    });
-  }
-};
-export const ReportWebVitals = reportWebVitals;

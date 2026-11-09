@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronUp, ChevronDown, Save, RotateCcw, GripVertical, Zap, Thermometer, Gauge, Wind, Trash2, Copy, Edit2, Check, X, Plus, AlertTriangle, Crosshair, Radio, Info } from 'lucide-react';
+import { ChevronUp, ChevronDown, Save, RotateCcw, GripVertical, Thermometer, Gauge, Wind, AlertTriangle, Crosshair, Radio, Info } from 'lucide-react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { getWeldingPartOrder, updateWeldingPartOrder, WeldingConfigData } from '../../../lib';
 import type { WeldingPartOrderItem } from '../../../lib';
-import { useAlert } from '../../../contexts';
 function SortablePartItem({
   item,
   idx,

@@ -167,36 +167,6 @@ export async function executeHomeExitRetreat(
   }
   return 'failed';
 }
-export async function executeHomeSafeApproach(
-  currentTcp: number[] | null,
-  homePoint: TeachingPoint,
-  speed: number,
-  stopMoveRef: React.MutableRefObject<boolean>,
-): Promise<boolean> {
-  const toolNum = homePoint.toolNum ?? 0;
-  const userNum = homePoint.userNum ?? 0;
-  if (currentTcp && currentTcp.length >= 6) {
-    const [px, py, pz, prx, pry, prz] = currentTcp;
-    log.info('home.baseZUp', '현재 위치 base Z+100mm 상승 (모재 위로 이탈)');
-    const riseResult = await moveToCartesianPositionNonBlocking(
-      { x: px, y: py, z: pz, rx: prx, ry: pry, rz: prz },
-      Math.min(speed, 30),
-      50,
-      50,
-      toolNum,
-      userNum,
-      1,
-      [0, 0, 100, 0, 0, 0],
-    );
-    const rc = extractResultCode(riseResult);
-    if (riseResult?.status_code !== 200 || rc !== 0) {
-      log.warn('home.baseZUp.failed', '고도 상승 실패 — MoveJ로 진행', { code: rc });
-      return true;
-    }
-    if (!(await waitForMotionComplete(stopMoveRef, 30000, 'home.baseZUp'))) return false;
-  }
-  return true;
-}
 // 저장된 관절값을 현재 관절 기준 최단 경로로 정규화 (±360° wrap, 손목 360도 회전 방지)
 function normalizeJointsToShortest(target: number[], current: number[] | null | undefined): number[] {
   if (!current || current.length !== target.length) return target;

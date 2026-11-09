@@ -198,37 +198,7 @@ export const promotionApi = {
     gapApi.post<PromotionRequest>(`/api/promotions/${id}/review`, { action, note }).then(r => r.data),
 };
 
-// 작업
-export const jobApi = {
-  list: (params?: { status?: JobStatus }) =>
-    gapApi.get('/api/jobs/', { params }).then(r => r.data),
 
-  get: (id: number) => gapApi.get(`/api/jobs/${id}`).then(r => r.data),
-
-  create: (body: { job_name?: string; cell_type?: string; mode?: JobMode; notes?: string }) =>
-    gapApi.post('/api/jobs/', body).then(r => r.data),
-
-  start: (id: number) => gapApi.post(`/api/jobs/${id}/start`).then(r => r.data),
-
-  complete: (id: number) => gapApi.post(`/api/jobs/${id}/complete`).then(r => r.data),
-
-  listPointGaps: (jobId: number) =>
-    gapApi.get(`/api/jobs/${jobId}/point-gaps`).then(r => r.data),
-
-  bulkUpsertPointGaps: (
-    jobId: number,
-    points: { point_code: string; gap_mm: number; posture: Posture; thickness_mm: number }[]
-  ) =>
-    gapApi.post(`/api/jobs/${jobId}/point-gaps`, { job_id: jobId, points }).then(r => r.data),
-};
-
-// 설정
-export const settingsApi = {
-  getDefaults: () => gapApi.get('/api/settings/defaults').then(r => r.data),
-  getAlarmThresholds: () => gapApi.get('/api/settings/alarm-thresholds').then(r => r.data),
-  getOverrideLimits: () => gapApi.get('/api/settings/override-limits').then(r => r.data),
-  getDetectionConfig: () => gapApi.get('/api/settings/detection-config').then(r => r.data),
-};
 
 // 사용자 (관리자용)
 export const userApi = {

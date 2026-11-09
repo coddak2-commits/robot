@@ -1,0 +1,9 @@
+v1.1.291: 안 쓰는 코드 정리 (동작 변경 없음)
+
+- 프론트 미사용 부품 5개, 미사용 함수·상수, 미사용 import 삭제
+- 펜던트 연결 끊긴 포인트 조회 팝업 코드, 목업 모드 분기 삭제
+- 루트 옛 코어 사본, release_1.1.99~116.ps1, 옛 touchSensing 사본, 깨진 robotApi 테스트 삭제
+- 버전 1.1.291
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcEAumGsE8jB2uWSe3Y

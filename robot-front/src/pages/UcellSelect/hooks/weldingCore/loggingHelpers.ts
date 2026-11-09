@@ -1,7 +1,6 @@
 import { TeachingPoint } from '../..';
 import { createWeldingLog, WeldingLogData, WeldingLogSegment } from '../../../../lib';
 import { createLogger } from '../../../../lib';
-import React from 'react';
 import { WeldingResult } from './weldingCoreTypes';
 
 const log_logging = createLogger('weldingCore.logging');

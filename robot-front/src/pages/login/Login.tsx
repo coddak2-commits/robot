@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import styles from './Login.module.css';
 import { loginGap, userApi } from '../../lib/gapApi';
 import { useAlert } from '../../contexts';
 const Login: React.FC = () => {
-  const navigate = useNavigate();
   const location = useLocation();
   const redirectTo = new URLSearchParams(location.search).get('redirect') || '/menu';
   const { show: showAlert } = useAlert();

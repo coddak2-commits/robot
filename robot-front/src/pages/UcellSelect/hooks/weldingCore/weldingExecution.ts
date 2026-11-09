@@ -708,8 +708,6 @@ export async function executeWelding(
     });
     return null;
   }
-  const endPoint =
-    weldingPoints.find(pt => pt.weldVoltage === null) || weldingPoints[weldingPoints.length - 1];
   let startPointIndex = 0;
   let paramPointIndex = 0;
   let closestCenterlineResult: ClosestCenterlineResult | null = null;

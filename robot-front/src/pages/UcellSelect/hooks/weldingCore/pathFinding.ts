@@ -1,6 +1,5 @@
 import { TeachingPoint, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo, PartWeldEnabled, addHorizontalSecondPass, SecondPassSettings } from '../..';
 import { createLogger } from '../../../../lib';
-import React from 'react';
 import { ClosestCenterlineResult } from './weldingCoreTypes';
 
 const log_pathFinding = createLogger('pathFinding');

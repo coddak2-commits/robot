@@ -1,4 +1,3 @@
-import React, { useEffect, useRef, useState } from 'react';
 const LoadingPage = () => {
   return (
     <div className="fixed inset-0 bg-black flex items-center justify-center">

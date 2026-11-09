@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin, History } from 'lucide-react';
 import { useTeachingPoints, useRobotControl, useJobManagement, useWeldingOperations, usePathTracking, useSchematicCalculations, usePathVisualization, useCenterlineNavigation, useWeldingHandlers, useWireControl, useCellSelectionHandlers, useAutoSavePoints } from './hooks';
@@ -9,14 +9,6 @@ import { createLogger } from '../../lib';
 import { getTeachingJobs, getRealtimeRobotStatus, getWeldingPartOrder } from '../../lib';
 import { getRobotError, resetRobotError } from '../../lib/robotApi/index';
 import { useAlert } from '../../contexts';
-import Ucell01 from './img/Ucell01.png';
-import Ucell02 from './img/Ucell02.png';
-import Ucell03 from './img/Ucell03.png';
-import Ucell04 from './img/Ucell04.png';
-import CollarUcell01 from './img/CollarUcell01.png';
-import CollarUcell02 from './img/CollarUcell02.png';
-import CollarUcell03 from './img/CollarUcell03.png';
-import CollarUcell04 from './img/CollarUcell04.png';
 const log = createLogger('CellSelectionCore');
 interface CellSelectionCoreProps {
   onNavigate?: (screen: string, data?: unknown) => void;
@@ -1094,28 +1086,6 @@ export const VERTICAL_WEAVE_PARAMS: WeaveParams = {
   weaveYawAngle: 0,
   weaveRotAngle: 0,
 };
-// [v1.1.228] 모서리 파트 기본 위빙 — 수직 삼각파, 폭만 넓힘.
-// [v1.1.237] 모서리는 P3->P4, P9->P10(위->아래)로 돌고 조건은 P4/P10 에서 읽는다.
-// 수직선을 타는 용접이라 평면 삼각파가 아니라 수직 삼각파다. P4/P10 은 227 까지
-// 수평 파트의 시작점이었으므로 기본값이 plane_triangle + 수평 위빙이었다. 그대로
-// 두면 모서리 20mm 를 엉뚱한 평면으로 흔든다.
-// 아래 폭 5.0 은 수직 기본 3.0 보다 넓힌 출발값일 뿐이고 실측으로 맞춰야 한다.
-// 실제로 쓰이는 값은 teaching_points 에 저장된 값이다(작업 불러오기가 이 기본값을
-// 덮는다). 여기 값은 새로 티칭을 시작할 때만 들어간다.
-// 참고: robot_settings.min_weaving_distance 가 50mm 인데 모서리 구간은 20mm 라
-// welding.weaving.shortSegment 경고가 로그에 찍힌다. 경고만 남기고 위빙은 그대로
-// 진행하며(weldingExecution 629행), robot-core 도 이 값을 SDK 로 넘기지 않는다.
-export const CORNER_WEAVE_PARAMS: WeaveParams = {
-  weaveFrequency: 2.0,
-  weaveRange: 5.0,
-  weaveLeftRange: 5.0,
-  weaveRightRange: 5.0,
-  weaveLeftStayTime: 300,
-  weaveRightStayTime: 300,
-  weaveCircleRadio: 50,
-  weaveYawAngle: 0,
-  weaveRotAngle: 0,
-};
 // 좌측 수평 파트(P5~P6) 기본 위빙 — 평면 삼각파
 export const HORIZONTAL_LEFT_WEAVE_PARAMS: WeaveParams = {
   weaveFrequency: 2.0,
@@ -1434,16 +1404,6 @@ export const createInitialTeachingPoints = (): TeachingPoint[] => {
       }) as TeachingPoint,
   );
 };
-export const ucell_images: Record<string, string> = {
-  'U-cell(1번)': Ucell01,
-  'U-cell(2번)': Ucell02,
-  'U-cell(3번)': Ucell03,
-  'U-cell(4번)': Ucell04,
-  'Collar U-cell(1번)': CollarUcell01,
-  'Collar U-cell(2번)': CollarUcell02,
-  'Collar U-cell(3번)': CollarUcell03,
-  'Collar U-cell(4번)': CollarUcell04,
-};
 export const UNIFIED_COLOR = '#6B7280';
 interface SimpleViewProps {
   width: number;
@@ -1511,123 +1471,3 @@ export const DefaultUCellSvg: React.FC<DefaultUCellSvgProps> = ({ thickness }) =
     <rect x="2" y={300 - thickness + 2} width={400 - 4} height={thickness - 4} fill="rgba(255,255,255,0.1)" />
   </>
 );
-interface UCellVisualizationProps {
-  width?: number;
-  height?: number;
-  leftBarColor?: string;
-  rightBarColor?: string;
-  bottomBarColor?: string;
-  thickness?: number;
-  className?: string;
-  variant?: 'simple' | 'realistic';
-  cellName?: string;
-  onWidthChange?: (width: number) => void;
-  onHeightChange?: (height: number) => void;
-  onSegmentChange?: (bar: 'left' | 'right' | 'bottom', segment: number, value: number) => void;
-  onModalOpen?: (isOpen: boolean) => void;
-}
-const UCellVisualizationComponent = ({
-  width = 300,
-  height = 200,
-  thickness = 20,
-  className = '',
-  variant = 'realistic',
-  cellName = '',
-  onSegmentChange,
-  onModalOpen, // eslint-disable-line @typescript-eslint/no-unused-vars
-}: UCellVisualizationProps) => {
-  const [leftSegments, setLeftSegments] = useState([5, 3, 2]);
-  const [rightSegments, setRightSegments] = useState([1, 2, 1]);
-  const [bottomSegments, setBottomSegments] = useState([1, 1, 1]);
-  const isCollarPlate = useMemo(
-    () => cellName.includes('Collar') || cellName.includes('칼라'),
-    [cellName],
-  );
-  const normal3Scale = useMemo(() => {
-    if (cellName !== 'U-cell(3번)') return null;
-    return {
-      scale: Math.min(width / 460, height / 420),
-      scaledWidth: 460 * Math.min(width / 460, height / 420),
-      scaledHeight: 420 * Math.min(width / 460, height / 420),
-      strokeWidth: thickness * 0.8,
-    };
-  }, [cellName, width, height, thickness]);
-  const handleSegmentChange = (
-    bar: 'left' | 'right' | 'bottom',
-    segment: number,
-    value: number,
-  ) => {
-    if (bar === 'left') {
-      const newSegments = [...leftSegments];
-      newSegments[segment] = value;
-      setLeftSegments(newSegments);
-    } else if (bar === 'right') {
-      const newSegments = [...rightSegments];
-      newSegments[segment] = value;
-      setRightSegments(newSegments);
-    } else if (bar === 'bottom') {
-      const newSegments = [...bottomSegments];
-      newSegments[segment] = value;
-      setBottomSegments(newSegments);
-    }
-    onSegmentChange?.(bar, segment, value);
-  };
-  const SegmentPicker: React.FC<{ value: number; onChange: (v: number) => void }> = ({ value, onChange }) => (
-    <select
-      value={value}
-      onChange={e => onChange(Number(e.target.value))}
-      className="w-20 h-12 pr-6 text-[#00F9FF] text-center rounded focus:outline-none focus:border-blue-500"
-      style={{ background: '#003333', color: '#00F9FF', fontSize: '1.5rem' }}
-    >
-      {[1, 2, 3, 4, 5].map(v => (
-        <option key={v} value={v} style={{ color: '#00F9FF', fontSize: '1.5rem' }}>{v}</option>
-      ))}
-    </select>
-  );
-  if (variant === 'simple') {
-    return <UCellSimpleView width={width} height={height} thickness={thickness} className={className} />;
-  }
-  if (cellName === 'U-cell(3번)' && normal3Scale) {
-    return (
-      <UCellNormal3View
-        scaledWidth={normal3Scale.scaledWidth}
-        scaledHeight={normal3Scale.scaledHeight}
-        strokeWidth={normal3Scale.strokeWidth}
-        className={className}
-      />
-    );
-  }
-  return (
-    <div className={`relative flex items-center justify-center ${className}`}>
-      <svg width={400} height={300} viewBox="0 0 400 300" className="drop-shadow-lg">
-        {isCollarPlate ? <CollarPlateSvg thickness={thickness} /> : <DefaultUCellSvg thickness={thickness} />}
-      </svg>
-      {}
-      <div className="absolute left-[-100px] top-[45%] transform -translate-y-1/2 flex flex-col gap-16">
-        {leftSegments.map((value, index) => (
-          <SegmentPicker key={index} value={value} onChange={v => handleSegmentChange('left', index, v)} />
-        ))}
-      </div>
-      {}
-      <div className="absolute right-[-100px] top-[45%] transform -translate-y-1/2 flex flex-col gap-16">
-        {rightSegments.map((value, index) => (
-          <SegmentPicker key={index} value={value} onChange={v => handleSegmentChange('right', index, v)} />
-        ))}
-      </div>
-      {}
-      <div className="absolute bottom-[-60px] left-1/2 transform -translate-x-1/2 flex gap-20">
-        {bottomSegments.map((value, index) => (
-          <SegmentPicker key={index} value={value} onChange={v => handleSegmentChange('bottom', index, v)} />
-        ))}
-      </div>
-    </div>
-  );
-};
-export const UCellVisualization = memo(UCellVisualizationComponent);
-export const UCellColorPresets = {
-  normal: {
-    leftBar: UNIFIED_COLOR,
-    rightBar: UNIFIED_COLOR,
-    bottomBar: UNIFIED_COLOR,
-  },
-};

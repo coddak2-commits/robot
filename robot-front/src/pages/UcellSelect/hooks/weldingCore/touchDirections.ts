@@ -1,4 +1,3 @@
-import React from 'react';
 import { WeldingSequenceSettings } from './weldingCoreTypes';
 import { hasCornerParts } from '../..';
 

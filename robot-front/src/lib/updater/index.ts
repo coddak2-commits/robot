@@ -30,53 +30,6 @@ export async function checkLatestRelease(currentVersion: string): Promise<Releas
     notes: release.body ?? '',
   };
 }
-export async function downloadInstaller(
-  url: string,
-  onProgress: (p: DownloadProgress) => void,
-  signal?: AbortSignal,
-): Promise<Blob> {
-  const res = await fetch(url, { signal });
-  if (!res.ok) throw new Error(`다운로드 실패: HTTP ${res.status}`);
-  if (!res.body) throw new Error('응답 본문이 없습니다');
-  const total = Number(res.headers.get('content-length') ?? 0);
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let downloaded = 0;
-  const started = performance.now();
-  let lastReport = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) {
-      chunks.push(value);
-      downloaded += value.byteLength;
-      const now = performance.now();
-      if (now - lastReport > 200) {
-        const elapsed = Math.max(0.001, (now - started) / 1000);
-        onProgress({
-          downloaded,
-          total,
-          speedBps: Math.floor(downloaded / elapsed),
-        });
-        lastReport = now;
-      }
-    }
-  }
-  const elapsed = Math.max(0.001, (performance.now() - started) / 1000);
-  onProgress({
-    downloaded,
-    total: total || downloaded,
-    speedBps: Math.floor(downloaded / elapsed),
-  });
-  return new Blob(chunks, { type: 'application/octet-stream' });
-}
-export async function sha256Of(blob: Blob): Promise<string> {
-  const buf = await blob.arrayBuffer();
-  const hashBuf = await crypto.subtle.digest('SHA-256', buf);
-  return Array.from(new Uint8Array(hashBuf))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}
 export async function fetchExpectedSha256(shaUrl: string): Promise<string> {
   const res = await fetch(shaUrl);
   if (!res.ok) throw new Error(`SHA 파일 다운로드 실패: ${res.status}`);

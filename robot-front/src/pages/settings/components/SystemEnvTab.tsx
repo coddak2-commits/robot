@@ -1,13 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Settings, Mail, FileArchive, Cpu, AlertCircle, RefreshCw, CheckCircle, XCircle, Sliders, Shield, Globe, Clock, Moon, Sun, Bell, Bug, Download, Info, Users, User, Plus, Trash2, Edit, LogOut, X, Save, ChevronRight, History } from 'lucide-react';
-import type { TouchSensingSettings, SystemConfig, RobotSettingsData, RobotErrorData, RobotErrorEvent, VersionInfo, UpdateCheckResponse, UpdateStatus, SystemInfo, UserData, UserFormData } from '..';
-import { sendDiagnosticLogsEmail, downloadLogsZipUrl, updateRobotSettings, getRobotErrorHistory } from '../../../lib';
+import React from 'react';
+import { Settings, Shield, Globe, Clock, Moon, Sun, Bell, Bug } from 'lucide-react';
+import type { SystemConfig } from '..';
 import { SettingsToggleRow } from '../../../components/common/index';
-import { formatDateTime } from '../../../utils';
-import { useNavigate } from 'react-router-dom';
-import { useTheme, useLang, useUpdaterContext } from '../../../contexts';
+import { useTheme, useLang } from '../../../contexts';
 import { setSoundEnabled, setAutoLogoutMinutes, setNotificationsEnabled } from '../../../lib/appSettings';
-import { percent, displayProgress } from '../../../lib/updater';
 
 interface SystemEnvTabProps {
   config: SystemConfig;

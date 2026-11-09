@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useMemo } from 'react';
-import { RobotPosition } from '../components/index';
+import { RobotPosition } from '../components/unifiedCanvas/types';
 import { CenterlinePoint } from './useSchematicCalculations';
 
 export interface PathPoint_usePathVisualization {
@@ -30,7 +30,6 @@ export interface UsePathVisualizationReturn {
   robotPathHistory: RobotPosition[];
   currentRobotPosition: RobotPosition | undefined;
 }
-const MAX_CENTERLINE_DIST = 50;
 const WEAVE_SCALE = 3.0;
 const MAX_WEAVE_OFFSET = 15;
 function findClosestCenterlinePoint(
@@ -57,54 +56,6 @@ function findClosestCenterlinePoint(
     }
   }
   return { point: bestPoint, distance: bestDist, perpOffset: bestPerpOffset };
-}
-function tcpToSchematic(
-  tcpX: number,
-  tcpY: number,
-  tcpZ: number,
-  centerlinePoints: CenterlinePoint[],
-  isWelding: boolean,
-  timestamp?: number,
-  skipDistanceCheck?: boolean
-): RobotPosition | null {
-  const result = findClosestCenterlinePoint(tcpX, tcpY, tcpZ, centerlinePoints);
-  if (!result) return null;
-  const { point, distance, perpOffset } = result;
-  if (!skipDistanceCheck && distance > MAX_CENTERLINE_DIST) {
-    return null;
-  }
-  let schemX = point.schematic.x;
-  let schemY = point.schematic.y;
-  const startPt = centerlinePoints.find(p => p.segmentStartPointId === point.segmentStartPointId && p.segmentRatio === 0);
-  const endPt = centerlinePoints.find(p => p.segmentEndPointId === point.segmentEndPointId && p.segmentRatio === 1);
-  if (startPt && endPt) {
-    const segDx = endPt.schematic.x - startPt.schematic.x;
-    const segDy = endPt.schematic.y - startPt.schematic.y;
-    const segLen = Math.sqrt(segDx * segDx + segDy * segDy);
-    if (segLen > 0.1) {
-      const perpX = -segDy / segLen;
-      const perpY = segDx / segLen;
-      let weaveOffset = perpOffset * WEAVE_SCALE;
-      weaveOffset = Math.max(-MAX_WEAVE_OFFSET, Math.min(MAX_WEAVE_OFFSET, weaveOffset));
-      schemX += weaveOffset * perpX;
-      schemY += weaveOffset * perpY;
-    }
-  } else {
-    let weaveOffset = perpOffset * WEAVE_SCALE;
-    weaveOffset = Math.max(-MAX_WEAVE_OFFSET, Math.min(MAX_WEAVE_OFFSET, weaveOffset));
-    if (point.partIndex === 0 || point.partIndex === 2) {
-      schemY += weaveOffset;
-    } else {
-      schemX += weaveOffset;
-    }
-  }
-  return {
-    x: schemX,
-    y: schemY,
-    z: tcpZ,
-    isWelding,
-    timestamp,
-  };
 }
 interface MoveDirection {
   firstTcp: { x: number; y: number; z: number };

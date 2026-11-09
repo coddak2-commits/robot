@@ -1,0 +1,12 @@
+﻿v1.1.291 - 안 쓰는 코드 정리 (동작 변경 없음)
+
+[정리] robot-front
+    - 화면에 쓰이지 않던 부품 5개 삭제: RobotControlPanel, RobotJoint, RobotPathOverlay, TeachingPointPanel, TorchOrientationIndicator
+    - 호출되지 않던 함수·상수 삭제: robotApi 24개, useWeldingSession, 소리 함수 7개, utils 6개, gapApi jobApi/settingsApi 등
+    - 펜던트: 연결이 끊겨 있던 포인트 파라미터 조회 팝업 코드, ParamGrid/EditStat 등 삭제
+    - 목업 모드 분기 삭제(켜는 곳이 없어 항상 꺼져 있었음). 설정 화면이 쓰는 시스템 설정 부분은 그대로 둠
+    - 사용하지 않는 import 정리
+[정리] 저장소: 예전 사본·옛 릴리즈 스크립트·깨진 테스트 파일 삭제
+
+[robot-core] 버전 숫자만 변경
+[DB] 변경 없음.

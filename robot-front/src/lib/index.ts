@@ -15,7 +15,7 @@ export {
   updateTouchSensingConfig,
 } from './api/index';
 export { Axios, emergencyApi, initializeApi, getApiBaseUrl } from './http';
-export const APP_VERSION = '1.1.290';
+export const APP_VERSION = '1.1.291';
 export const AuthKey = {
   ACCESS_TOKEN: '@access',
   REFRESH_TOKEN: '@refresh',
@@ -142,13 +142,6 @@ export const createLogger = (page: string) => {
       };
     },
   };
-};
-export const flushLogsImmediately = async () => {
-  if (flushTimeout) {
-    clearTimeout(flushTimeout);
-    flushTimeout = null;
-  }
-  await flushLogs();
 };
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {

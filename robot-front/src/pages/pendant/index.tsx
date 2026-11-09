@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useTeachingPoints, useRobotControl, useSchematicCalculations, useJobManagement, useWeldingOperations, usePathTracking, useWeldingHandlers } from '../UcellSelect/hooks';
-import { UnifiedWorkspaceCanvas, TorchOrientationIndicator, UCellConfig } from '../UcellSelect/components';
-import { paramApi, Posture, WeldingParam, ParamLookupResult, deviationApi, overrideApi } from '../../lib/gapApi';
-import { isMockMode, mockCheckConnection } from '../../lib';
+import { UnifiedWorkspaceCanvas, UCellConfig } from '../UcellSelect/components';
+import { paramApi, Posture, deviationApi } from '../../lib/gapApi';
 import { pulseWireFeed, stopAllWireFeed, wireFeedDurationMs, WIRE_STOP_FAILED_MESSAGE } from '../../lib';
 import { getRobotError, resetRobotError, connectRobotSDK, getWeldingPartOrder } from '../../lib/robotApi/index';
 import { setWeldingPartOrder, hasCornerParts, DEFAULT_SECOND_PASS_SETTINGS, SecondPassSettings } from '../UcellSelect';
@@ -22,10 +21,7 @@ const CELL_CONFIG: UCellConfig = {
   thickness: 20,
 };
 
-const THICKNESS_OPTIONS = [18, 20, 22, 23];
 const STEP_OPTIONS = [1.0, 5.0, 25.0]; // v1.1.178: 와이어 조정 화면(/gap/wire-inching)과 동일하게 맞춤
-// 송급 속도 상수는 lib/wireFeed.ts로 통합됨 (v1.1.136). 여기서 따로 정의하지 말 것.
-const LOOKUP_DEBOUNCE_MS = 400;
 
 // [v1.1.228] 모서리 파트(P4->P3, P10->P9)를 세그먼트로 추가한다.
 // 갭은 세그먼트 startId 포인트에 저장되므로 모서리 갭은 P4/P10 에 들어간다.
@@ -102,7 +98,6 @@ const MIN_CANVAS_W = 440;
 const MIN_CANVAS_H = 400;
 // [v1.1.271] 170 -> 220. 1.1.269 에서 도크 폭을 180 으로 키워(+패딩·여백 약 210) 우측 갭 박스가 도크와 겹쳤다.
 const DOCK_RESERVE = 220; // 우측 용접 실행 도크가 차지하는 폭
-const HUB_RESERVE = 320; // 좁은 화면에서 중앙 허브를 좌측으로 뺄 때 쓰는 폭
 const BOUNDS = { minX: -420, maxX: 420, minY: -420, maxY: 420 }; // v1.1.187: 여백 확보와 U셀 크기 절충
 const worldToCanvas = (p: { x: number; y: number }, cw: number, ch: number) => ({
   x: (p.x - BOUNDS.minX) * (cw / (BOUNDS.maxX - BOUNDS.minX)),
@@ -290,7 +285,6 @@ const PendantInner: React.FC = () => {
   );
 
   const {
-    handleStartWelding,
     handleContinueWelding,
     handleStartTouchSensing,
     handleGlobalEmergencyStop,
@@ -419,11 +413,7 @@ const PendantInner: React.FC = () => {
   const handleManualReconnect = async () => {
     setIsReconnecting(true);
     try {
-      if (isMockMode()) {
-        await mockCheckConnection();
-      } else {
-        await connectRobotSDK();
-      }
+      await connectRobotSDK();
     } catch {
     } finally {
       setLastAttemptAt(new Date());
@@ -444,23 +434,14 @@ const PendantInner: React.FC = () => {
     };
   }), [teachingPoints, getSchematicPosition]);
 
-  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
   const [gapEditSeg, setGapEditSeg] = useState<{ startId: string; label: string } | null>(null);
   const [gapEditValue, setGapEditValue] = useState<string>('');
   const [teachPointId, setTeachPointId] = useState<string | null>(null);
   const [teachBusy, setTeachBusy] = useState(false);
-  const [thickness, setThickness] = useState<number>(() => {
+  const [thickness] = useState<number>(() => {
     const v = typeof localStorage !== 'undefined' ? localStorage.getItem('gap_thickness_mm') : null;
     return v ? Number(v) : 20;
   });
-  const changeThickness = (v: number) => {
-    setThickness(v);
-    if (typeof localStorage !== 'undefined') localStorage.setItem('gap_thickness_mm', String(v));
-  };
-  const [gap, setGap] = useState<number>(2);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ParamLookupResult | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [alerts, setAlerts] = useState<RealAlert[]>([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -477,125 +458,10 @@ const PendantInner: React.FC = () => {
   const errorCount = alerts.filter(a => a.type === 'error').length;
   const warningCount = alerts.filter(a => a.type === 'warning').length;
 
-  const [wireOpen, setWireOpen] = useState(false);
   const [stepMm, setStepMm] = useState<number>(1.0);
   const [busy, setBusy] = useState(false);
   const [lastAction, setLastAction] = useState<string>('');
   const ioType = 0;
-
-  const [overriding, setOverriding] = useState(false);
-  const [editCurrent, setEditCurrent] = useState<number>(0);
-  const [editVoltage, setEditVoltage] = useState<number>(0);
-  const [editSpeed, setEditSpeed] = useState<number>(0);
-  const [overrideReason, setOverrideReason] = useState<string>('');
-
-  const openPoint = (pointId: string) => {
-    setSelectedPointId(pointId);
-    const pt = teachingPoints.find(p => p.id === pointId);
-    setGap(pt?.gap ?? 2);
-    setResult(null);
-    setOverriding(false);
-    setOverrideReason('');
-  };
-
-  const closePoint = () => {
-    setSelectedPointId(null);
-    setResult(null);
-    setOverriding(false);
-  };
-
-  useEffect(() => {
-    if (result?.param) {
-      setEditCurrent(Number(result.param.current_a));
-      setEditVoltage(Number(result.param.voltage_v));
-      setEditSpeed(Number(result.param.speed_cpm));
-    }
-  }, [result]);
-
-  const runLookup = async (pid: string, g: number, t: number) => {
-    if (isNaN(g)) return;
-    setLoading(true);
-    try {
-      const res = await paramApi.lookup({
-        posture: getPosture(pid),
-        gap: g,
-        thickness: t,
-        material: 'SS400',
-        joint: 'fillet',
-      });
-      setResult(res);
-    } catch (e: any) {
-      showAlert(`조회 실패: ${e.response?.data?.detail || e.message}`, { type: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!selectedPointId) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => runLookup(selectedPointId, gap, thickness), LOOKUP_DEBOUNCE_MS);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [selectedPointId, gap, thickness]);
-
-  const applyToPoint = async () => {
-    if (!selectedPointId || !result?.param) return;
-    const p = result.param;
-
-    const finalCurrent = overriding ? editCurrent : Number(p.current_a);
-    const finalVoltage = overriding ? editVoltage : Number(p.voltage_v);
-    const finalSpeed = overriding ? editSpeed : Number(p.speed_cpm);
-
-    if (overriding) {
-      if (!currentJobId) {
-        showAlert('오버라이드를 저장하려면 작업(job)을 먼저 선택하세요', { type: 'warning' });
-        return;
-      }
-      const changes: { field: string; original: number; value: number }[] = [];
-      if (finalCurrent !== Number(p.current_a)) changes.push({ field: 'current_a', original: Number(p.current_a), value: finalCurrent });
-      if (finalVoltage !== Number(p.voltage_v)) changes.push({ field: 'voltage_v', original: Number(p.voltage_v), value: finalVoltage });
-      if (finalSpeed !== Number(p.speed_cpm)) changes.push({ field: 'speed_cpm', original: Number(p.speed_cpm), value: finalSpeed });
-      try {
-        for (const c of changes) {
-          await overrideApi.create({
-            job_id: currentJobId,
-            point_code: selectedPointId,
-            posture: getPosture(selectedPointId),
-            gap_mm: Number(p.gap_mm),
-            material: p.material,
-            thickness_mm: Number(p.thickness_mm),
-            joint_type: p.joint_type,
-            field_name: c.field,
-            original_value: c.original,
-            override_value: c.value,
-            reason: overrideReason || undefined,
-          });
-        }
-      } catch (e: any) {
-        showAlert(`오버라이드 저장 실패: ${e.response?.data?.detail || e.message}`, { type: 'error' });
-        return;
-      }
-    }
-
-    updatePointGap(selectedPointId, gap);
-    updatePointWeldParams(selectedPointId, finalVoltage, finalCurrent);
-    updatePointSpeed(selectedPointId, finalSpeed);
-    if (p.weave_enabled) {
-      updatePointWeavingType(selectedPointId, 'plane_sine');
-      updatePointWeaveParams(selectedPointId, {
-        weaveFrequency: p.weave_freq_hz,
-        weaveRange: p.weave_range_mm,
-        weaveLeftRange: p.weave_range_mm / 2,
-        weaveRightRange: p.weave_range_mm / 2,
-      });
-    } else {
-      updatePointWeavingType(selectedPointId, 'none');
-    }
-    showAlert(`${selectedPointId.toUpperCase()} ${overriding ? '오버라이드' : '파라미터'} 적용됨`, { type: 'success' });
-    closePoint();
-  };
-
-  const bumpGap = (d: number) => setGap(v => Math.min(6, Math.max(0, v + d)));
 
   const startStop = async (direction: 'forward' | 'reverse', amountMm: number) => {
     const label = direction === 'forward' ? '밀기' : '당기기';
@@ -1319,47 +1185,8 @@ const PendantInner: React.FC = () => {
   );
 };
 
-const ParamGrid: React.FC<{ param: WeldingParam; fallback: number; matched: boolean }> = ({ param, fallback, matched }) => (
-  <>
-    <div style={{
-      marginBottom: 10, padding: 6, borderRadius: 6, fontSize: 12, textAlign: 'center',
-      background: fallback === 1 ? '#065f46' : fallback === 2 ? '#78350f' : '#7f1d1d',
-    }}>DB 매치 → 갭 {param.gap_mm}mm / {param.thickness_mm}mm / {param.posture} · 폴백 {fallback} {matched ? '(정확)' : '(폴백)'}</div>
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-      <Stat label="전류" value={`${param.current_a}A`} />
-      <Stat label="전압" value={`${param.voltage_v}V`} />
-      <Stat label="속도" value={`${param.speed_cpm}cpm`} />
-      <Stat label="스틱아웃" value={`${param.stickout_mm}mm`} small />
-      <Stat label="위빙" value={param.weave_enabled ? `${param.weave_freq_hz}Hz/${param.weave_range_mm}mm` : 'OFF'} small />
-      <Stat label="출처" value={param.source} small />
-    </div>
-  </>
-);
 
-const Stat: React.FC<{ label: string; value: string; small?: boolean }> = ({ label, value, small }) => (
-  <div style={{ background: '#0f172a', padding: 10, borderRadius: 6, textAlign: 'center' }}>
-    <div style={{ fontSize: 11, color: '#64748b' }}>{label}</div>
-    <div style={{ fontSize: small ? 14 : 24, fontWeight: 'bold', marginTop: 2 }}>{value}</div>
-  </div>
-);
 
-const EditStat: React.FC<{ label: string; value: number; onChange: (v: number) => void; original: number; step?: number }> = ({ label, value, onChange, original, step = 1 }) => {
-  const changed = value !== original;
-  return (
-    <div style={{ background: '#0f172a', padding: 10, borderRadius: 6, textAlign: 'center' }}>
-      <div style={{ fontSize: 11, color: '#64748b' }}>{label}</div>
-      <input type="number" step={step} value={value}
-        onChange={e => onChange(parseFloat(e.target.value))}
-        style={{
-          width: '100%', marginTop: 4, padding: 4, fontSize: 20, fontWeight: 'bold', textAlign: 'center',
-          background: '#020617', color: changed ? '#fde68a' : '#fff',
-          border: `1px solid ${changed ? '#a16207' : '#334155'}`, borderRadius: 4, boxSizing: 'border-box',
-        }}
-      />
-      {changed && <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>DB: {original}</div>}
-    </div>
-  );
-};
 
 const PendantPage: React.FC = () => (
   <RequireRole roles={['admin', 'operator']}>

@@ -1,5 +1,4 @@
 import { getWeldingConfig, WeldingConfigData } from '../../../../lib';
-import React from 'react';
 import { WeldingSequenceSettings, SafetySettings } from './weldingCoreTypes';
 
 export const defaultSequenceSettings: WeldingSequenceSettings = {

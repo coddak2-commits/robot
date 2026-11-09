@@ -1,6 +1,6 @@
 // [v1.1.283] 카메라 촬영 버튼. robot_camera 에 카메라가 연결돼 있을 때만 보인다.
 // 누르면 실제 갭(시편 값)·메모를 입력하고 깊이+컬러를 저장한다 (camera_captures).
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Camera } from 'lucide-react';
 import { useAlert } from '../../../contexts';
 import { getCameraStatus, captureCamera, collectPointGaps } from '../../../lib/cameraApi';

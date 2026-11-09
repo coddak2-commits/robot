@@ -56,27 +56,6 @@ export function playSaveOkBeep(): void {
     15,
   );
 }
-export function playModeChangeBeep(): void {
-  playTone({ freq: 880, durationMs: 130 });
-}
-export function playDragEnterBeep(): void {
-  playSequence(
-    [
-      { freq: 660, durationMs: 80 },
-      { freq: 440, durationMs: 120 },
-    ],
-    20,
-  );
-}
-export function playDragExitBeep(): void {
-  playSequence(
-    [
-      { freq: 440, durationMs: 80 },
-      { freq: 660, durationMs: 120 },
-    ],
-    20,
-  );
-}
 export function playErrorBeep(): void {
   playSequence(
     [
@@ -85,50 +64,4 @@ export function playErrorBeep(): void {
     ],
     30,
   );
-}
-let currentAudio: HTMLAudioElement | null = null;
-function playSoundFile(fileName: string): void {
-  if (!isSoundEnabled()) return;
-  const url = `/sound/${encodeURIComponent(fileName)}.mp3`;
-  try {
-    if (currentAudio) {
-      currentAudio.pause();
-      currentAudio.currentTime = 0;
-    }
-    const audio = new Audio(url);
-    currentAudio = audio;
-    audio.volume = 0.9;
-    audio.play().catch(() => {
-    });
-  } catch {
-  }
-}
-export function playAutoModeVoice(): void {
-  playSoundFile('자동');
-}
-export function playManualModeVoice(): void {
-  playSoundFile('수동');
-}
-function pointIdToVoiceLabel(pointId: string): string {
-  const id = pointId.toLowerCase();
-  if (id === 'home') return '홈';
-  const m = id.match(/^p(\d+)$/);
-  if (m) return `포인트${m[1]}번`;
-  return '';
-}
-export function playPointSaveVoice(pointId: string): void {
-  const label = pointIdToVoiceLabel(pointId);
-  if (label) {
-    playSoundFile(`${label}저장`);
-  } else {
-    playSoundFile('저장');
-  }
-}
-export function playPointUpdateVoice(pointId: string): void {
-  const label = pointIdToVoiceLabel(pointId);
-  if (label) {
-    playSoundFile(`${label}갱신`);
-  } else {
-    playSoundFile('갱신');
-  }
 }

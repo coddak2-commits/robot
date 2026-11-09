@@ -1,5 +1,5 @@
 import { WELDING_PARTS, DEFAULT_PART_WELD_ENABLED, getExecutableParts, flattenExecutableParts, getPartBoundaryInfo } from '..';
-import type { ExecutablePart, PartWeldEnabled } from '..';
+import type { PartWeldEnabled } from '..';
 import { DEFAULT_WEAVE_PARAMS, createInitialTeachingPoints, UCELL_POINT_DEFINITIONS, WEAVING_TYPE_OPTIONS, NORMAL_CELLS, COLLAR_PLATE_CELLS, HEIGHT_OPTIONS } from '..';
 import type { TeachingPoint, WeaveParams } from '..';
 const makeSavedPoints = (pointIds: string[]): TeachingPoint[] => {

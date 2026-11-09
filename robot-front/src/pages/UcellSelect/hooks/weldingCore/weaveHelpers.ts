@@ -1,7 +1,6 @@
 import { TeachingPoint } from '../..';
 import { endWeave, setWeaveParams, startWeave, arcOn, arcOff, isApiSuccess, markArcOff, buildCraterFill } from '../../../../lib';
 import { createLogger } from '../../../../lib';
-import React from 'react';
 import { getWeaveTypeCode } from './moveStopCheck';
 
 const log_weaveHelpers = createLogger('weldingCore.weaveHelpers');

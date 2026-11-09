@@ -5,70 +5,10 @@ import { ToggleSwitch_ToggleSwitch as ToggleSwitch } from '../common';
 import { useLang } from '../../contexts';
 import { getAutoLogoutMinutes } from '../../lib/appSettings';
 import { APP_VERSION } from '../../lib';
-import { isMockMode, mockChangeMode, mockCheckConnection } from '../../lib';
 import { Axios as axios } from '../../lib';
 import { setRobotMode, setAutoReconnect, getRealtimeRobotStatus, RealtimeRobotStatus, getRobotError, resetRobotError, RobotErrorData } from '../../lib';
 import { getRobotAlarmMessage } from '../../lib/api';
 import { Wifi, WifiOff, Home, AlertTriangle, RefreshCw } from 'lucide-react';
-const footer: React.FC = () => {
-  return (
-    <>
-      <footer className={styles.footer}>
-        <div className={styles['footer-container']}>
-          <div className={styles['footer-section']}>
-            <h4 className={styles['footer-title']}>회사 정보</h4>
-            <ul className={styles['footer-links']}>
-              <li>
-                <a href="/about">소개</a>
-              </li>
-              <li>
-                <a href="/careers">채용</a>
-              </li>
-              <li>
-                <a href="/contact">문의</a>
-              </li>
-            </ul>
-          </div>
-          <div className={styles['footer-section']}>
-            <h4 className={styles['footer-title']}>고객 지원</h4>
-            <ul className={styles['footer-links']}>
-              <li>
-                <a href="/faq">자주 묻는 질문</a>
-              </li>
-              <li>
-                <a href="/support">1:1 문의</a>
-              </li>
-              <li>
-                <a href="/terms">이용약관</a>
-              </li>
-              <li>
-                <a href="/privacy">개인정보 처리방침</a>
-              </li>
-            </ul>
-          </div>
-          <div className={styles['footer-section']}>
-            <h4 className={styles['footer-title']}>소셜 미디어</h4>
-            <div className={styles['footer-social']}>
-              <a href="https://facebook.com" target="_blank" rel="noreferrer">
-                Facebook
-              </a>
-              <a href="https://instagram.com" target="_blank" rel="noreferrer">
-                Instagram
-              </a>
-              <a href="https://twitter.com" target="_blank" rel="noreferrer">
-                Twitter
-              </a>
-            </div>
-          </div>
-        </div>
-        <div className={styles['footer-bottom']}>
-          <p>&copy; 2025 MyCompany. All rights reserved.</p>
-        </div>
-      </footer>
-    </>
-  );
-};
-export const Footer = footer;
 const PAGE_TITLE_KEYS: Record<string, string> = {
   '/': 'pageMain',
   '/menu': 'pageMain',
@@ -198,20 +138,13 @@ const Header: React.FC = () => {
   const handleModeToggle = async (mode: boolean) => {
     const robotMode: 0 | 1 = mode === true ? 1 : 0;
     try {
-      if (isMockMode()) {
-        const res = await mockChangeMode(robotMode);
-        if (res.status_code === 200) {
-          setIsModeToggled(mode);
-        }
+      const res = await setRobotMode(robotMode);
+      const resultCode = res?.result ?? res?.data?.result;
+      if (res?.status_code === 200 && resultCode === 0) {
+        setIsModeToggled(mode);
+        console.log(`모드 변경 성공: ${mode ? '수동' : '자동'} 모드`);
       } else {
-        const res = await setRobotMode(robotMode);
-        const resultCode = res?.result ?? res?.data?.result;
-        if (res?.status_code === 200 && resultCode === 0) {
-          setIsModeToggled(mode);
-          console.log(`모드 변경 성공: ${mode ? '수동' : '자동'} 모드`);
-        } else {
-          console.error('모드 변경 실패:', res);
-        }
+        console.error('모드 변경 실패:', res);
       }
     } catch (error) {
       console.error('Mode change failed:', error);
@@ -226,45 +159,35 @@ const Header: React.FC = () => {
       statusRetryRef.current = null;
     }
     try {
-      if (isMockMode()) {
-        const res = await mockCheckConnection();
-        if (res.status_code === 200) {
-          setConnText('Mock 연결');
+      const res = await axios.get('/robot_sdk/connection_status');
+      const data = res.data?.data;
+      if (data?.auto_reconnect !== undefined) {
+        setAutoReconnectEnabled(data.auto_reconnect);
+      }
+      if (res.data?.status_code === 200 && data?.connected) {
+        setConnText('연결성공');
+        setInstanceCount(data?.instance_count ?? null);
+        startPolling();
+      } else if (!manual && data?.auto_reconnect) {
+        setConnText('자동 재연결 대기');
+        statusRetryRef.current = setTimeout(() => {
+          checkConnRef.current?.();
+        }, 3000);
+      } else {
+        const connectRes = await axios.post('/robot_sdk/connect');
+        const connectData = connectRes.data?.data;
+        if (connectRes.data?.status_code === 200 && connectData?.success) {
+          setConnText('연결성공');
+          if (connectData?.instance_count) {
+            setInstanceCount(connectData.instance_count);
+          } else {
+            const statusRes = await axios.get('/robot_sdk/connection_status');
+            setInstanceCount(statusRes.data?.data?.instance_count ?? null);
+          }
           startPolling();
         } else {
           setConnText('연결 실패');
-        }
-      } else {
-        const res = await axios.get('/robot_sdk/connection_status');
-        const data = res.data?.data;
-        if (data?.auto_reconnect !== undefined) {
-          setAutoReconnectEnabled(data.auto_reconnect);
-        }
-        if (res.data?.status_code === 200 && data?.connected) {
-          setConnText('연결성공');
-          setInstanceCount(data?.instance_count ?? null);
-          startPolling();
-        } else if (!manual && data?.auto_reconnect) {
-          setConnText('자동 재연결 대기');
-          statusRetryRef.current = setTimeout(() => {
-            checkConnRef.current?.();
-          }, 3000);
-        } else {
-          const connectRes = await axios.post('/robot_sdk/connect');
-          const connectData = connectRes.data?.data;
-          if (connectRes.data?.status_code === 200 && connectData?.success) {
-            setConnText('연결성공');
-            if (connectData?.instance_count) {
-              setInstanceCount(connectData.instance_count);
-            } else {
-              const statusRes = await axios.get('/robot_sdk/connection_status');
-              setInstanceCount(statusRes.data?.data?.instance_count ?? null);
-            }
-            startPolling();
-          } else {
-            setConnText('연결 실패');
-            setInstanceCount(null);
-          }
+          setInstanceCount(null);
         }
       }
     } catch {

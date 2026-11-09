@@ -1,10 +1,9 @@
-import React, { Component, ErrorInfo, ReactNode, useState, ReactElement } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { useAlert } from '../../contexts';
-import { CheckCircle, AlertCircle, AlertTriangle, Info, X, Home, ChevronLeft } from 'lucide-react';
+import { CheckCircle, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
 import classNames from 'classnames';
 import { createLogger } from '../../lib';
 import { useNetworkStatus } from '../../hooks';
-import { useNavigate } from 'react-router-dom';
 import { UpdateStatus, displayProgress, percent } from '../../lib/updater';
 const AlertModal: React.FC = () => {
   const { alertState, hide } = useAlert();
@@ -338,52 +337,6 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ text = '로딩 중...' })
   </div>
 );
 export const LoadingScreen_LoadingScreen = LoadingScreen;
-interface ModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
-}
-const Modal: React.FC<ModalProps> = ({
-  isOpen,
-  onClose,
-  title,
-  children,
-  footer,
-  size = 'md',
-}) => {
-  if (!isOpen) return null;
-  const maxWidthClass = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    xl: 'max-w-xl',
-  }[size];
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div
-        className={`bg-gray-800 rounded-2xl w-full ${maxWidthClass} max-h-[90vh] overflow-y-auto border border-gray-700`}
-      >
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">{title}</h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-700 rounded-xl transition"
-          >
-            <X className="w-6 h-6 text-gray-400" />
-          </button>
-        </div>
-        <div className="p-6 space-y-5">{children}</div>
-        {footer && (
-          <div className="flex gap-3 p-6 border-t border-gray-700">{footer}</div>
-        )}
-      </div>
-    </div>
-  );
-};
-export const Modal_Modal = Modal;
 interface NetworkStatusBannerProps {
   heartbeatInterval?: number;
 }
@@ -466,55 +419,6 @@ const styles_NetworkStatusBanner = {
   },
 };
 export const NetworkStatusBanner_NetworkStatusBanner = NetworkStatusBanner;
-interface PageHeaderProps {
-  title: string;
-  subtitle?: string;
-  showBack?: boolean;
-  backPath?: string;
-  showMainMenu?: boolean;
-  children?: React.ReactNode;
-}
-const PageHeader: React.FC<PageHeaderProps> = ({
-  title,
-  subtitle,
-  showBack = false,
-  backPath,
-  showMainMenu = true,
-  children,
-}) => {
-  const navigate = useNavigate();
-  return (
-    <div className="flex items-center justify-between mb-6">
-      <div className="flex items-center gap-4">
-        {showBack && (
-          <button
-            onClick={() => (backPath ? navigate(backPath) : navigate(-1))}
-            className="p-2 bg-gray-700/50 hover:bg-gray-600 rounded-xl text-gray-300 hover:text-white transition touch-manipulation"
-          >
-            <ChevronLeft className="w-6 h-6" />
-          </button>
-        )}
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-white">{title}</h1>
-          {subtitle && <p className="text-gray-400 text-sm mt-1">{subtitle}</p>}
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        {children}
-        {showMainMenu && (
-          <button
-            onClick={() => navigate('/menu')}
-            className="px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded-xl text-white transition touch-manipulation min-h-[48px] flex items-center gap-2"
-          >
-            <Home className="w-5 h-5" />
-            <span className="hidden md:inline">메인 메뉴</span>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-};
-export const PageHeader_PageHeader = PageHeader;
 interface PageLayoutProps {
   children: React.ReactNode;
   className?: string;
@@ -527,59 +431,6 @@ const PageLayout: React.FC<PageLayoutProps> = ({ children, className = '' }) => 
   </div>
 );
 export const PageLayout_PageLayout = PageLayout;
-const Select: React.FC<{ children?: React.ReactNode }> = ({ children }) => <div>{children}</div>;
-const SelectGroup: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
-  <div>{children}</div>
-);
-const SelectValue: React.FC<{ placeholder?: string }> = ({ placeholder }) => (
-  <span>{placeholder}</span>
-);
-interface SelectTriggerProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  className?: string;
-}
-const SelectTrigger = React.forwardRef<HTMLButtonElement, SelectTriggerProps>(
-  ({ className, children, ...props }, ref) => (
-    <button ref={ref} className={className} {...props}>
-      {children}
-    </button>
-  )
-);
-SelectTrigger.displayName = 'SelectTrigger';
-const SelectContent: React.FC<{ className?: string; children?: React.ReactNode }> = ({
-  className,
-  children,
-}) => <div className={className}>{children}</div>;
-const SelectItem: React.FC<{
-  value: string;
-  className?: string;
-  children?: React.ReactNode;
-  onClick?: () => void;
-}> = ({ className, children, onClick }) => (
-  <div className={className} onClick={onClick} role="option">
-    {children}
-  </div>
-);
-const SelectSeparator: React.FC<{ className?: string }> = ({ className }) => (
-  <div className={className} />
-);
-const SelectScrollUpButton: React.FC = () => null;
-const SelectScrollDownButton: React.FC = () => null;
-const SelectLabel: React.FC<{ className?: string; children?: React.ReactNode }> = ({
-  className,
-  children,
-}) => <div className={className}>{children}</div>;
-export {
-  Select,
-  SelectGroup,
-  SelectValue,
-  SelectTrigger,
-  SelectContent,
-  SelectLabel,
-  SelectItem,
-  SelectSeparator,
-  SelectScrollUpButton,
-  SelectScrollDownButton,
-};
 interface SettingsToggleRowProps {
   label: string;
   description?: string;
@@ -674,72 +525,6 @@ const StatCard: React.FC<StatCardProps> = ({
   );
 };
 export const StatCard_StatCard = StatCard;
-interface TabProps {
-  label: string;
-  children: ReactNode;
-}
-interface TabsProps {
-  children: ReactElement<TabProps>[];
-}
-export const Tab: React.FC<TabProps> = ({ children }) => <>{children}</>;
-export const Tabs: React.FC<TabsProps> = ({ children }) => {
-  const [activeIndex, setActiveIndex] = useState<number>(0);
-  return (
-    <div className="w-full h-full max-w-md mx-auto">
-      {}
-      <div className="flex border-b">
-        {children.map((child, index) => (
-          <button
-            key={index}
-            onClick={() => setActiveIndex(index)}
-            className={`flex-1 py-2 ${
-              activeIndex === index
-                ? 'border-b-2 border-blue-500 font-bold text-blue-600'
-                : 'text-gray-500'
-            }`}
-          >
-            {child.props.label}
-          </button>
-        ))}
-      </div>
-      {}
-      <div className="p-4">{children[activeIndex]}</div>
-    </div>
-  );
-};
-interface TextInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  label?: string;
-  inputSize?: 'sm' | 'md' | 'lg';
-  error?: string;
-}
-const TextInput = React.forwardRef<HTMLInputElement, TextInputProps>(
-  ({ label, inputSize = 'md', error, className = '', ...props }, ref) => {
-    const sizeClass = {
-      sm: 'px-2 py-1 text-sm',
-      md: 'px-4 py-3 text-base',
-      lg: 'px-4 py-4 text-lg',
-    }[inputSize];
-    return (
-      <div>
-        {label && (
-          <label className="block text-gray-400 text-sm mb-2 font-medium">
-            {label}
-          </label>
-        )}
-        <input
-          ref={ref}
-          className={`w-full ${sizeClass} bg-gray-900 border ${
-            error ? 'border-red-500' : 'border-gray-700'
-          } rounded-xl text-white focus:border-cyan-500 focus:outline-none transition ${className}`}
-          {...props}
-        />
-        {error && <span className="text-red-400 text-sm mt-1">{error}</span>}
-      </div>
-    );
-  }
-);
-TextInput.displayName = 'TextInput';
-export const TextInput_TextInput = TextInput;
 interface ToggleSwitchProps {
   enabled: boolean;
   onChange: (enabled: boolean) => void;
@@ -913,11 +698,8 @@ export function UpdateDialog({ status, currentVersion, onStart, onDismiss }: Upd
 }
 export const UpdateDialog_UpdateDialog = UpdateDialog;
 export { LoadingScreen_LoadingScreen as LoadingScreen };
-export { Modal_Modal as Modal };
 export { PageLayout_PageLayout as PageLayout };
-export { PageHeader_PageHeader as PageHeader };
 export { StatCard_StatCard as StatCard };
-export { TextInput_TextInput as TextInput };
 export { FormInput_FormInput as FormInput };
 export { ToggleSwitch_ToggleSwitch as ToggleSwitch };
 export { SettingsToggleRow_SettingsToggleRow as SettingsToggleRow };

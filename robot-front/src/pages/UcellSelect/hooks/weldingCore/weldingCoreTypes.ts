@@ -1,6 +1,5 @@
 import { TeachingPoint, PartWeldEnabled, SecondPassSettings } from '../..';
 import { RealtimeRobotStatus, WeldingLogSegment } from '../../../../lib';
-import React from 'react';
 
 export interface WeldingSequenceSettings {
   touchSensingEnabled: boolean;

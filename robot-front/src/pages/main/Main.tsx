@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Cpu, ClipboardList, Settings, Target, FlaskConical, CheckSquare, Gamepad2, Power } from 'lucide-react';
+import { LayoutDashboard, Cpu, ClipboardList, Settings, Target, CheckSquare, Gamepad2, Power } from 'lucide-react';
 import { useLang } from '../../contexts';
 import { getSystemInfo, shutdownPendant, getApiBaseUrl } from '../../lib';
 interface MenuItem {
