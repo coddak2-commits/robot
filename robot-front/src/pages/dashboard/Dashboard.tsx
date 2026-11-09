@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Activity, AlertTriangle, CheckCircle, Clock, Cpu, Target, Wrench, XCircle, Zap,
+  Activity, AlertTriangle, CheckCircle, Cpu, Target, Wrench, XCircle,
 } from 'lucide-react';
 import { PageLayout, LoadingScreen } from '../../components/common/index';
-import { getRobotError, getRealtimeRobotStatus, RealtimeRobotStatus } from '../../lib/robotApi/index';
+import { getRobotError, getRealtimeRobotStatus, RealtimeRobotStatus, getWeldingWorkSummary, WeldingWorkSummary, formatWorkTime } from '../../lib/robotApi/index';
 import { deviationApi, dashboardApi, DashboardStatsResponse } from '../../lib/gapApi';
 import { getStatusColor, getStatusText, getStatusBg } from '../../utils';
 
@@ -51,6 +51,9 @@ const deriveRobotStatus = (r: RealtimeRobotStatus | null): RobotStatus => {
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStatsResponse | null>(null);
+  // [v1.1.293] 위쪽 요약은 이 기기의 실제 용접 기록(welding_logs)에서. stats(robot-back welding_jobs)는
+  // 기록하는 곳이 없어 늘 0이었다. stats 는 24h 편차 건수에만 남긴다.
+  const [work, setWork] = useState<WeldingWorkSummary | null>(null);
   const [robot, setRobot] = useState<RealtimeRobotStatus | null>(null);
   const [realAlerts, setRealAlerts] = useState<RealAlert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,12 +61,14 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const [s, r, a] = await Promise.all([
+        const [s, r, a, w] = await Promise.all([
           dashboardApi.stats().catch(() => null),
           getRealtimeRobotStatus().catch(() => null),
           fetchRealAlerts(),
+          getWeldingWorkSummary(),
         ]);
         setStats(s);
+        setWork(w);
         setRobot(r);
         setRealAlerts(a);
       } catch (e) {
@@ -80,6 +85,7 @@ const Dashboard: React.FC = () => {
   if (loading) return <LoadingScreen text="시스템 로딩 중..." />;
 
   const robotStatus = deriveRobotStatus(robot);
+  const todayNotDone = work ? work.today_count - work.today_success : 0;
 
   return (
     <PageLayout>
@@ -100,31 +106,32 @@ const Dashboard: React.FC = () => {
             <CheckCircle className="w-8 h-8 text-green-400" />
           </div>
           <div className="text-2xl font-bold text-white">
-            {stats?.completedJobs ?? 0}/{stats?.todayJobs ?? 0}
+            {work?.today_success ?? 0}/{work?.today_count ?? 0}
           </div>
           <div className="text-gray-400 text-sm">오늘 완료/전체</div>
         </div>
 
-        <div className={`db-stat rounded-2xl p-4 border-2 ${(stats?.defectRate || 0) > 3 ? 'border-red-500/30 bg-red-500/10' : 'border-emerald-500/30 bg-emerald-500/10'} backdrop-blur-sm`}>
+        <div className={`db-stat rounded-2xl p-4 border-2 ${todayNotDone > 0 ? 'border-red-500/30 bg-red-500/10' : 'border-emerald-500/30 bg-emerald-500/10'} backdrop-blur-sm`}>
           <div className="flex items-center justify-between mb-2">
-            <Target className={`w-8 h-8 ${(stats?.defectRate || 0) > 3 ? 'text-red-400' : 'text-emerald-400'}`} />
+            <Target className={`w-8 h-8 ${todayNotDone > 0 ? 'text-red-400' : 'text-emerald-400'}`} />
           </div>
-          <div className="text-2xl font-bold text-white">{(stats?.defectRate ?? 0).toFixed(1)}%</div>
-          <div className="text-gray-400 text-sm">오늘 불량률</div>
+          <div className="text-2xl font-bold text-white">{todayNotDone}건</div>
+          <div className="text-gray-400 text-sm">오늘 중단·실패</div>
         </div>
 
         <div className="db-stat rounded-2xl p-4 border-2 border-cyan-500/30 bg-cyan-500/10 backdrop-blur-sm">
           <div className="flex items-center justify-between mb-2">
             <Activity className="w-8 h-8 text-cyan-400" />
           </div>
-          <div className="text-2xl font-bold text-white">{stats?.totalWeldCount ?? 0}</div>
+          <div className="text-2xl font-bold text-white">{work?.total_count ?? 0}</div>
           <div className="text-gray-400 text-sm">누적 용접 작업</div>
+          {work && <div className="text-gray-500 text-xs">{formatWorkTime(work.total_sec)}</div>}
         </div>
       </div>
 
       <div className="db-gap grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 로봇 실시간 */}
-        <div className="lg:col-span-2 db-card bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50">
+        <div className="lg:col-span-3 db-card bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-white flex items-center gap-2">
               <Cpu className="w-6 h-6 text-cyan-400" />
@@ -167,50 +174,6 @@ const Dashboard: React.FC = () => {
           {!robot?.connected && (
             <div className="db-warn mt-4 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-sm text-center">
               로봇 미연결 — Robot Core 서버 상태를 확인하세요
-            </div>
-          )}
-        </div>
-
-        {/* 현재 작업 */}
-        <div className="db-card bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50">
-          <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-            <Zap className="w-6 h-6 text-yellow-400" />
-            현재 작업
-          </h2>
-          {stats?.currentJob ? (
-            <div className="space-y-4">
-              <div className="bg-gray-900/60 rounded-xl p-4 border border-gray-700/50">
-                <div className="text-lg font-medium text-white mb-2">
-                  {stats.currentJob.job_name ?? `작업 #${stats.currentJob.id}`}
-                </div>
-                {stats.currentJob.cell_type && (
-                  <div className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-cyan-500/20 text-cyan-400 mb-4">
-                    {stats.currentJob.cell_type}
-                  </div>
-                )}
-                {stats.currentJob.started_at && (
-                  <div className="text-gray-400 text-sm">
-                    시작: {new Date(stats.currentJob.started_at).toLocaleString('ko-KR')}
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={() => navigate('/cell-selection')}
-                className="w-full py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl text-white font-medium transition touch-manipulation min-h-[56px]"
-              >
-                작업 화면 열기
-              </button>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <Clock className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-              <div className="text-gray-400 mb-4">진행 중인 작업 없음</div>
-              <button
-                onClick={() => navigate('/cell-selection')}
-                className="px-6 py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-xl text-white font-medium transition touch-manipulation min-h-[56px]"
-              >
-                작업 시작
-              </button>
             </div>
           )}
         </div>

@@ -1,0 +1,9 @@
+v1.1.293: 대시보드 요약을 실제 용접 기록(welding_logs)으로
+
+- robot-core: /welding-logs/summary 에 today_count, today_success
+- robot-front: 대시보드 오늘 완료/전체, 오늘 중단·실패, 누적 용접 작업(+시간), 현재 작업 칸 삭제
+- formatWorkTime 을 robotApi 로 옮겨 설정·대시보드 공용
+- 버전 1.1.293
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcEAumGsE8jB2uWSe3Y

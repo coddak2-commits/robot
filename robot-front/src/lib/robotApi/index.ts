@@ -1411,6 +1411,8 @@ export interface WeldingWorkSummary {
   success_count: number;
   month_sec: number;
   month_count: number;
+  today_count: number;   // [v1.1.293] 대시보드
+  today_success: number;
 }
 export const getWeldingWorkSummary = async (): Promise<WeldingWorkSummary | null> => {
   try {
@@ -1420,6 +1422,12 @@ export const getWeldingWorkSummary = async (): Promise<WeldingWorkSummary | null
     console.error('누적 작업 시간 조회 오류:', error);
     return null;
   }
+};
+// 초 -> 'N시간 M분' (설정·대시보드 공용)
+export const formatWorkTime = (sec: number): string => {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
 };
 export const createWeldingLog = async (log: Omit<WeldingLogData, 'id' | 'created_at'>): Promise<WeldingLogData> => {
   try {

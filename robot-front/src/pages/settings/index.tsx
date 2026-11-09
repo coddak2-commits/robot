@@ -4,14 +4,8 @@ import { PageLayout, LoadingScreen } from '../../components/common/index';
 import { useSystemSettingsData } from './hooks/useSystemSettingsData';
 import { useLang } from '../../contexts';
 import { StatusCard_StatusCard as StatusCard, UserManagementTab_UserManagementTab as UserManagementTab, UserModal_UserModal as UserModal, RobotSettingsTab_RobotSettingsTab as RobotSettingsTab, WeldingDefaultsTab_WeldingDefaultsTab as WeldingDefaultsTab, SystemEnvTab_SystemEnvTab as SystemEnvTab, UpdateTab_UpdateTab as UpdateTab } from './components';
-import { SystemConfig, getWeldingWorkSummary, WeldingWorkSummary } from '../../lib';
+import { SystemConfig, getWeldingWorkSummary, WeldingWorkSummary, formatWorkTime } from '../../lib';
 import { VersionInfo, UpdateCheckResponse, UpdateStatus, SystemInfo, RobotSettingsData, RobotErrorData, RobotErrorEvent, UserData } from '../../lib';
-// [v1.1.292] 초 -> 'N시간 M분'
-const formatWorkTime = (sec: number): string => {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
-};
 const SystemSettings: React.FC = () => {
   const {
     activeTab,

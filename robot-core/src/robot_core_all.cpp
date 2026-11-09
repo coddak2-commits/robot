@@ -7205,7 +7205,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.292"
+#define APP_VERSION_STRING "1.1.293"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -9751,16 +9751,19 @@ int DatabaseService::getWeldingLogsCount(int jobId, const std::string& fromDate,
 // 드라이런·시뮬레이션은 뺀다. 완료·중단·실패는 모두 넣는다(중간에 멈춰도 장비를 쓴 시간).
 // actual_duration_sec 은 작업 1회 시작~끝(터치센싱·이동·홈 복귀 포함)이라 아크 시간이 아니다.
 // 이번 달 = DB 서버 시계 기준 이번 달 1일 0시부터.
+// [v1.1.293] 오늘(DB 서버 기준 0시부터) 횟수·완료 횟수 추가 (대시보드).
 json DatabaseService::getWeldingWorkSummary() {
     std::lock_guard<std::mutex> lock(m_mutex);
     json out = {{"total_sec", 0.0}, {"total_count", 0}, {"success_count", 0},
-                {"month_sec", 0.0}, {"month_count", 0}};
+                {"month_sec", 0.0}, {"month_count", 0}, {"today_count", 0}, {"today_success", 0}};
     const std::string monthStart = "DATE_FORMAT(NOW(), '%Y-%m-01')";
     std::ostringstream query;
     query << "SELECT COUNT(*), COALESCE(SUM(actual_duration_sec), 0), "
           << "COALESCE(SUM(result_status = 'success'), 0), "
           << "COALESCE(SUM(started_at >= " << monthStart << "), 0), "
-          << "COALESCE(SUM(CASE WHEN started_at >= " << monthStart << " THEN actual_duration_sec ELSE 0 END), 0) "
+          << "COALESCE(SUM(CASE WHEN started_at >= " << monthStart << " THEN actual_duration_sec ELSE 0 END), 0), "
+          << "COALESCE(SUM(started_at >= CURDATE()), 0), "
+          << "COALESCE(SUM(started_at >= CURDATE() AND result_status = 'success'), 0) "
           << "FROM welding_logs WHERE operation_type = 'welding'";
     MYSQL_RES* result = executeSelect(query.str());
     if (!result) return out;
@@ -9776,6 +9779,8 @@ json DatabaseService::getWeldingWorkSummary() {
     out["success_count"] = static_cast<int>(toD(row[2]));
     out["month_count"] = static_cast<int>(toD(row[3]));
     out["month_sec"] = toD(row[4]);
+    out["today_count"] = static_cast<int>(toD(row[5]));
+    out["today_success"] = static_cast<int>(toD(row[6]));
     return out;
 }
 WeldingLog DatabaseService::getWeldingLog(int id) {
