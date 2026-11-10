@@ -1,0 +1,8 @@
+v1.1.294: P7 -> P8 높이 -> 홈에서 홈 직선 빼고 팔 접기 -> J1 회전
+
+- moveStopCheck.ts: moveHomeFromVerticalEnd skipLin 옵션, moveHomeFromP7ViaP8 3단계에 적용
+- 2026-11-10 11:30/13:54 J1 -97/-112 도 1-23 대응
+- 버전 1.1.294
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcEAumGsE8jB2uWSe3Y

@@ -214,13 +214,14 @@ export const moveHomeFromVerticalEnd = async (
     userNum?: number;
   },
   stopRef: React.MutableRefObject<boolean>,
-  opts?: { linVel?: number; linAcc?: number },
+  opts?: { linVel?: number; linAcc?: number; skipLin?: boolean },
 ): Promise<{ success: boolean; stopped: boolean }> => {
   if (!homePoint.joints || homePoint.joints.length !== 6) return { success: false, stopped: false };
   const tool = homePoint.toolNum ?? 3;
   const user = homePoint.userNum ?? 0;
   const speed = homePoint.moveSpeed || 50;
-  if (homePoint.tcp) {
+  // [v1.1.294] skipLin: 홈 직선 없이 바로 팔 접기 -> 홈 MoveJ (P7 -> P8 높이 -> 홈 경로)
+  if (homePoint.tcp && !opts?.skipLin) {
     const linVel = opts?.linVel ?? Math.min(speed, 30);
     const linAcc = opts?.linAcc ?? 100;
     log_helpers.info('homeFromVerticalEnd.lin', `수직 끝 -> 홈: 직선(LIN) 이동 시도 (속도 ${linVel}, 가속 ${linAcc})`);
@@ -281,6 +282,11 @@ export const moveHomeFromVerticalEnd = async (
 //   2) 빠진 거리(지금 TCP - P7 교시)를 그대로 유지한 채 P8 자세로 직선 이동.
 //      오른쪽 수직 용접(P9 -> P8 -> P7)을 거꾸로 내려가는 경로라 용접 때 매번 지나가는 자세다.
 //   3) 거기서 P8 에서 홈 가는 것과 같이 moveHomeFromVerticalEnd(홈 직선 -> 홈 관절 맞추기).
+//      [v1.1.294] 3) 은 홈 직선을 쓰지 않고 바로 팔 접기(J1 고정) -> 홈 MoveJ.
+//      P7·P8·홈이 로봇 쪽으로 가깝게 교시된 작업(P8 높이 X -381/-368, 홈 X -374/-358)에서
+//      P8 높이 -> 홈 직선이 특이 자세 근처를 지나 J1 이 -97/-112 도까지 돌다 1-23(J1 속도 초과)으로
+//      멈췄다(2026-11-10 11:30, 13:54 펜던트). X -424 ~ -486 인 작업은 정상. 교시 위치에 따라 갈리므로
+//      직선을 빼고, 원래 실패 때 쓰던 팔 접기 -> J1 회전으로 고정한다.
 // 2) 가 거부되거나 도중에 멈추면 에러 리셋 후 멈춘다(그 자리에서 홈 직선을 다시 보내지 않는다).
 // P8 이 저장 안 됐거나, 뒤로 빠지기가 안 된 상태(X 차이 20mm 미만)면 종전처럼 바로 moveHomeFromVerticalEnd.
 const P7_VIA_P8_MIN_BACK_MM = 20;
@@ -353,8 +359,8 @@ export const moveHomeFromP7ViaP8 = async (
     await resetErrorIfAny();
     return { success: false, stopped: false };
   }
-  log_helpers.info('homeViaP8.home', 'P8 높이에서 홈으로');
-  return moveHomeFromVerticalEnd(homePoint, stopRef, opts);
+  log_helpers.info('homeViaP8.home', 'P8 높이에서 홈으로: 팔 접기 -> J1 회전 (직선 안 씀)');
+  return moveHomeFromVerticalEnd(homePoint, stopRef, { ...opts, skipLin: true });
 };
 // [v1.1.276] 수동 포인트 이동(포인트 버튼·도식 클릭): 저장 TCP 로 직선(MoveL) -> 도착 확인 -> 저장 관절 MoveJ(관절값 맞추기).
 // 종전에는 MoveJ 한 번이라 관절이 함께 돌며 팔이 U셀 안쪽으로 부풀어 들어갔다.
