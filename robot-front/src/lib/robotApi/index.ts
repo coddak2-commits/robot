@@ -507,6 +507,13 @@ export const saveFileToPendantUsb = async (
   const response = await api.post('/system/usb-save-file', { filename, content }, { timeout: 30000 });
   return response.data;
 };
+// [v1.1.296] 정품 펜던트(리눅스) 전용: 최근 N일 진단 로그(코어 .log, 화면 로그, 카메라 로그)를 USB 로
+export const exportLogsToPendantUsb = async (
+  days: number,
+): Promise<{ status_code: number; data?: { message?: string; folder?: string; files?: number; app_log_rows?: number } }> => {
+  const response = await api.post('/system/usb-export-logs', { days }, { timeout: 180000 });
+  return response.data;
+};
 export const getSystemInfo = async (): Promise<SystemInfo> => {
   try {
     const response = await api.get('/system/system-info');

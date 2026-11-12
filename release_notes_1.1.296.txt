@@ -1,0 +1,14 @@
+﻿v1.1.296 - 펜던트 진단 로그 USB 내보내기, 코어 [AnalogIn] 로그 제거
+
+[추가] 설정 > 진단 로그 발송: 'USB 로 내보내기' (펜던트에서만 보임)
+    - 기간(일) 칸의 일수만큼 USB 의 vot-logs-날짜_시각 폴더에 저장하고 USB 해제까지 함
+    - core/ : 코어 로그(.log), app_logs.tsv : 화면 로그(DB app_logs, 시간순),
+      camera/ : robot_camera.log, robot_blackfly.log (있을 때만)
+    - USB 를 먼저 꽂고 누를 것. 용접 중에는 거부
+    - 노트북은 지금처럼 이메일 발송, zip 다운로드
+[변경] robot-core: 아크 ON 중 1초마다 남기던 [AnalogIn] AI0/AI1/AO0/AO1 로그 제거
+    - 상태 패킷의 AI0/AI1 이 용접 내내 고정값이라 전류 판단에 쓸 수 없음
+[변경] robot-core: USB 연결/해제를 공용 함수(PendantUsb)로 정리 (1.1.295 작업내역 USB 저장도 같이 사용)
+
+[robot-core] /system/usb-export-logs 추가, 버전 1.1.296
+[DB] 변경 없음.

@@ -345,28 +345,9 @@ int runService() {
             {"rz", state.tl_cur_pos[5]}
         };
         zmqServer.publishState(stateJson.dump());
-        // 아크 ON 구간의 아날로그 입력(AI0/AI1) 기록. 이 콜백은 모니터 스레드
-        // 하나에서만 불리므로 static 지역변수로 마지막 기록 시각을 들고 있는다.
-        if (g_arcActive.load()) {
-            static std::chrono::steady_clock::time_point lastAiLog{};
-            auto now = std::chrono::steady_clock::now();
-            if (now - lastAiLog >= std::chrono::milliseconds(1000)) {
-                lastAiLog = now;
-                FLOG_INFO("AnalogIn",
-                    "AI0=" + std::to_string(state.cl_analog_input[0]) +
-                    " AI1=" + std::to_string(state.cl_analog_input[1]) +
-                    " AO0=" + std::to_string(state.cl_analog_output[0]) +
-                    " AO1=" + std::to_string(state.cl_analog_output[1]) + " (raw)");
-                // v1.1.207에서 상태 패킷의 weldCurrent/weldVoltage/weldTrackVel을
-                // [WeldFeedback]으로 찍어봤으나, 2026-09-30 로그 전체에서 예외 없이
-                // 0.000000 이었다. 아크 트래킹을 켠 수직 용접 200초 동안에도 0이다.
-                // 이 컨트롤러는 그 세 필드를 채우지 않는다. 용접기와 아날로그 입출력으로
-                // 붙어 있어 컨트롤러가 A/V 단위값을 모르는 것으로 보인다.
-                // 트래킹 동작 여부와는 무관하다. 계산은 컨트롤러 내부에서 아날로그
-                // 입력을 읽어 돌고, 이 필드는 보고용일 뿐이다.
-                // 다시 넣지 말 것. 전류를 보려면 AI0을 암페어로 환산하는 쪽이다. (v1.1.216)
-            }
-        }
+        // [v1.1.296] 아크 ON 중 1초마다 찍던 [AnalogIn] AI0/AI1/AO0/AO1 기록을 뺐다.
+        // 이 상태 패킷의 AI0/AI1 은 용접 내내 고정값이라(2026-10-16, WebApp 에서는 실시간으로 바뀜)
+        // 전류 판단에 못 쓴다. 상태 패킷의 weldCurrent/weldVoltage/weldTrackVel 도 늘 0 이었다(v1.1.216).
     });
     robotService.setErrorCallback([&dbService](int mainCode, int subCode, const std::string& message, bool resolved) {
         // monitorLoop는 전용 스레드 하나에서만 이 콜백을 호출하므로 static 지역변수로
@@ -7205,7 +7186,51 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.295"
+#define APP_VERSION_STRING "1.1.296"
+#ifndef _WIN32
+// [v1.1.296] 정품 펜던트 USB 연결/해제 (작업내역 CSV, 진단 로그 내보내기 공용)
+namespace PendantUsb {
+static const char* kMountPoint = "/mnt/usb";
+static std::mutex& mtx() { static std::mutex m; return m; }
+static std::string sudo() { return geteuid() != 0 ? "sudo -n " : ""; }
+static bool isMounted() {
+    std::ifstream in("/proc/mounts");
+    std::string dev, dir, rest;
+    while (in >> dev >> dir && std::getline(in, rest))
+        if (dir == kMountPoint) return true;
+    return false;
+}
+static std::string findDevice() {
+    for (char c = 'a'; c <= 'z'; c++) {
+        std::string base = std::string("/dev/sd") + c;
+        if (fs::exists(base + "1")) return base + "1";
+        if (fs::exists(base)) return base;
+    }
+    return "";
+}
+// 이미 연결돼 있으면 그대로 쓴다. 실패하면 err 에 화면용 문구.
+static bool mount(std::string& err) {
+    std::string dev = findDevice();
+    if (dev.empty()) { err = "USB 를 찾지 못했습니다. 꽂았는지 확인하세요."; return false; }
+    if (isMounted()) return true;
+    const std::string mp = kMountPoint;
+    std::system((sudo() + "mkdir -p " + mp).c_str());
+    std::string ids = "uid=" + std::to_string(getuid()) + ",gid=" + std::to_string(getgid());
+    if (std::system((sudo() + "mount -o " + ids + ",utf8 " + dev + " " + mp).c_str()) != 0 &&
+        std::system((sudo() + "mount -o " + ids + " " + dev + " " + mp).c_str()) != 0 &&
+        std::system((sudo() + "mount " + dev + " " + mp).c_str()) != 0) {
+        FLOG_ERROR("System", "USB mount failed: " + dev);
+        err = "USB 연결(mount) 실패: " + dev + ". 잠시 뒤 다시 눌러 보세요.";
+        return false;
+    }
+    return true;
+}
+static bool unmount() {
+    std::system("sync");
+    return std::system((sudo() + "umount " + kMountPoint).c_str()) == 0 || !isMounted();
+}
+}  // namespace PendantUsb
+#endif
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -7343,36 +7368,10 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
         if (name.empty() || name == "." || name == ".." || name.size() > 200) { reply(400, "파일 이름 오류"); return; }
         const std::string content = body["content"].get<std::string>();
 
-        static std::mutex usbMx;
-        std::lock_guard<std::mutex> lk(usbMx);
-        const std::string mp = "/mnt/usb";
-        const std::string sudo = (geteuid() != 0) ? "sudo -n " : "";
-        auto isMounted = [&mp]() {
-            std::ifstream in("/proc/mounts");
-            std::string dev, dir, rest;
-            while (in >> dev >> dir && std::getline(in, rest))
-                if (dir == mp) return true;
-            return false;
-        };
-        std::string dev;
-        for (char c = 'a'; c <= 'z' && dev.empty(); c++) {
-            std::string base = std::string("/dev/sd") + c;
-            if (fs::exists(base + "1")) dev = base + "1";
-            else if (fs::exists(base)) dev = base;
-        }
-        if (dev.empty()) { reply(404, "USB 를 찾지 못했습니다. 꽂았는지 확인하세요."); return; }
-        if (!isMounted()) {
-            std::system((sudo + "mkdir -p " + mp).c_str());
-            std::string ids = "uid=" + std::to_string(getuid()) + ",gid=" + std::to_string(getgid());
-            if (std::system((sudo + "mount -o " + ids + ",utf8 " + dev + " " + mp).c_str()) != 0 &&
-                std::system((sudo + "mount -o " + ids + " " + dev + " " + mp).c_str()) != 0 &&
-                std::system((sudo + "mount " + dev + " " + mp).c_str()) != 0) {
-                FLOG_ERROR("System", "USB mount failed: " + dev);
-                reply(500, "USB 연결(mount) 실패: " + dev + ". 잠시 뒤 다시 눌러 보세요.");
-                return;
-            }
-        }
-        fs::path dst = fs::path(mp) / name;
+        std::lock_guard<std::mutex> lk(PendantUsb::mtx());
+        std::string err;
+        if (!PendantUsb::mount(err)) { reply(err.find("찾지") != std::string::npos ? 404 : 500, err); return; }
+        fs::path dst = fs::path(PendantUsb::kMountPoint) / name;
         bool written = false;
         {
             std::ofstream out(dst, std::ios::binary | std::ios::trunc);
@@ -7384,12 +7383,113 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
         std::system("sync");
         std::error_code ec;
         bool sizeOk = written && fs::file_size(dst, ec) == content.size() && !ec;
-        bool unmounted = std::system((sudo + "umount " + mp).c_str()) == 0 || !isMounted();
+        bool unmounted = PendantUsb::unmount();
         FLOG_INFO("System", "USB save " + dst.string() + " bytes=" + std::to_string(content.size()) +
                   " ok=" + std::to_string(sizeOk) + " unmounted=" + std::to_string(unmounted));
         if (!sizeOk) { reply(500, "USB 저장 실패 (" + name + "). USB 공간이나 쓰기 보호를 확인하세요."); return; }
         if (!unmounted) { reply(500, "저장은 됐지만 USB 해제 실패. 터미널에서 cd ~ && sync && sudo umount /mnt/usb"); return; }
         reply(200, "저장 완료", dst.string());
+#endif
+    });
+    // [v1.1.296] 정품 펜던트(리눅스) 전용: 진단 로그를 USB 로 내보내기 (설정 > 진단 로그).
+    // USB 의 vot-logs-날짜_시각/ 폴더에
+    //   core/    최근 N일 안에 바뀐 코어 로그(.log)
+    //   app_logs.tsv  최근 N일 화면 로그(DB app_logs, 시간순)
+    //   camera/  robot_camera.log, robot_blackfly.log (있을 때만, ~/vot/camera-data)
+    // 용접 중에는 받지 않는다(DB 잠금을 오래 잡지 않도록). 이 기기 화면(localhost)에서만 받는다.
+    server.Options("/system/usb-export-logs", [](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        res.status = 200;
+    });
+    server.Post("/system/usb-export-logs", [dbService](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        auto reply = [&res](int code, const json& d) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(code, d).dump(), "application/json");
+        };
+#ifdef _WIN32
+        (void)req; (void)dbService;
+        reply(400, {{"message", "펜던트(리눅스)에서만 사용할 수 있습니다."}});
+#else
+        bool isLoopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        if (!isLoopback) { reply(403, {{"message", "펜던트 화면에서만 내보낼 수 있습니다."}}); return; }
+        if (g_arcActive.load()) { reply(409, {{"message", "용접 중에는 내보낼 수 없습니다."}}); return; }
+        json body = json::parse(req.body.empty() ? "{}" : req.body, nullptr, false);
+        int days = 7;
+        if (body.is_object() && body.contains("days") && body["days"].is_number_integer()) days = body["days"].get<int>();
+        days = std::max(1, std::min(30, days));
+
+        // 대상 파일 모으기
+        std::vector<std::pair<fs::path, std::string>> files;  // (원본, USB 안 상대 경로)
+        long long totalBytes = 0;
+        std::error_code ec;
+        auto cut = fs::file_time_type::clock::now() - std::chrono::hours(24 * days);
+        for (auto& e : fs::directory_iterator(FileLogger::instance().getLogDir(), ec)) {
+            if (!e.is_regular_file(ec) || e.path().extension() != ".log") continue;
+            if (fs::last_write_time(e.path(), ec) < cut) continue;
+            files.emplace_back(e.path(), "core/" + e.path().filename().string());
+            totalBytes += (long long)fs::file_size(e.path(), ec);
+        }
+        fs::path camDir = fs::path(linuxExeDir()) / ".." / ".." / ".." / "camera-data";
+        for (const char* n : {"robot_camera.log", "robot_blackfly.log"}) {
+            fs::path f = camDir / n;
+            if (fs::is_regular_file(f, ec)) {
+                files.emplace_back(f, std::string("camera/") + n);
+                totalBytes += (long long)fs::file_size(f, ec);
+            }
+        }
+
+        std::lock_guard<std::mutex> lk(PendantUsb::mtx());
+        std::string err;
+        if (!PendantUsb::mount(err)) { reply(err.find("찾지") != std::string::npos ? 404 : 500, {{"message", err}}); return; }
+        auto sp = fs::space(PendantUsb::kMountPoint, ec);
+        if (ec || (long long)sp.available < totalBytes + 50LL * 1024 * 1024) {
+            PendantUsb::unmount();
+            reply(500, {{"message", "USB 공간 부족: 필요 약 " + std::to_string(totalBytes / (1024 * 1024) + 50) + "MB"}});
+            return;
+        }
+        std::time_t t = std::time(nullptr);
+        std::tm tmv{};
+        localtime_r(&t, &tmv);
+        char ts[32] = {0};
+        std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tmv);
+        fs::path destRoot = fs::path(PendantUsb::kMountPoint) / (std::string("vot-logs-") + ts);
+        fs::create_directories(destRoot / "core", ec);
+
+        int copied = 0;
+        std::vector<std::string> failed;
+        for (auto& f : files) {
+            fs::path dst = destRoot / f.second;
+            std::error_code e2;
+            fs::create_directories(dst.parent_path(), e2);
+            if (fs::copy_file(f.first, dst, fs::copy_options::overwrite_existing, e2) && !e2) copied++;
+            else failed.push_back(f.second);
+        }
+        long long appRows = 0;
+        std::string appErr;
+        bool appOk = dbService && dbService->exportAppLogsTsv(days, (destRoot / "app_logs.tsv").string(), appRows, appErr);
+        if (!dbService) appErr = "DB 없음";
+        std::system("sync");
+        bool unmounted = PendantUsb::unmount();
+        FLOG_INFO("System", std::string("USB log export ") + destRoot.string() + " days=" + std::to_string(days) +
+                  " files=" + std::to_string(copied) + "/" + std::to_string(files.size()) +
+                  " app_rows=" + std::to_string(appRows) + " app_ok=" + std::to_string(appOk) +
+                  " unmounted=" + std::to_string(unmounted));
+        json d = {{"folder", destRoot.filename().string()}, {"files", copied}, {"app_log_rows", appRows}};
+        if (!failed.empty() || !appOk) {
+            std::string m = "일부 실패:";
+            for (auto& x : failed) m += " " + x;
+            if (!appOk) m += " 화면로그(" + appErr + ")";
+            d["message"] = m;
+            reply(500, d);
+            return;
+        }
+        if (!unmounted) {
+            d["message"] = "저장은 됐지만 USB 해제 실패. 터미널에서 cd ~ && sync && sudo umount /mnt/usb";
+            reply(500, d);
+            return;
+        }
+        d["message"] = "저장 완료";
+        reply(200, d);
 #endif
     });
     server.Options(R"(/logs.*)", [](const httplib::Request&, httplib::Response& res) {
@@ -10249,6 +10349,33 @@ json DatabaseService::getAppLogs(int limit, const std::string& level, const std:
         logsArray.push_back(logEntry);
     }
     return logsArray;
+}
+// [v1.1.296] 최근 N일 화면 로그(app_logs)를 시간순 TSV 로 저장 (펜던트 USB 로그 내보내기용)
+bool DatabaseService::exportAppLogsTsv(int days, const std::string& path, long long& rows, std::string& err) {
+    rows = 0;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_conn || !m_connected) { err = "DB 연결 없음"; return false; }
+    std::ostringstream query;
+    query << "SELECT timestamp, level, source, page, action, message, data, duration_ms, error_code "
+          << "FROM app_logs WHERE timestamp >= NOW() - INTERVAL " << std::max(1, days) << " DAY ORDER BY id";
+    MYSQL_RES* result = executeSelect(query.str());
+    if (!result) { err = "조회 실패"; return false; }
+    MySqlResultGuard resultGuard(result);
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) { err = "파일 생성 실패"; return false; }
+    out << "\xEF\xBB\xBF" << "timestamp\tlevel\tsource\tpage\taction\tmessage\tdata\tduration_ms\terror_code\n";
+    MYSQL_ROW row;
+    while ((row = mysql_fetch_row(result))) {
+        for (int i = 0; i < 9; i++) {
+            std::string v = row[i] ? row[i] : "";
+            for (char& c : v) if (c == '\t' || c == '\n' || c == '\r') c = ' ';
+            out << v << (i < 8 ? '\t' : '\n');
+        }
+        rows++;
+    }
+    out.flush();
+    if (!out.good()) { err = "파일 쓰기 실패"; return false; }
+    return true;
 }
 json DatabaseService::getUsers() {
     std::lock_guard<std::mutex> lock(m_mutex);

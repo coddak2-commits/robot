@@ -1,0 +1,11 @@
+v1.1.296: 펜던트 진단 로그 USB 내보내기, [AnalogIn] 로그 제거
+
+- robot_core_all.cpp: POST /system/usb-export-logs (core .log, app_logs.tsv, camera logs -> USB vot-logs-*/)
+- robot_core_all.cpp: PendantUsb 공용 mount/umount, usb-save-file 도 사용
+- robot_core_all.cpp/h: DatabaseService::exportAppLogsTsv
+- robot_core_all.cpp: [AnalogIn] 1초 로그 제거
+- DiagnosticLogsSection.tsx: 펜던트에서 'USB 로 내보내기' 버튼
+- 버전 1.1.296
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77

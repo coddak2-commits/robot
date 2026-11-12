@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, FileArchive } from 'lucide-react';
-import { sendDiagnosticLogsEmail, downloadLogsZipUrl } from '../../../lib';
+import { Mail, FileArchive, Usb } from 'lucide-react';
+import { sendDiagnosticLogsEmail, downloadLogsZipUrl, getSystemInfo, exportLogsToPendantUsb } from '../../../lib';
 
 const LS_LOG_EMAIL = 'vot.diagnosticLogs.recipient';
 const LS_LOG_AUTO = 'vot.diagnosticLogs.autoSendOnError';
@@ -25,6 +25,31 @@ export const DiagnosticLogsSection: React.FC = () => {
   const [logNote, setLogNote] = useState<string>('');
   const [sendingLog, setSendingLog] = useState(false);
   const [logResult, setLogResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  // [v1.1.296] 정품 펜던트(코어가 리눅스)면 'USB 로 내보내기' 버튼을 보인다
+  const [isPendant, setIsPendant] = useState(false);
+  const [exportingUsb, setExportingUsb] = useState(false);
+  useEffect(() => {
+    getSystemInfo()
+      .then(info => setIsPendant(info?.platform === 'Linux'))
+      .catch(() => setIsPendant(false));
+  }, []);
+  const handleUsbExport = async () => {
+    setExportingUsb(true);
+    setLogResult(null);
+    try {
+      const r = await exportLogsToPendantUsb(logDays);
+      const d = r?.data;
+      if (r?.status_code === 200) {
+        setLogResult({ ok: true, msg: `USB 저장 완료: ${d?.folder} (파일 ${d?.files ?? 0}개, 화면 로그 ${d?.app_log_rows ?? 0}줄). USB 를 뽑아도 됩니다.` });
+      } else {
+        setLogResult({ ok: false, msg: d?.message || 'USB 저장 실패' });
+      }
+    } catch {
+      setLogResult({ ok: false, msg: 'USB 저장 요청 실패' });
+    } finally {
+      setExportingUsb(false);
+    }
+  };
   useEffect(() => {
     localStorage.setItem(LS_LOG_EMAIL, logRecipient);
   }, [logRecipient]);
@@ -130,6 +155,17 @@ export const DiagnosticLogsSection: React.FC = () => {
             <FileArchive className="w-4 h-4" />
             zip 다운로드
           </a>
+          {isPendant && (
+            <button
+              onClick={handleUsbExport}
+              disabled={exportingUsb}
+              title="기간(일) 안의 코어 로그·화면 로그·카메라 로그를 USB 의 vot-logs-날짜_시각 폴더에 저장 (USB 를 먼저 꽂으세요)"
+              className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 rounded-lg text-white text-sm transition flex items-center gap-2"
+            >
+              <Usb className="w-4 h-4" />
+              {exportingUsb ? 'USB 저장 중...' : 'USB 로 내보내기'}
+            </button>
+          )}
         </div>
         {logResult && (
           <div
