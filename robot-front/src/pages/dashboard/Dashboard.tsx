@@ -7,6 +7,9 @@ import { PageLayout, LoadingScreen } from '../../components/common/index';
 import { getRobotError, getRealtimeRobotStatus, RealtimeRobotStatus, getWeldingWorkSummary, WeldingWorkSummary, formatWorkTime } from '../../lib/robotApi/index';
 import { deviationApi, dashboardApi, DashboardStatsResponse } from '../../lib/gapApi';
 import { getStatusColor, getStatusText, getStatusBg } from '../../utils';
+// [v1.1.295] 작업내역(용접부 선택 화면에서)과 촬영 기록 USB 내보내기(펜던트 화면에서)를 대시보드로 옮김
+import { OperationHistoryPanel } from '../UcellSelect/components/OperationHistoryPanel';
+import { CameraExportButton } from '../UcellSelect/components/CameraExportButton';
 
 type RealAlert = { id: string; type: 'error' | 'warning' | 'info'; message: string; timestamp: string };
 type RobotStatus = 'idle' | 'running' | 'error' | 'maintenance';
@@ -257,6 +260,16 @@ const Dashboard: React.FC = () => {
               <span className="text-white font-medium">시스템 설정</span>
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* [v1.1.295] 작업 내역 + 촬영 기록 USB 내보내기(펜던트에서 robot_camera 가 돌 때만 보임) */}
+      <div className="db-gap mt-6">
+        <div className="flex justify-end mb-2">
+          <CameraExportButton disabled={robotStatus === 'running'} />
+        </div>
+        <div className="db-hist h-[600px]">
+          <OperationHistoryPanel />
         </div>
       </div>
     </PageLayout>

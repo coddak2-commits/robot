@@ -7205,7 +7205,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.294"
+#define APP_VERSION_STRING "1.1.295"
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
@@ -7310,6 +7310,86 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
             return;
         }
         res.set_content(HttpRouteHelpers::makeStatusResponse(200, {{"stopping", true}}).dump(), "application/json");
+#endif
+    });
+    // [v1.1.295] 정품 펜던트(리눅스) 전용: 화면에서 만든 파일(작업내역 CSV)을 USB 에 저장.
+    // USB 찾기(/dev/sdX1 또는 /dev/sdX) -> /mnt/usb 연결 -> 저장 -> sync -> 크기 확인 -> 해제.
+    // 파일 이름은 경로를 떼고 USB 맨 위에 저장. 이 기기 화면(localhost)에서만 받는다.
+    server.Options("/system/usb-save-file", [](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        res.status = 200;
+    });
+    server.Post("/system/usb-save-file", [](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        auto reply = [&res](int code, const std::string& msg, const std::string& path = "") {
+            json d = {{"message", msg}};
+            if (!path.empty()) d["path"] = path;
+            res.set_content(HttpRouteHelpers::makeStatusResponse(code, d).dump(), "application/json");
+        };
+#ifdef _WIN32
+        (void)req;
+        reply(400, "펜던트(리눅스)에서만 사용할 수 있습니다.");
+#else
+        bool isLoopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        if (!isLoopback) { reply(403, "펜던트 화면에서만 저장할 수 있습니다."); return; }
+        json body = json::parse(req.body, nullptr, false);
+        if (!body.is_object() || !body.contains("filename") || !body.contains("content") ||
+            !body["filename"].is_string() || !body["content"].is_string()) {
+            reply(400, "요청 형식 오류"); return;
+        }
+        std::string name = body["filename"].get<std::string>();
+        size_t slash = name.find_last_of("/\\");
+        if (slash != std::string::npos) name = name.substr(slash + 1);
+        if (name.empty() || name == "." || name == ".." || name.size() > 200) { reply(400, "파일 이름 오류"); return; }
+        const std::string content = body["content"].get<std::string>();
+
+        static std::mutex usbMx;
+        std::lock_guard<std::mutex> lk(usbMx);
+        const std::string mp = "/mnt/usb";
+        const std::string sudo = (geteuid() != 0) ? "sudo -n " : "";
+        auto isMounted = [&mp]() {
+            std::ifstream in("/proc/mounts");
+            std::string dev, dir, rest;
+            while (in >> dev >> dir && std::getline(in, rest))
+                if (dir == mp) return true;
+            return false;
+        };
+        std::string dev;
+        for (char c = 'a'; c <= 'z' && dev.empty(); c++) {
+            std::string base = std::string("/dev/sd") + c;
+            if (fs::exists(base + "1")) dev = base + "1";
+            else if (fs::exists(base)) dev = base;
+        }
+        if (dev.empty()) { reply(404, "USB 를 찾지 못했습니다. 꽂았는지 확인하세요."); return; }
+        if (!isMounted()) {
+            std::system((sudo + "mkdir -p " + mp).c_str());
+            std::string ids = "uid=" + std::to_string(getuid()) + ",gid=" + std::to_string(getgid());
+            if (std::system((sudo + "mount -o " + ids + ",utf8 " + dev + " " + mp).c_str()) != 0 &&
+                std::system((sudo + "mount -o " + ids + " " + dev + " " + mp).c_str()) != 0 &&
+                std::system((sudo + "mount " + dev + " " + mp).c_str()) != 0) {
+                FLOG_ERROR("System", "USB mount failed: " + dev);
+                reply(500, "USB 연결(mount) 실패: " + dev + ". 잠시 뒤 다시 눌러 보세요.");
+                return;
+            }
+        }
+        fs::path dst = fs::path(mp) / name;
+        bool written = false;
+        {
+            std::ofstream out(dst, std::ios::binary | std::ios::trunc);
+            if (out) {
+                out.write(content.data(), (std::streamsize)content.size());
+                written = out.good();
+            }
+        }
+        std::system("sync");
+        std::error_code ec;
+        bool sizeOk = written && fs::file_size(dst, ec) == content.size() && !ec;
+        bool unmounted = std::system((sudo + "umount " + mp).c_str()) == 0 || !isMounted();
+        FLOG_INFO("System", "USB save " + dst.string() + " bytes=" + std::to_string(content.size()) +
+                  " ok=" + std::to_string(sizeOk) + " unmounted=" + std::to_string(unmounted));
+        if (!sizeOk) { reply(500, "USB 저장 실패 (" + name + "). USB 공간이나 쓰기 보호를 확인하세요."); return; }
+        if (!unmounted) { reply(500, "저장은 됐지만 USB 해제 실패. 터미널에서 cd ~ && sync && sudo umount /mnt/usb"); return; }
+        reply(200, "저장 완료", dst.string());
 #endif
     });
     server.Options(R"(/logs.*)", [](const httplib::Request&, httplib::Response& res) {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Trash2, ChevronLeft, ChevronRight, History, RefreshCw, Save, Download } from 'lucide-react';
-import { WeldingLogData, getWeldingLogs, deleteWeldingLogs, updateWeldingLog } from '../../../lib';
+import { WeldingLogData, getWeldingLogs, deleteWeldingLogs, updateWeldingLog, getSystemInfo, saveFileToPendantUsb } from '../../../lib';
 import { useAlert } from '../../../contexts';
 import { WEAVING_TYPE_OPTIONS, getPartConditionPointIds, getBlockName } from '..';
 import { HistoryItemRow } from './JobUtils';
@@ -142,6 +142,13 @@ export function OperationHistoryPanel({ onClose }: OperationHistoryPanelProps) {
   // [v1.1.265] 내보내기 기간 (양 끝 포함)
   const [exportFrom, setExportFrom] = useState(() => ymd(new Date()));
   const [exportTo, setExportTo] = useState(() => ymd(new Date()));
+  // [v1.1.295] 정품 펜던트(코어가 리눅스)면 다운로드 대신 USB 에 바로 저장
+  const [isPendant, setIsPendant] = useState(false);
+  useEffect(() => {
+    getSystemInfo()
+      .then(info => setIsPendant(info?.platform === 'Linux'))
+      .catch(() => setIsPendant(false));
+  }, []);
   const handleExport = async () => {
     if (!exportFrom || !exportTo || exportFrom > exportTo) {
       showAlert('기간을 확인해 주세요. (시작일이 종료일보다 늦습니다)', { type: 'warning' });
@@ -159,8 +166,18 @@ export function OperationHistoryPanel({ onClose }: OperationHistoryPanelProps) {
         showAlert(`${exportFrom} ~ ${exportTo} 기간에 작업 내역이 없습니다.`, { type: 'warning' });
         return;
       }
-      const blob = new Blob([buildCsv(all)], { type: 'text/csv;charset=utf-8' });
+      const csv = buildCsv(all);
       const name = `작업내역_${exportFrom.replace(/-/g, '')}-${exportTo.replace(/-/g, '')}.csv`;
+      if (isPendant) {
+        const r = await saveFileToPendantUsb(name, csv);
+        if (r?.status_code === 200) {
+          showAlert(`${all.length}건 USB 저장 완료 (${name}). USB 를 뽑아도 됩니다.`, { type: 'success' });
+        } else {
+          showAlert(r?.data?.message || 'USB 저장에 실패했습니다.', { type: 'error' });
+        }
+        return;
+      }
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -247,10 +264,10 @@ export function OperationHistoryPanel({ onClose }: OperationHistoryPanelProps) {
             onClick={handleExport}
             disabled={exporting}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 border border-emerald-500/30 text-xs font-medium disabled:opacity-30 disabled:cursor-not-allowed"
-            title="선택한 기간의 작업 내역을 포인트별로 CSV(엑셀) 파일로 저장"
+            title={isPendant ? '선택한 기간의 작업 내역을 CSV(엑셀) 파일로 USB 에 저장 (USB 를 먼저 꽂으세요)' : '선택한 기간의 작업 내역을 포인트별로 CSV(엑셀) 파일로 저장'}
           >
             <Download className={`w-3.5 h-3.5 ${exporting ? 'animate-pulse' : ''}`} />
-            엑셀 내보내기
+            {isPendant ? 'USB 로 내보내기' : '엑셀 내보내기'}
           </button>
           <button
             onClick={handleDelete}

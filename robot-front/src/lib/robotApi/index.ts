@@ -499,6 +499,14 @@ export const shutdownPendant = async (): Promise<{ status_code: number; data?: {
   const response = await api.post('/system/pendant-shutdown', {}, { timeout: 10000 });
   return response.data;
 };
+// [v1.1.295] 정품 펜던트(리눅스) 전용: 화면에서 만든 파일을 코어가 USB 에 저장 (연결 -> 저장 -> sync -> 해제)
+export const saveFileToPendantUsb = async (
+  filename: string,
+  content: string,
+): Promise<{ status_code: number; data?: { message?: string; path?: string } }> => {
+  const response = await api.post('/system/usb-save-file', { filename, content }, { timeout: 30000 });
+  return response.data;
+};
 export const getSystemInfo = async (): Promise<SystemInfo> => {
   try {
     const response = await api.get('/system/system-info');

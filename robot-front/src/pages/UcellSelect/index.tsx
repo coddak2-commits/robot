@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, History } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import { useTeachingPoints, useRobotControl, useJobManagement, useWeldingOperations, usePathTracking, useSchematicCalculations, usePathVisualization, useCenterlineNavigation, useWeldingHandlers, useWireControl, useCellSelectionHandlers, useAutoSavePoints } from './hooks';
-import { UnifiedWorkspaceCanvas, UCellConfig, TeachingTabContent, JobListModal, OperationHistoryPanel, LeftSidebar, SecondarySidebar, ToolbarControls } from './components/index';
+import { UnifiedWorkspaceCanvas, UCellConfig, TeachingTabContent, JobListModal, LeftSidebar, SecondarySidebar, ToolbarControls } from './components/index';
 import { CameraCaptureButton } from './components/CameraCaptureButton';
 import { useRobotWebSocket } from '../../hooks';
 import { createLogger } from '../../lib';
@@ -591,13 +591,7 @@ export function CellSelectionCore({
                 <MapPin className="w-4 h-4 inline mr-1.5" />
                 티칭
               </button>
-              <button
-                onClick={() => setActiveTab('history')}
-                className={`tb-tab px-5 py-2.5 text-sm font-medium transition whitespace-nowrap ${activeTab === 'history' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-gray-500 hover:text-gray-300'}`}
-              >
-                <History className="w-4 h-4 inline mr-1.5" />
-                작업내역
-              </button>
+              {/* [v1.1.295] 작업내역 탭은 대시보드로 옮김 */}
             </div>
           </div>
           {activeTab === 'teaching' ? (
@@ -742,13 +736,7 @@ export function CellSelectionCore({
                 </div>
               </div>
             </div>
-          ) : (
-            <div className="flex-1 min-h-0 mt-2">
-              <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700/50 h-full overflow-hidden">
-                <OperationHistoryPanel />
-              </div>
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
       <JobListModal

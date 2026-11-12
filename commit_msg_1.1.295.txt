@@ -1,0 +1,11 @@
+v1.1.295: 작업내역·촬영 기록 내보내기 대시보드로 이동, 펜던트 작업내역 USB 저장
+
+- Dashboard.tsx: OperationHistoryPanel, CameraExportButton 추가
+- UcellSelect/index.tsx: 작업내역 탭 제거
+- pendant/index.tsx: CameraExportButton 제거
+- OperationHistoryPanel.tsx: 코어가 Linux 면 saveFileToPendantUsb 로 USB 저장
+- robot_core_all.cpp: POST /system/usb-save-file (mount -> write -> sync -> size check -> umount)
+- 버전 1.1.295
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77
