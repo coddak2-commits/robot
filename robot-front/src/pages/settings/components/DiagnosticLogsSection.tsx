@@ -4,7 +4,8 @@ import { sendDiagnosticLogsEmail, downloadLogsZipUrl, getSystemInfo, exportLogsT
 
 const LS_LOG_EMAIL = 'vot.diagnosticLogs.recipient';
 const LS_LOG_AUTO = 'vot.diagnosticLogs.autoSendOnError';
-const LS_LOG_DAYS = 'vot.diagnosticLogs.days';
+// [v1.1.297] 기본 기간 7 -> 1일. 예전 저장값(7)을 따라가지 않게 키 이름을 바꿈
+const LS_LOG_DAYS = 'vot.diagnosticLogs.days.v2';
 const LS_LOG_MAX = 'vot.diagnosticLogs.maxFiles';
 const DEFAULT_RECIPIENT = 'coddak2@gmail.com';
 export const DiagnosticLogsSection: React.FC = () => {
@@ -15,9 +16,12 @@ export const DiagnosticLogsSection: React.FC = () => {
     () => localStorage.getItem(LS_LOG_AUTO) === '1',
   );
   const [logDays, setLogDays] = useState<number>(() => {
-    const v = parseInt(localStorage.getItem(LS_LOG_DAYS) || '7', 10);
-    return Number.isFinite(v) && v > 0 ? v : 7;
+    const v = parseInt(localStorage.getItem(LS_LOG_DAYS) || '1', 10);
+    return Number.isFinite(v) && v > 0 ? Math.min(30, v) : 1;
   });
+  // [v1.1.297] 입력 중 칸을 비우면 바로 7 로 돌아가 숫자를 바꿀 수 없었다. 입력 글자는 따로 들고,
+  // 숫자로 읽히면 1~30 으로 맞춰 쓰고, 칸을 벗어나면 실제 값으로 되돌린다.
+  const [logDaysText, setLogDaysText] = useState<string>(() => String(logDays));
   const [logMaxFiles, setLogMaxFiles] = useState<number>(() => {
     const v = parseInt(localStorage.getItem(LS_LOG_MAX) || '1', 10);
     return Number.isFinite(v) && v > 0 ? v : 1;
@@ -112,8 +116,13 @@ export const DiagnosticLogsSection: React.FC = () => {
               type="number"
               min={1}
               max={30}
-              value={logDays}
-              onChange={e => setLogDays(Math.max(1, Math.min(30, parseInt(e.target.value) || 7)))}
+              value={logDaysText}
+              onChange={e => {
+                setLogDaysText(e.target.value);
+                const v = parseInt(e.target.value, 10);
+                if (Number.isFinite(v)) setLogDays(Math.max(1, Math.min(30, v)));
+              }}
+              onBlur={() => setLogDaysText(String(logDays))}
               className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm focus:border-purple-500 focus:outline-none"
             />
             <p className="text-[10px] text-gray-500 mt-0.5">이내</p>

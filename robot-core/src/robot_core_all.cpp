@@ -7186,7 +7186,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.296"
+#define APP_VERSION_STRING "1.1.297"
 #ifndef _WIN32
 // [v1.1.296] 정품 펜던트 USB 연결/해제 (작업내역 CSV, 진단 로그 내보내기 공용)
 namespace PendantUsb {
@@ -8851,15 +8851,54 @@ std::string DatabaseService::convertIso8601ToDatetime(const std::string& iso8601
     }
     return result;
 }
+// [v1.1.297] 연결이 꼬이거나 끊기면 다시 연결한 뒤 같은 쿼리를 한 번 더 보낸다.
+// 2026-11-13 14:33 비상정지가 몰릴 때 잠금 없이 쓰던 logDebug 와 다른 조회가 한 연결에 겹쳐
+// 'Commands out of sync' 가 났고, 재시작(14:47) 전까지 모든 쿼리가 실패했다(작업 목록 비어 보임,
+// 작업내역·저장 실패). 잠금은 logDebug/logApp 에 추가했고, 여기서는 그래도 꼬였을 때 스스로 풀리게 한다.
+// 호출하는 쪽이 m_mutex 를 잡고 있으므로 reconnect()(잠금을 다시 잡음) 대신 여기서 직접 다시 연결한다.
+// 2006 server gone / 2013 lost / 2014 commands out of sync / 2027 malformed packet
 bool DatabaseService::executeQuery(const std::string& query) {
-    if (!m_conn) {
+    auto reopen = [this]() -> bool {
+        static auto lastTry = std::chrono::steady_clock::time_point{};
+        auto now = std::chrono::steady_clock::now();
+        if (lastTry.time_since_epoch().count() != 0 && now - lastTry < std::chrono::seconds(5)) return false;
+        lastTry = now;
+        if (m_conn) { mysql_close(m_conn); m_conn = nullptr; }
+        m_connected = false;
+        if (m_host.empty() && m_database.empty()) return false;  // connect() 전
+        m_conn = mysql_init(nullptr);
+        if (!m_conn) return false;
+        unsigned int timeout = 5;
+        mysql_options(m_conn, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
+        bool autoReconnect = true;
+        mysql_options(m_conn, MYSQL_OPT_RECONNECT, &autoReconnect);
+        mysql_options(m_conn, MYSQL_SET_CHARSET_NAME, "utf8mb4");
+        if (!mysql_real_connect(m_conn, m_host.c_str(), m_user.c_str(), m_password.c_str(),
+                                m_database.c_str(), m_port, nullptr, 0)) {
+            FLOG_ERROR("DatabaseService", std::string("DB 다시 연결 실패: ") + mysql_error(m_conn));
+            mysql_close(m_conn);
+            m_conn = nullptr;
+            return false;
+        }
+        m_connected = true;
+        FLOG_WARN("DatabaseService", "DB 다시 연결함");
+        return true;
+    };
+    if (!m_conn && !reopen()) {
         m_lastError = "Not connected";
         return false;
     }
     if (mysql_query(m_conn, query.c_str()) != 0) {
+        unsigned int err = mysql_errno(m_conn);
         m_lastError = mysql_error(m_conn);
         std::cerr << "[DatabaseService] Query failed: " << m_lastError << std::endl;
         FLOG_ERROR("DatabaseService", "쿼리 실패: " + m_lastError);
+        if (err == 2006 || err == 2013 || err == 2014 || err == 2027) {
+            if (reopen() && mysql_query(m_conn, query.c_str()) == 0) {
+                FLOG_WARN("DatabaseService", "다시 연결 후 쿼리 성공");
+                return true;
+            }
+        }
         return false;
     }
     return true;
@@ -10148,6 +10187,9 @@ WeldingLog DatabaseService::jsonToWeldingLog(const json& j) {
 #include <iostream>
 #include <sstream>
 bool DatabaseService::logDebug(const std::string& source, const std::string& action, const std::string& details) {
+    // [v1.1.297] 잠금 추가. 비상정지·위빙 끝·아크 OFF 요청이 동시에 여러 개 들어올 때
+    // 다른 조회와 같은 연결을 겹쳐 써서 'Commands out of sync' 가 났다(2026-11-13 14:33).
+    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_conn || !m_connected) {
         return false;
     }
@@ -10156,10 +10198,7 @@ bool DatabaseService::logDebug(const std::string& source, const std::string& act
           << "'" << escapeString(source) << "', "
           << "'" << escapeString(action) << "', "
           << "'" << escapeString(details) << "')";
-    if (mysql_query(m_conn, query.str().c_str()) != 0) {
-        return false;
-    }
-    return true;
+    return executeQuery(query.str());
 }
 json DatabaseService::getDebugLogs(int limit) {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -10249,6 +10288,7 @@ json DatabaseService::getRobotErrorEvents(int limit, int offset, int days) {
 bool DatabaseService::logApp(const std::string& level, const std::string& source, const std::string& page,
                              const std::string& action, const std::string& message, const json& data,
                              double duration_ms, const std::string& error_code, const std::string& error_stack) {
+    std::lock_guard<std::mutex> lock(m_mutex);  // [v1.1.297] logDebug 와 같은 이유
     if (!m_conn || !m_connected) {
         return false;
     }
@@ -10263,10 +10303,7 @@ bool DatabaseService::logApp(const std::string& level, const std::string& source
           << (duration_ms < 0 ? "NULL" : std::to_string(duration_ms)) << ", "
           << (error_code.empty() ? "NULL" : "'" + escapeString(error_code) + "'") << ", "
           << (error_stack.empty() ? "NULL" : "'" + escapeString(error_stack) + "'") << ")";
-    if (mysql_query(m_conn, query.str().c_str()) != 0) {
-        return false;
-    }
-    return true;
+    return executeQuery(query.str());
 }
 bool DatabaseService::logAppBatch(const json& logs) {
     if (!m_conn || !m_connected || !logs.is_array() || logs.empty()) {

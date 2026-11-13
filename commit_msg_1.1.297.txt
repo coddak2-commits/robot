@@ -1,0 +1,8 @@
+v1.1.297: DB Commands out of sync 자동 복구, 진단 로그 기간 기본 1일
+
+- robot_core_all.cpp: logDebug/logApp m_mutex 잠금, executeQuery 연결 오류 시 재연결 후 1회 재시도
+- DiagnosticLogsSection.tsx: 기간 입력 글자 상태 분리, 기본 1일(저장 키 v2)
+- 버전 1.1.297
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77
