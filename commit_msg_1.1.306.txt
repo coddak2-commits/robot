@@ -1,0 +1,10 @@
+v1.1.306: 펜던트 DB 하루 한 번 자동 백업
+
+- robot_core_all.cpp: PendantDbBackup::makeLocal (수동·자동 공용, .part 로 쓰고 이름 바꿈), hasToday, startAutoBackup
+- 코어 시작 60초 뒤 오늘 백업이 없으면 ~/vot/db-backup 에 하나 만듦 (USB 안 씀)
+- 펜던트 보관 5 -> 10개
+- DbBackupSection.tsx: 안내 문구
+- 버전 1.1.306
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77

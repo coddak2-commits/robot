@@ -7186,7 +7186,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.305"
+#define APP_VERSION_STRING "1.1.306"
 #ifndef _WIN32
 #include <cstdio>
 #include <map>
@@ -7368,6 +7368,98 @@ set -o pipefail
   mysqldump --defaults-extra-file="$CNF" --single-transaction --default-character-set=utf8mb4 --no-create-info \
     --ignore-table="$DB.app_logs" --ignore-table="$DB.debug_logs" "$DB"; } | gzip > "$OUT"
 )SH";
+// [v1.1.306] 펜던트 보관 개수 5 -> 10 (하루 한 번 자동 백업이 같은 폴더에 들어가므로)
+static const size_t kKeep = 10;
+static std::mutex& mtx() { static std::mutex m; return m; }
+static fs::path dir() { return PendantUpdate::votDir() / "db-backup"; }
+static bool isBackupName(const std::string& n) {
+    return n.rfind("robot_welding_", 0) == 0 && n.size() > 30 && n.compare(n.size() - 7, 7, ".sql.gz") == 0;
+}
+// 이름 끝 'YYYYMMDD_HHMMSS.sql.gz'(22자) 로 시간 순 정렬
+static std::string stampOf(const std::string& n) { return n.substr(n.size() - 22); }
+// 펜던트에 백업 파일 하나를 만들고 최근 kKeep 개만 남긴다. 실패하면 false + err.
+// 만드는 동안은 .part 이름으로 쓰고, 끝나면 정식 이름으로 바꾼다 (중간에 꺼져도 깨진 파일이 목록에 안 나옴)
+static bool makeLocal(std::string& name, long long& size, std::string& err) {
+    std::lock_guard<std::mutex> lk(mtx());
+    std::error_code ec;
+    fs::path d = dir();
+    fs::create_directories(d, ec);
+    std::time_t t = std::time(nullptr);
+    std::tm tmv{};
+    localtime_r(&t, &tmv);
+    char ts[32] = {0};
+    std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tmv);
+    name = std::string("robot_welding_") + APP_VERSION_STRING + "_" + ts + ".sql.gz";
+    fs::path out = d / name, part = d / (name + ".part"), cnf = d / ".backup.cnf", script = d / "run_backup.sh", errf = d / "backup.err";
+    auto& cfg = ConfigService::instance();
+    {
+        std::ofstream c(cnf, std::ios::trunc);
+        c << "[client]\nuser=" << cfg.getDbUser() << "\npassword=" << cfg.getDbPassword()
+          << "\nhost=" << cfg.getDbHost() << "\nport=" << cfg.getDbPort() << "\n";
+    }
+    fs::permissions(cnf, fs::perms::owner_read | fs::perms::owner_write, ec);
+    {
+        std::string body(kScript);
+        body.erase(std::remove(body.begin(), body.end(), '\r'), body.end());
+        std::ofstream s(script, std::ios::binary | std::ios::trunc);
+        s << body;
+    }
+    std::string cmd = "/bin/bash '" + script.string() + "' '" + cnf.string() + "' '" + cfg.getDbName() + "' '" +
+                      part.string() + "' 2> '" + errf.string() + "'";
+    int rc = std::system(cmd.c_str());
+    fs::remove(cnf, ec);
+    size = (long long)fs::file_size(part, ec);
+    if (rc != 0 || ec || size < 100) {
+        std::ifstream ef(errf);
+        std::getline(ef, err, '\0');
+        if (err.size() > 300) err = err.substr(err.size() - 300);
+        err = "(rc=" + std::to_string(rc) + ") " + err;
+        fs::remove(part, ec);
+        return false;
+    }
+    fs::rename(part, out, ec);
+    if (ec) { err = "이름 바꾸기 실패: " + ec.message(); fs::remove(part, ec); return false; }
+    std::vector<fs::path> olds;
+    for (auto& e : fs::directory_iterator(d, ec)) {
+        std::string n = e.path().filename().string();
+        if (isBackupName(n)) olds.push_back(e.path());
+    }
+    std::sort(olds.begin(), olds.end(), [](const fs::path& a, const fs::path& b) {
+        return stampOf(a.filename().string()) < stampOf(b.filename().string());
+    });
+    while (olds.size() > kKeep) { fs::remove(olds.front(), ec); olds.erase(olds.begin()); }
+    return true;
+}
+// 오늘 날짜 백업(자동·수동)이 이미 있는지
+static bool hasToday() {
+    std::time_t t = std::time(nullptr);
+    std::tm tmv{};
+    localtime_r(&t, &tmv);
+    char day[16] = {0};
+    std::strftime(day, sizeof(day), "%Y%m%d", &tmv);
+    std::error_code ec;
+    for (auto& e : fs::directory_iterator(dir(), ec)) {
+        std::string n = e.path().filename().string();
+        if (isBackupName(n) && stampOf(n).compare(0, 8, day) == 0) return true;
+    }
+    return false;
+}
+// [v1.1.306] 자동 백업: 코어가 켜지고 60초 뒤(DB·화면이 다 뜬 뒤), 오늘 백업이 없으면 펜던트에 하나 만든다.
+// USB 는 쓰지 않는다. 실패해도 로그만 남긴다.
+static void startAutoBackup() {
+    std::thread([]() {
+        std::this_thread::sleep_for(std::chrono::seconds(60));
+        if (g_arcActive.load()) { FLOG_INFO("System", "auto DB backup skipped (welding)"); return; }
+        if (hasToday()) { FLOG_INFO("System", "auto DB backup skipped (today exists)"); return; }
+        std::string name, err;
+        long long size = 0;
+        if (makeLocal(name, size, err)) {
+            FLOG_INFO("System", "auto DB backup " + name + " size=" + std::to_string(size));
+        } else {
+            FLOG_ERROR("System", "auto DB backup failed " + err);
+        }
+    }).detach();
+}
 }  // namespace PendantDbBackup
 // [v1.1.302] 펜던트 DB 복원 (설정 > 업데이트 > 'DB 백업·복원'). 우리 백업 파일(robot_welding_버전_날짜_시각.sql.gz)만 받는다.
 // USB 의 vot-db-backup 또는 펜던트의 ~/vot/db-backup 에서 고른다. 복원 순서(아래 스크립트, systemd-run 으로 따로 실행):
@@ -7446,6 +7538,9 @@ st done "완료"
 }  // namespace PendantDbRestore
 #endif
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
+#ifndef _WIN32
+    PendantDbBackup::startAutoBackup();  // [v1.1.306] 하루 한 번 펜던트 DB 자동 백업
+#endif
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         HttpRouteHelpers::setCorsHeaders(res);
         json data;
@@ -7739,53 +7834,14 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
         if (!isLoopback) { reply(403, {{"message", "펜던트 화면에서만 사용할 수 있습니다."}}); return; }
         if (g_arcActive.load()) { reply(409, {{"message", "용접 중에는 백업할 수 없습니다."}}); return; }
         std::error_code ec;
-        fs::path dir = PendantUpdate::votDir() / "db-backup";
-        fs::create_directories(dir, ec);
-        std::time_t t = std::time(nullptr);
-        std::tm tmv{};
-        localtime_r(&t, &tmv);
-        char ts[32] = {0};
-        std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tmv);
-        std::string name = std::string("robot_welding_") + APP_VERSION_STRING + "_" + ts + ".sql.gz";
-        fs::path out = dir / name, cnf = dir / ".backup.cnf", script = dir / "run_backup.sh", errf = dir / "backup.err";
-        auto& cfg = ConfigService::instance();
-        {
-            std::ofstream c(cnf, std::ios::trunc);
-            c << "[client]\nuser=" << cfg.getDbUser() << "\npassword=" << cfg.getDbPassword()
-              << "\nhost=" << cfg.getDbHost() << "\nport=" << cfg.getDbPort() << "\n";
-        }
-        fs::permissions(cnf, fs::perms::owner_read | fs::perms::owner_write, ec);
-        {
-            std::string body(PendantDbBackup::kScript);
-            body.erase(std::remove(body.begin(), body.end(), '\r'), body.end());
-            std::ofstream s(script, std::ios::binary | std::ios::trunc);
-            s << body;
-        }
-        std::string cmd = "/bin/bash '" + script.string() + "' '" + cnf.string() + "' '" + cfg.getDbName() + "' '" +
-                          out.string() + "' 2> '" + errf.string() + "'";
-        int rc = std::system(cmd.c_str());
-        fs::remove(cnf, ec);
-        long long size = (long long)fs::file_size(out, ec);
-        if (rc != 0 || ec || size < 100) {
-            std::string err;
-            std::ifstream ef(errf);
-            std::getline(ef, err, '\0');
-            if (err.size() > 300) err = err.substr(err.size() - 300);
-            fs::remove(out, ec);
-            FLOG_ERROR("System", "DB backup failed rc=" + std::to_string(rc) + " " + err);
-            reply(500, {{"message", "DB 백업 실패 (rc=" + std::to_string(rc) + ") " + err}});
+        std::string name, berr;
+        long long size = 0;
+        if (!PendantDbBackup::makeLocal(name, size, berr)) {
+            FLOG_ERROR("System", "DB backup failed " + berr);
+            reply(500, {{"message", "DB 백업 실패 " + berr}});
             return;
         }
-        // 펜던트에는 최근 5개만 남긴다 (이름이 시각 순)
-        std::vector<fs::path> olds;
-        for (auto& e : fs::directory_iterator(dir, ec)) {
-            std::string n = e.path().filename().string();
-            if (n.rfind("robot_welding_", 0) == 0 && n.size() > 7 && n.compare(n.size() - 7, 7, ".sql.gz") == 0) olds.push_back(e.path());
-        }
-        std::sort(olds.begin(), olds.end(), [](const fs::path& a, const fs::path& b) {
-            return a.filename().string().substr(a.filename().string().size() - 22) < b.filename().string().substr(b.filename().string().size() - 22);
-        });
-        while (olds.size() > 5) { fs::remove(olds.front(), ec); olds.erase(olds.begin()); }
+        fs::path out = PendantDbBackup::dir() / name;
 
         std::lock_guard<std::mutex> lk(PendantUsb::mtx());
         std::string err;

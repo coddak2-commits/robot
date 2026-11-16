@@ -1,6 +1,6 @@
 // [v1.1.301] 펜던트 DB 백업 (설정 > 업데이트, 코어가 리눅스일 때만 보임).
 // 교시 작업·포인트·설정·작업내역을 USB 의 vot-db-backup 폴더에 저장한다(화면·디버그 로그는 구조만).
-// 펜던트에도 최근 5개를 남긴다(~/vot/db-backup).
+// 펜던트에도 최근 10개를 남긴다(~/vot/db-backup). [v1.1.306] 하루 한 번 자동 백업도 같은 폴더(5 -> 10개).
 // [v1.1.302] 복원 추가. USB 또는 펜던트 보관본에서 고른다. 복원 전에 지금 DB 를 자동으로 백업하고,
 // 실패하면 그 백업으로 되돌린다. 복원 중에는 프로그램이 잠시 꺼진다. 끝나면 화면을 새로 불러온다.
 // [v1.1.303] 복원 확인을 window.prompt('복원' 입력) 대신 화면 안 확인 창(체크 + 버튼)으로 바꿈.
@@ -101,7 +101,7 @@ export const DbBackupSection: React.FC = () => {
       </h3>
       <p className="text-gray-400 text-xs mb-4">
         교시 작업·포인트·설정·작업내역을 USB 의 <code className="px-1 bg-gray-700 rounded text-cyan-300">vot-db-backup</code> 폴더에 저장합니다.
-        화면 로그·디버그 로그는 빼고 저장합니다. 펜던트에도 최근 5개를 보관합니다. USB 를 먼저 꽂으세요.
+        화면 로그·디버그 로그는 빼고 저장합니다. 펜던트에도 최근 10개를 보관합니다(하루 한 번 자동 백업 포함). USB 를 먼저 꽂으세요.
       </p>
       {running && (
         <div className="mb-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center gap-3">
