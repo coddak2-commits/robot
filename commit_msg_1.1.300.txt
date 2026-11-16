@@ -1,0 +1,9 @@
+v1.1.300: 펜던트 USB 업데이트 버튼
+
+- robot_core_all.cpp: namespace PendantUpdate(내장 업데이트 스크립트, 상태 파일), /system/usb-update/status|scan|start
+- UsbUpdateSection.tsx 신규, UpdateTab.tsx 에서 리눅스일 때 표시
+- robotApi: coreFetch(토큰, fetch), getUsbUpdateStatus, scanUsbUpdates, startUsbUpdate
+- 버전 1.1.300
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77

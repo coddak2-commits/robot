@@ -4,6 +4,7 @@ import type { VersionInfo, SystemInfo } from '..';
 import { useUpdaterContext } from '../../../contexts';
 import { percent, displayProgress } from '../../../lib/updater';
 import { DiagnosticLogsSection } from './DiagnosticLogsSection';
+import { UsbUpdateSection } from './UsbUpdateSection';
 
 interface UpdateTabProps {
   versionInfo: VersionInfo | null;
@@ -183,6 +184,12 @@ const UpdateTab: React.FC<UpdateTabProps> = ({ versionInfo, systemInfo }) => {
           </div>
         </div>
       </div>
+      {/* [v1.1.300] 펜던트(코어가 리눅스)에서만 USB 업데이트 */}
+      {systemInfo?.platform === 'Linux' && (
+        <div className="mt-6">
+          <UsbUpdateSection />
+        </div>
+      )}
       {}
       <div className="mt-6">
         <DiagnosticLogsSection />

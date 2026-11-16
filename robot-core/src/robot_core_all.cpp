@@ -7186,9 +7186,10 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.299"
+#define APP_VERSION_STRING "1.1.300"
 #ifndef _WIN32
 #include <cstdio>
+#include <map>
 // [v1.1.298] systemd 서비스 상태 (상태 점검 화면용). 없는 서비스는 "not-found"
 static std::string serviceState(const std::string& name) {
     std::string cmd = "systemctl show -p LoadState -p ActiveState " + name + " 2>/dev/null";
@@ -7248,6 +7249,114 @@ static bool unmount() {
     return std::system((sudo() + "umount " + kMountPoint).c_str()) == 0 || !isMounted();
 }
 }  // namespace PendantUsb
+// [v1.1.300] 펜던트 USB 업데이트. 설정 > 업데이트 > 'USB 업데이트'.
+// USB 맨 위의 pendant-update-1.1.X.tar.gz 를 골라 설치하면, 아래 스크립트를 systemd-run 으로 따로 띄운다
+// (vot-core 재시작 때 같이 죽지 않게). 스크립트는 지금까지 터미널로 하던 순서를 그대로 한다:
+// USB 연결 -> ~/vot 로 복사 -> 해제 -> 압축 풀기 -> 현재 파일 백업 -> 화면·코어 소스 복사 -> build_linux.sh -> vot-core 재시작.
+// 빌드나 복사가 실패하면 백업으로 되돌리고 멈춘다(프로그램은 예전 버전 그대로 돈다).
+// 진행 상황은 ~/vot/usb-update/status (key=value), 자세한 내용은 ~/vot/usb-update/update.log.
+namespace PendantUpdate {
+static fs::path votDir() { return fs::weakly_canonical(fs::path(linuxExeDir()) / ".." / ".." / ".."); }
+static fs::path workDir() { return votDir() / "usb-update"; }
+// pendant-update-1.1.300.tar.gz 형식만 받는다 (숫자 3개). 버전 문자열을 돌려준다, 아니면 ""
+static std::string versionOf(const std::string& name) {
+    const std::string pre = "pendant-update-", suf = ".tar.gz";
+    if (name.size() <= pre.size() + suf.size() || name.compare(0, pre.size(), pre) != 0 ||
+        name.compare(name.size() - suf.size(), suf.size(), suf) != 0) return "";
+    std::string v = name.substr(pre.size(), name.size() - pre.size() - suf.size());
+    int dots = 0;
+    bool digit = false;
+    for (char c : v) {
+        if (c == '.') { if (!digit) return ""; dots++; digit = false; }
+        else if (c >= '0' && c <= '9') digit = true;
+        else return "";
+    }
+    return (dots == 2 && digit) ? v : "";
+}
+static std::vector<int> verNums(const std::string& v) {
+    std::vector<int> n;
+    std::stringstream ss(v);
+    std::string p;
+    while (std::getline(ss, p, '.')) n.push_back(std::atoi(p.c_str()));
+    return n;
+}
+static std::map<std::string, std::string> readStatus() {
+    std::map<std::string, std::string> m;
+    std::ifstream in(workDir() / "status");
+    std::string line;
+    while (std::getline(in, line)) {
+        size_t eq = line.find('=');
+        if (eq != std::string::npos) m[line.substr(0, eq)] = line.substr(eq + 1);
+    }
+    return m;
+}
+static bool isRunningPhase(const std::string& p) { return !p.empty() && p != "done" && p != "error" && p != "idle"; }
+// 진행 중으로 남아 있어도 30분 넘게 안 바뀌었으면(도중에 전원이 꺼진 경우 등) 끝난 것으로 본다
+static bool statusStale() {
+    std::error_code ec;
+    auto t = fs::last_write_time(workDir() / "status", ec);
+    if (ec) return true;
+    return fs::file_time_type::clock::now() - t > std::chrono::minutes(30);
+}
+static const char* kScript = R"SH(#!/bin/bash
+VOT="$1"; FILE="$2"
+U="$VOT/usb-update"; ST="$U/status"; LOG="$U/update.log"
+CORE="$VOT/robot/robot-core"; B="$U/backup"
+mkdir -p "$U"
+st() { printf 'phase=%s\nmessage=%s\nfile=%s\ntime=%s\n' "$1" "$2" "$FILE" "$(date '+%F %T')" > "$ST.tmp" && mv "$ST.tmp" "$ST"; echo "[$(date '+%T')] $2" >> "$LOG"; }
+fail() { st error "$1"; mountpoint -q /mnt/usb && sudo -n umount /mnt/usb >>"$LOG" 2>&1; exit 1; }
+restore() {
+  echo "[$(date '+%T')] 백업으로 되돌림" >> "$LOG"
+  cp "$B/robot_core_all.cpp" "$CORE/src/" ; cp "$B/robot_core_all.h" "$CORE/include/"
+  rm -rf "$CORE/build-linux/www" ; cp -a "$B/www" "$CORE/build-linux/www"
+  cp --remove-destination "$B/robot_core" "$CORE/build-linux/robot_core"
+}
+: > "$LOG"
+st mount "USB 연결 중"
+DEV=""
+for c in a b c d e f g h; do
+  if [ -b "/dev/sd${c}1" ]; then DEV="/dev/sd${c}1"; break; elif [ -b "/dev/sd${c}" ]; then DEV="/dev/sd${c}"; break; fi
+done
+[ -n "$DEV" ] || fail "USB 를 찾지 못했습니다. 꽂았는지 확인하세요"
+if ! mountpoint -q /mnt/usb; then
+  sudo -n mkdir -p /mnt/usb
+  IDS="uid=$(id -u),gid=$(id -g)"
+  sudo -n mount -o "$IDS,utf8" "$DEV" /mnt/usb >>"$LOG" 2>&1 || sudo -n mount -o "$IDS" "$DEV" /mnt/usb >>"$LOG" 2>&1 || sudo -n mount "$DEV" /mnt/usb >>"$LOG" 2>&1 || fail "USB 연결(mount) 실패: $DEV"
+fi
+[ -f "/mnt/usb/$FILE" ] || fail "USB 에 $FILE 이 없습니다"
+st copy "묶음 복사 중"
+cp "/mnt/usb/$FILE" "$VOT/$FILE" >>"$LOG" 2>&1 || fail "USB 에서 복사 실패"
+sync
+sudo -n umount /mnt/usb >>"$LOG" 2>&1
+st extract "압축 푸는 중 (USB 를 뽑아도 됩니다)"
+NAME="${FILE%.tar.gz}"
+cd "$VOT" || fail "$VOT 폴더 없음"
+rm -rf "$VOT/$NAME"
+tar xzf "$FILE" >>"$LOG" 2>&1 || fail "압축 풀기 실패 (파일이 깨졌을 수 있습니다. 다시 복사해 보세요)"
+P="$VOT/$NAME"
+[ -f "$P/www/index.html" ] && [ -f "$P/robot-core/src/robot_core_all.cpp" ] && [ -f "$P/robot-core/include/robot_core_all.h" ] || fail "묶음 안에 필요한 파일이 없습니다 (아무것도 바꾸지 않음)"
+st backup "현재 버전 백업 중"
+rm -rf "$B"; mkdir -p "$B"
+cp -a "$CORE/build-linux/www" "$B/www" && cp "$CORE/src/robot_core_all.cpp" "$B/" && cp "$CORE/include/robot_core_all.h" "$B/" && cp "$CORE/build-linux/robot_core" "$B/" || fail "백업 실패 (아무것도 바꾸지 않음)"
+st install "새 파일 넣는 중"
+chmod -R u+w "$CORE/build-linux/www" >>"$LOG" 2>&1
+if ! { cp -r "$P/www/." "$CORE/build-linux/www/" && cp "$P/robot-core/src/robot_core_all.cpp" "$CORE/src/" && cp "$P/robot-core/include/robot_core_all.h" "$CORE/include/"; } >>"$LOG" 2>&1; then
+  restore; fail "새 파일 복사 실패 (원래대로 되돌림)"
+fi
+st build "빌드 중 (몇 분 걸립니다. 전원을 끄지 마세요)"
+cd "$CORE" || { restore; fail "$CORE 폴더 없음 (원래대로 되돌림)"; }
+./build_linux.sh >>"$LOG" 2>&1
+if ! grep -q "BUILD-OK" "$LOG"; then
+  restore; fail "빌드 실패 (원래대로 되돌림. update.log 확인)"
+fi
+st restart "프로그램 재시작 중 (화면이 잠시 끊깁니다)"
+sync
+if ! sudo -n systemctl restart vot-core >>"$LOG" 2>&1; then
+  st error "재시작 실패. 터미널에서 sudo systemctl restart vot-core"; exit 1
+fi
+st done "완료"
+)SH";
+}  // namespace PendantUpdate
 #endif
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
@@ -7407,6 +7516,122 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
         if (!sizeOk) { reply(500, "USB 저장 실패 (" + name + "). USB 공간이나 쓰기 보호를 확인하세요."); return; }
         if (!unmounted) { reply(500, "저장은 됐지만 USB 해제 실패. 터미널에서 cd ~ && sync && sudo umount /mnt/usb"); return; }
         reply(200, "저장 완료", dst.string());
+#endif
+    });
+    // [v1.1.300] 펜던트 USB 업데이트 (설정 > 업데이트). 설명은 위 namespace PendantUpdate.
+    // scan: USB 의 묶음 목록 / start: 설치 시작 / status: 진행 상황. 이 기기 화면(localhost)에서만 받는다.
+    server.Options(R"(/system/usb-update/.*)", [](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        res.status = 200;
+    });
+    server.Get("/system/usb-update/status", [](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        json d = {{"current_version", APP_VERSION_STRING}};
+#ifdef _WIN32
+        (void)req;
+        d["supported"] = false;
+#else
+        d["supported"] = true;
+        auto m = PendantUpdate::readStatus();
+        std::string phase = m.count("phase") ? m["phase"] : "idle";
+        d["phase"] = phase;
+        d["message"] = m.count("message") ? m["message"] : "";
+        d["file"] = m.count("file") ? m["file"] : "";
+        d["time"] = m.count("time") ? m["time"] : "";
+        d["running"] = PendantUpdate::isRunningPhase(phase) && !PendantUpdate::statusStale();
+        std::vector<std::string> lines;
+        std::ifstream in(PendantUpdate::workDir() / "update.log");
+        std::string line;
+        while (std::getline(in, line)) {
+            lines.push_back(line);
+            if (lines.size() > 40) lines.erase(lines.begin());
+        }
+        d["log_tail"] = lines;
+#endif
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, d).dump(), "application/json");
+    });
+    server.Post("/system/usb-update/scan", [](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        auto reply = [&res](int code, const json& d) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(code, d).dump(), "application/json");
+        };
+#ifdef _WIN32
+        (void)req;
+        reply(400, {{"message", "펜던트(리눅스)에서만 사용할 수 있습니다."}});
+#else
+        bool isLoopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        if (!isLoopback) { reply(403, {{"message", "펜던트 화면에서만 사용할 수 있습니다."}}); return; }
+        std::lock_guard<std::mutex> lk(PendantUsb::mtx());
+        std::string err;
+        if (!PendantUsb::mount(err)) { reply(err.find("찾지") != std::string::npos ? 404 : 500, {{"message", err}}); return; }
+        json files = json::array();
+        std::error_code ec;
+        for (auto& e : fs::directory_iterator(PendantUsb::kMountPoint, ec)) {
+            std::string name = e.path().filename().string();
+            std::string v = PendantUpdate::versionOf(name);
+            if (v.empty() || !e.is_regular_file(ec)) continue;
+            files.push_back({{"file", name}, {"version", v}, {"size", (long long)fs::file_size(e.path(), ec)}});
+        }
+        PendantUsb::unmount();
+        std::sort(files.begin(), files.end(), [](const json& a, const json& b) {
+            return PendantUpdate::verNums(a["version"].get<std::string>()) > PendantUpdate::verNums(b["version"].get<std::string>());
+        });
+        reply(200, {{"files", files}, {"current_version", APP_VERSION_STRING}});
+#endif
+    });
+    server.Post("/system/usb-update/start", [](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        auto reply = [&res](int code, const std::string& msg) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(code, {{"message", msg}}).dump(), "application/json");
+        };
+#ifdef _WIN32
+        (void)req;
+        reply(400, "펜던트(리눅스)에서만 사용할 수 있습니다.");
+#else
+        bool isLoopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        if (!isLoopback) { reply(403, "펜던트 화면에서만 사용할 수 있습니다."); return; }
+        if (g_arcActive.load()) { reply(409, "용접 중에는 업데이트할 수 없습니다."); return; }
+        if (g_robotService && g_robotService->isConnected()) {
+            ROBOT_STATE_PKG st = g_robotService->getCachedState();
+            if (st.robot_state == 2) { reply(409, "로봇 이동 중에는 업데이트할 수 없습니다."); return; }
+        }
+        json body = json::parse(req.body.empty() ? "{}" : req.body, nullptr, false);
+        std::string file = (body.is_object() && body.contains("file") && body["file"].is_string()) ? body["file"].get<std::string>() : "";
+        if (PendantUpdate::versionOf(file).empty()) { reply(400, "묶음 파일 이름이 올바르지 않습니다."); return; }
+        auto m = PendantUpdate::readStatus();
+        if (m.count("phase") && PendantUpdate::isRunningPhase(m["phase"]) && !PendantUpdate::statusStale()) {
+            reply(409, "이미 업데이트 중입니다."); return;
+        }
+        std::error_code ec;
+        fs::path wd = PendantUpdate::workDir();
+        fs::create_directories(wd, ec);
+        fs::path script = wd / "run_update.sh";
+        {
+            // 소스가 CRLF 라 컴파일러에 따라 원시 문자열에 \r 이 남을 수 있다. bash 가 못 읽으므로 뺀다.
+            std::string body(PendantUpdate::kScript);
+            body.erase(std::remove(body.begin(), body.end(), '\r'), body.end());
+            std::ofstream out(script, std::ios::binary | std::ios::trunc);
+            out << body;
+            if (!out.good()) { reply(500, "업데이트 스크립트를 만들지 못했습니다."); return; }
+        }
+        {
+            std::ofstream st(wd / "status", std::ios::trunc);
+            st << "phase=start\nmessage=시작\nfile=" << file << "\n";
+        }
+        // vot-core 재시작에 같이 죽지 않도록 별도 작업으로 띄우고, 파일 주인이 바뀌지 않게 지금 사용자로 돌린다.
+        std::string cmd = "systemd-run --no-block --collect --unit=vot-usb-update-" + std::to_string(std::time(nullptr)) +
+                          " --uid=" + std::to_string(getuid()) + " --gid=" + std::to_string(getgid()) +
+                          " /bin/bash " + script.string() + " " + PendantUpdate::votDir().string() + " " + file;
+        if (geteuid() != 0) cmd = "sudo -n " + cmd;
+        FLOG_WARN("System", "USB update requested: " + cmd);
+        int rc = std::system(cmd.c_str());
+        if (rc != 0) {
+            std::ofstream st(wd / "status", std::ios::trunc);
+            st << "phase=error\nmessage=업데이트를 시작하지 못했습니다 (rc=" << rc << ")\nfile=" << file << "\n";
+            reply(500, "업데이트를 시작하지 못했습니다 (rc=" + std::to_string(rc) + ")");
+            return;
+        }
+        reply(200, "시작");
 #endif
     });
     // [v1.1.298] 상태 점검(대시보드 '시스템 점검' 카드). 로봇 연결, DB 조회, 저장 공간, USB, 서비스, 시각.

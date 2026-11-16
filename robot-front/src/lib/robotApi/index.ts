@@ -556,6 +556,57 @@ export const getHealthCheck = async (): Promise<HealthCheck> => {
   if (!j?.data) throw new Error('noresponse');
   return j.data as HealthCheck;
 };
+// [v1.1.300] 펜던트 USB 업데이트 (설정 > 업데이트). 업데이트 중 코어가 재시작되므로
+// 공용 axios(연결 실패 시 로그인 이동) 대신 fetch 로 묻고, 토큰은 직접 붙인다. 응답이 없으면 null.
+type CoreResp<T> = { status_code?: number; message?: string; data?: T };
+const coreFetch = async <T>(path: string, method: 'GET' | 'POST', body?: unknown, timeoutMs = 10000): Promise<CoreResp<T> | null> => {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const tokenStr = localStorage.getItem('token');
+    if (tokenStr) headers.Authorization = `Bearer ${JSON.parse(tokenStr).accessToken}`;
+  } catch {
+    // 토큰을 못 읽으면 그대로 보낸다
+  }
+  try {
+    const res = await fetch(`${getApiBaseUrl()}${path}`, {
+      method, headers, signal: ctrl.signal, cache: 'no-store',
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return (await res.json()) as CoreResp<T>;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+export interface UsbUpdateStatus {
+  supported: boolean;
+  current_version: string;
+  phase: string;
+  message: string;
+  file: string;
+  time: string;
+  running: boolean;
+  log_tail: string[];
+}
+export interface UsbUpdateFile { file: string; version: string; size: number }
+export const getUsbUpdateStatus = async (): Promise<UsbUpdateStatus | null> => {
+  const j = await coreFetch<UsbUpdateStatus>('/system/usb-update/status', 'GET', undefined, 5000);
+  return j?.data ?? null;
+};
+export const scanUsbUpdates = async (): Promise<{ ok: boolean; message?: string; files: UsbUpdateFile[] }> => {
+  const j = await coreFetch<{ files?: UsbUpdateFile[]; message?: string }>('/system/usb-update/scan', 'POST', {}, 30000);
+  if (!j) return { ok: false, message: '응답 없음', files: [] };
+  if (j.status_code !== 200) return { ok: false, message: j.data?.message ?? j.message ?? '실패', files: [] };
+  return { ok: true, files: j.data?.files ?? [] };
+};
+export const startUsbUpdate = async (file: string): Promise<{ ok: boolean; message: string }> => {
+  const j = await coreFetch<{ message?: string }>('/system/usb-update/start', 'POST', { file }, 15000);
+  if (!j) return { ok: false, message: '응답 없음' };
+  return { ok: j.status_code === 200, message: j.data?.message ?? j.message ?? '' };
+};
 export const getSystemInfo = async (): Promise<SystemInfo> => {
   try {
     const response = await api.get('/system/system-info');
