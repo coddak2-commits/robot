@@ -7186,8 +7186,26 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.297"
+#define APP_VERSION_STRING "1.1.298"
 #ifndef _WIN32
+#include <cstdio>
+// [v1.1.298] systemd 서비스 상태 (상태 점검 화면용). 없는 서비스는 "not-found"
+static std::string serviceState(const std::string& name) {
+    std::string cmd = "systemctl show -p LoadState -p ActiveState " + name + " 2>/dev/null";
+    FILE* p = popen(cmd.c_str(), "r");
+    if (!p) return "unknown";
+    std::string load, active;
+    char buf[256];
+    while (fgets(buf, sizeof(buf), p)) {
+        std::string line(buf);
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
+        if (line.rfind("LoadState=", 0) == 0) load = line.substr(10);
+        else if (line.rfind("ActiveState=", 0) == 0) active = line.substr(12);
+    }
+    pclose(p);
+    if (load == "not-found") return "not-found";
+    return active.empty() ? "unknown" : active;
+}
 // [v1.1.296] 정품 펜던트 USB 연결/해제 (작업내역 CSV, 진단 로그 내보내기 공용)
 namespace PendantUsb {
 static const char* kMountPoint = "/mnt/usb";
@@ -7390,6 +7408,42 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
         if (!unmounted) { reply(500, "저장은 됐지만 USB 해제 실패. 터미널에서 cd ~ && sync && sudo umount /mnt/usb"); return; }
         reply(200, "저장 완료", dst.string());
 #endif
+    });
+    // [v1.1.298] 상태 점검(대시보드 '시스템 점검' 카드). 로봇 연결, DB 조회, 저장 공간, USB, 서비스, 시각.
+    // 카메라·robot-back 은 화면이 각 프로그램에 직접 물어본다. 로봇 잠금(m_mutex)은 쓰지 않는다.
+    server.Get("/system/health-check", [dbService](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        json d;
+        d["version"] = APP_VERSION_STRING;
+        std::time_t t = std::time(nullptr);
+        std::tm tmv{};
+#ifdef _WIN32
+        localtime_s(&tmv, &t);
+        d["platform"] = "Windows";
+#else
+        localtime_r(&t, &tmv);
+        d["platform"] = "Linux";
+#endif
+        char ts[32] = {0};
+        std::strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tmv);
+        d["time"] = ts;
+        d["uptime_seconds"] = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - g_serverStartTime).count();
+        d["robot_connected"] = (g_robotService && g_robotService->isConnected());
+        std::string dbErr;
+        d["db_ok"] = dbService && dbService->ping(dbErr);
+        d["db_error"] = dbService ? dbErr : std::string("DB 서비스 없음");
+        std::error_code ec;
+        auto sp = fs::space(FileLogger::instance().getLogDir(), ec);
+        d["disk_free_mb"] = ec ? -1 : (long long)(sp.available / (1024 * 1024));
+        d["disk_total_mb"] = ec ? -1 : (long long)(sp.capacity / (1024 * 1024));
+#ifndef _WIN32
+        d["usb_device"] = PendantUsb::findDevice();
+        json sv = json::object();
+        for (const char* n : {"mariadb", "vot-back", "vot-camera", "vot-blackfly"}) sv[n] = serviceState(n);
+        d["services"] = sv;
+#endif
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, d).dump(), "application/json");
     });
     // [v1.1.296] 정품 펜던트(리눅스) 전용: 진단 로그를 USB 로 내보내기 (설정 > 진단 로그).
     // USB 의 vot-logs-날짜_시각/ 폴더에
@@ -10412,6 +10466,14 @@ bool DatabaseService::exportAppLogsTsv(int days, const std::string& path, long l
     }
     out.flush();
     if (!out.good()) { err = "파일 쓰기 실패"; return false; }
+    return true;
+}
+// [v1.1.298] 상태 점검용 DB 확인. 연결이 꼬였으면 executeQuery 가 다시 연결을 시도한다.
+bool DatabaseService::ping(std::string& err) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    MYSQL_RES* result = executeSelect("SELECT 1");
+    if (!result) { err = m_lastError.empty() ? "조회 실패" : m_lastError; return false; }
+    MySqlResultGuard resultGuard(result);
     return true;
 }
 json DatabaseService::getUsers() {

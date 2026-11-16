@@ -561,6 +561,7 @@ public:
     bool logAppBatch(const json& logs);
     json getAppLogs(int limit = 100, const std::string& level = "", const std::string& source = "");
     bool exportAppLogsTsv(int days, const std::string& path, long long& rows, std::string& err);
+    bool ping(std::string& err);
     int logRobotErrorStart(int mainCode, int subCode, const std::string& message);
     bool closeRobotErrorEvent(int eventId);
     json getRobotErrorEvents(int limit = 50, int offset = 0, int days = 30);

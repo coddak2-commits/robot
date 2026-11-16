@@ -10,6 +10,7 @@ import { getStatusColor, getStatusText, getStatusBg } from '../../utils';
 // [v1.1.295] 작업내역(용접부 선택 화면에서)과 촬영 기록 USB 내보내기(펜던트 화면에서)를 대시보드로 옮김
 import { OperationHistoryPanel } from '../UcellSelect/components/OperationHistoryPanel';
 import { CameraExportButton } from '../UcellSelect/components/CameraExportButton';
+import { SystemCheckCard } from './SystemCheckCard';
 
 type RealAlert = { id: string; type: 'error' | 'warning' | 'info'; message: string; timestamp: string };
 type RobotStatus = 'idle' | 'running' | 'error' | 'maintenance';
@@ -261,6 +262,11 @@ const Dashboard: React.FC = () => {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* [v1.1.298] 시스템 점검 */}
+      <div className="db-gap mt-6">
+        <SystemCheckCard />
       </div>
 
       {/* [v1.1.295] 작업 내역 + 촬영 기록 USB 내보내기(펜던트에서 robot_camera 가 돌 때만 보임) */}

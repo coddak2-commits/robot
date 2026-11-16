@@ -1,0 +1,9 @@
+v1.1.298: 대시보드 시스템 점검 카드
+
+- robot_core_all.cpp/h: GET /system/health-check, DatabaseService::ping, serviceState(systemctl show)
+- SystemCheckCard.tsx 신규, Dashboard.tsx 에 추가
+- robotApi: getHealthCheck (fetch, 연결 실패 시 로그인 이동 안 함)
+- 버전 1.1.298
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77

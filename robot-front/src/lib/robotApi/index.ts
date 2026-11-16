@@ -1,5 +1,5 @@
 import axios, { AxiosResponse } from 'axios';
-import { Axios as api } from '../http';
+import { Axios as api, getApiBaseUrl } from '../http';
 import { RobotJoints, RobotTCF, RobotMoveData, RobotStatusResponse } from '@/types/RobotData';
 export { axios, api };
 export type { AxiosResponse };
@@ -513,6 +513,32 @@ export const exportLogsToPendantUsb = async (
 ): Promise<{ status_code: number; data?: { message?: string; folder?: string; files?: number; app_log_rows?: number } }> => {
   const response = await api.post('/system/usb-export-logs', { days }, { timeout: 180000 });
   return response.data;
+};
+// [v1.1.298] 상태 점검 (대시보드 '시스템 점검' 카드)
+export interface HealthCheck {
+  version: string;
+  platform: string;
+  time: string;
+  uptime_seconds: number;
+  robot_connected: boolean;
+  db_ok: boolean;
+  db_error: string;
+  disk_free_mb: number;
+  disk_total_mb: number;
+  usb_device?: string;
+  services?: Record<string, string>;
+}
+// 공용 axios 는 연결 실패 시 포트 재탐색·로그인 이동을 하므로(Main.tsx 와 같은 이유) fetch 로 직접 묻는다.
+export const getHealthCheck = async (): Promise<HealthCheck> => {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/system/health-check`, { signal: ctrl.signal, cache: 'no-store' });
+    const j = await res.json();
+    return j.data as HealthCheck;
+  } finally {
+    clearTimeout(timer);
+  }
 };
 export const getSystemInfo = async (): Promise<SystemInfo> => {
   try {
