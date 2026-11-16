@@ -1,0 +1,9 @@
+v1.1.301: 펜던트 DB 백업 (USB)
+
+- robot_core_all.cpp: namespace PendantDbBackup(mysqldump 스크립트), POST /system/usb-backup-db
+- DbBackupSection.tsx 신규, UpdateTab.tsx 에서 리눅스일 때 표시
+- robotApi: backupDbToUsb
+- 버전 1.1.301
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77

@@ -1,0 +1,13 @@
+﻿v1.1.301 - 펜던트 DB 백업 (USB)
+
+[추가] 설정 > 업데이트 > 'DB 백업 (펜던트)' (관리자, 펜던트에서만 보임)
+    - [USB 로 DB 백업] 을 누르면 USB 의 vot-db-backup 폴더에 robot_welding_버전_날짜_시각.sql.gz 로 저장하고 USB 해제까지 함
+    - 교시 작업·포인트·설정·작업내역 등은 내용까지, 화면 로그(app_logs)·디버그 로그(debug_logs)는 표 구조만
+    - 펜던트에도 ~/vot/db-backup 에 최근 5개 보관
+    - 용접 중에는 거부. 복원 기능은 다음 버전에서
+[추가] robot-core: POST /system/usb-backup-db (펜던트 화면에서만 받음, mysqldump --single-transaction 이라 작업 중 DB 를 잠그지 않음)
+
+※ 이 버전부터 펜던트 A 는 설정 > 업데이트 > USB 업데이트 버튼으로 설치 (1.1.300 에서 넣은 기능 첫 실사용)
+
+[robot-core] 버전 1.1.301
+[DB] 변경 없음.

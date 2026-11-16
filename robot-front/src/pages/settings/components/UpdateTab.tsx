@@ -5,6 +5,7 @@ import { useUpdaterContext } from '../../../contexts';
 import { percent, displayProgress } from '../../../lib/updater';
 import { DiagnosticLogsSection } from './DiagnosticLogsSection';
 import { UsbUpdateSection } from './UsbUpdateSection';
+import { DbBackupSection } from './DbBackupSection';
 
 interface UpdateTabProps {
   versionInfo: VersionInfo | null;
@@ -188,6 +189,12 @@ const UpdateTab: React.FC<UpdateTabProps> = ({ versionInfo, systemInfo }) => {
       {systemInfo?.platform === 'Linux' && (
         <div className="mt-6">
           <UsbUpdateSection />
+        </div>
+      )}
+      {/* [v1.1.301] 펜던트에서만 DB 백업 */}
+      {systemInfo?.platform === 'Linux' && (
+        <div className="mt-6">
+          <DbBackupSection />
         </div>
       )}
       {}

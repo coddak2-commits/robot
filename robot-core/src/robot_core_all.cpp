@@ -7186,7 +7186,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.300"
+#define APP_VERSION_STRING "1.1.301"
 #ifndef _WIN32
 #include <cstdio>
 #include <map>
@@ -7357,6 +7357,18 @@ fi
 st done "완료"
 )SH";
 }  // namespace PendantUpdate
+// [v1.1.301] 펜던트 DB 백업 (설정 > 업데이트 > 'DB 백업'). mysqldump -> gzip -> ~/vot/db-backup -> USB vot-db-backup/.
+// 교시 작업·포인트·설정·작업내역 등은 내용까지, 화면 로그(app_logs)·디버그 로그(debug_logs)는 표 구조만 넣는다
+// (진단용이라 크기만 크고, 복원할 때 필요 없음). 펜던트에는 최근 5개만 남긴다.
+namespace PendantDbBackup {
+static const char* kScript = R"SH(#!/bin/bash
+CNF="$1"; DB="$2"; OUT="$3"
+set -o pipefail
+{ mysqldump --defaults-extra-file="$CNF" --single-transaction --default-character-set=utf8mb4 --no-data --databases "$DB" &&
+  mysqldump --defaults-extra-file="$CNF" --single-transaction --default-character-set=utf8mb4 --no-create-info \
+    --ignore-table="$DB.app_logs" --ignore-table="$DB.debug_logs" "$DB"; } | gzip > "$OUT"
+)SH";
+}  // namespace PendantDbBackup
 #endif
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
@@ -7632,6 +7644,95 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
             return;
         }
         reply(200, "시작");
+#endif
+    });
+    // [v1.1.301] 펜던트 DB 백업 -> USB. 설명은 위 namespace PendantDbBackup. 이 기기 화면(localhost)에서만 받는다.
+    server.Options("/system/usb-backup-db", [](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        res.status = 200;
+    });
+    server.Post("/system/usb-backup-db", [](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        auto reply = [&res](int code, const json& d) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(code, d).dump(), "application/json");
+        };
+#ifdef _WIN32
+        (void)req;
+        reply(400, {{"message", "펜던트(리눅스)에서만 사용할 수 있습니다."}});
+#else
+        bool isLoopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        if (!isLoopback) { reply(403, {{"message", "펜던트 화면에서만 사용할 수 있습니다."}}); return; }
+        if (g_arcActive.load()) { reply(409, {{"message", "용접 중에는 백업할 수 없습니다."}}); return; }
+        std::error_code ec;
+        fs::path dir = PendantUpdate::votDir() / "db-backup";
+        fs::create_directories(dir, ec);
+        std::time_t t = std::time(nullptr);
+        std::tm tmv{};
+        localtime_r(&t, &tmv);
+        char ts[32] = {0};
+        std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tmv);
+        std::string name = std::string("robot_welding_") + APP_VERSION_STRING + "_" + ts + ".sql.gz";
+        fs::path out = dir / name, cnf = dir / ".backup.cnf", script = dir / "run_backup.sh", errf = dir / "backup.err";
+        auto& cfg = ConfigService::instance();
+        {
+            std::ofstream c(cnf, std::ios::trunc);
+            c << "[client]\nuser=" << cfg.getDbUser() << "\npassword=" << cfg.getDbPassword()
+              << "\nhost=" << cfg.getDbHost() << "\nport=" << cfg.getDbPort() << "\n";
+        }
+        fs::permissions(cnf, fs::perms::owner_read | fs::perms::owner_write, ec);
+        {
+            std::string body(PendantDbBackup::kScript);
+            body.erase(std::remove(body.begin(), body.end(), '\r'), body.end());
+            std::ofstream s(script, std::ios::binary | std::ios::trunc);
+            s << body;
+        }
+        std::string cmd = "/bin/bash '" + script.string() + "' '" + cnf.string() + "' '" + cfg.getDbName() + "' '" +
+                          out.string() + "' 2> '" + errf.string() + "'";
+        int rc = std::system(cmd.c_str());
+        fs::remove(cnf, ec);
+        long long size = (long long)fs::file_size(out, ec);
+        if (rc != 0 || ec || size < 100) {
+            std::string err;
+            std::ifstream ef(errf);
+            std::getline(ef, err, '\0');
+            if (err.size() > 300) err = err.substr(err.size() - 300);
+            fs::remove(out, ec);
+            FLOG_ERROR("System", "DB backup failed rc=" + std::to_string(rc) + " " + err);
+            reply(500, {{"message", "DB 백업 실패 (rc=" + std::to_string(rc) + ") " + err}});
+            return;
+        }
+        // 펜던트에는 최근 5개만 남긴다 (이름이 시각 순)
+        std::vector<fs::path> olds;
+        for (auto& e : fs::directory_iterator(dir, ec)) {
+            std::string n = e.path().filename().string();
+            if (n.rfind("robot_welding_", 0) == 0 && n.size() > 7 && n.compare(n.size() - 7, 7, ".sql.gz") == 0) olds.push_back(e.path());
+        }
+        std::sort(olds.begin(), olds.end(), [](const fs::path& a, const fs::path& b) {
+            return a.filename().string().substr(a.filename().string().size() - 22) < b.filename().string().substr(b.filename().string().size() - 22);
+        });
+        while (olds.size() > 5) { fs::remove(olds.front(), ec); olds.erase(olds.begin()); }
+
+        std::lock_guard<std::mutex> lk(PendantUsb::mtx());
+        std::string err;
+        json d = {{"file", name}, {"size_kb", size / 1024}};
+        if (!PendantUsb::mount(err)) {
+            d["message"] = "펜던트에는 저장했지만 USB 저장 실패: " + err;
+            reply(500, d);
+            return;
+        }
+        fs::path usbDir = fs::path(PendantUsb::kMountPoint) / "vot-db-backup";
+        fs::create_directories(usbDir, ec);
+        fs::copy_file(out, usbDir / name, fs::copy_options::overwrite_existing, ec);
+        std::system("sync");
+        std::error_code ec2;
+        bool ok = !ec && fs::file_size(usbDir / name, ec2) == (uintmax_t)size && !ec2;
+        bool unmounted = PendantUsb::unmount();
+        FLOG_INFO("System", "DB backup " + name + " size=" + std::to_string(size) + " usb_ok=" + std::to_string(ok) +
+                  " unmounted=" + std::to_string(unmounted));
+        if (!ok) { d["message"] = "펜던트에는 저장했지만 USB 복사 실패 (USB 공간·쓰기 보호 확인)"; reply(500, d); return; }
+        if (!unmounted) { d["message"] = "저장은 됐지만 USB 해제 실패. 터미널에서 cd ~ && sync && sudo umount /mnt/usb"; reply(500, d); return; }
+        d["message"] = "저장 완료";
+        reply(200, d);
 #endif
     });
     // [v1.1.298] 상태 점검(대시보드 '시스템 점검' 카드). 로봇 연결, DB 조회, 저장 공간, USB, 서비스, 시각.

@@ -607,6 +607,12 @@ export const startUsbUpdate = async (file: string): Promise<{ ok: boolean; messa
   if (!j) return { ok: false, message: '응답 없음' };
   return { ok: j.status_code === 200, message: j.data?.message ?? j.message ?? '' };
 };
+// [v1.1.301] 펜던트 DB 백업 -> USB (설정 > 업데이트)
+export const backupDbToUsb = async (): Promise<{ ok: boolean; message: string; file?: string; sizeKb?: number }> => {
+  const j = await coreFetch<{ message?: string; file?: string; size_kb?: number }>('/system/usb-backup-db', 'POST', {}, 180000);
+  if (!j) return { ok: false, message: '응답 없음' };
+  return { ok: j.status_code === 200, message: j.data?.message ?? j.message ?? '', file: j.data?.file, sizeKb: j.data?.size_kb };
+};
 export const getSystemInfo = async (): Promise<SystemInfo> => {
   try {
     const response = await api.get('/system/system-info');
