@@ -7186,7 +7186,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.298"
+#define APP_VERSION_STRING "1.1.299"
 #ifndef _WIN32
 #include <cstdio>
 // [v1.1.298] systemd 서비스 상태 (상태 점검 화면용). 없는 서비스는 "not-found"

@@ -47,9 +47,11 @@ const cameraRow = (name: string, service: string | undefined, connected: boolean
   return connected ? { name, level: 'ok', text: '연결됨' } : { name, level: 'warn', text: '프로그램은 켜짐, 카메라 연결 안 됨 (선 확인)' };
 };
 
-function buildRows(h: HealthCheck | null, backOk: boolean, cam: boolean | null, bf: boolean | null): Row[] {
+function buildRows(h: HealthCheck | null, hErr: string, backOk: boolean, cam: boolean | null, bf: boolean | null): Row[] {
   const rows: Row[] = [];
-  if (!h) {
+  if (!h && hErr === 'auth') {
+    rows.push({ name: '로봇 프로그램(코어)', level: 'warn', text: '로그인이 만료됨 — 로그아웃 후 다시 로그인해 주세요' });
+  } else if (!h) {
     rows.push({ name: '로봇 프로그램(코어)', level: 'bad', text: '응답 없음 — 프로그램 종료 후 제어기 전원을 껐다 켜 주세요' });
   } else {
     rows.push({ name: '로봇 프로그램(코어)', level: 'ok', text: `정상 (켜진 지 ${fmtUptime(h.uptime_seconds)})` });
@@ -92,13 +94,17 @@ export const SystemCheckCard: React.FC = () => {
 
   const runCheck = useCallback(async () => {
     setChecking(true);
+    let hErr = '';
     const [h, backOk, cam, bf] = await Promise.all([
-      getHealthCheck().catch(() => null),
+      getHealthCheck().catch((e: unknown) => {
+        hErr = e instanceof Error ? e.message : '';
+        return null;
+      }),
       gapApi.get('/health', { timeout: 2000 }).then(() => true).catch(() => false),
       getCameraStatus().then(s => (s ? !!s.connected : null)),
       blackflyConnected(),
     ]);
-    setRows(buildRows(h, backOk, cam, bf));
+    setRows(buildRows(h, hErr, backOk, cam, bf));
     setCheckedAt(new Date().toLocaleTimeString('ko-KR', { hour12: false }));
     setChecking(false);
   }, []);

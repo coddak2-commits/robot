@@ -1,0 +1,8 @@
+v1.1.299: 시스템 점검 코어 요청에 로그인 토큰 추가
+
+- robotApi getHealthCheck: Authorization 헤더, 401 이면 Error('auth'), 응답 없음 Error('noresponse')
+- SystemCheckCard: 로그인 만료 따로 표시
+- 버전 1.1.299
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77

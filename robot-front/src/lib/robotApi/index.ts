@@ -529,16 +529,32 @@ export interface HealthCheck {
   services?: Record<string, string>;
 }
 // 공용 axios 는 연결 실패 시 포트 재탐색·로그인 이동을 하므로(Main.tsx 와 같은 이유) fetch 로 직접 묻는다.
+// [v1.1.299] 코어는 /system/* 에 로그인 토큰을 요구한다. 1.1.298 은 토큰 없이 보내 401 이 나서
+// 코어가 '응답 없음'으로 보였다. axios 와 같은 방법(localStorage 'token')으로 토큰을 붙인다.
+// 응답이 없으면 Error('noresponse'), 로그인 만료면 Error('auth').
 export const getHealthCheck = async (): Promise<HealthCheck> => {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 8000);
+  const headers: Record<string, string> = {};
   try {
-    const res = await fetch(`${getApiBaseUrl()}/system/health-check`, { signal: ctrl.signal, cache: 'no-store' });
-    const j = await res.json();
-    return j.data as HealthCheck;
+    const tokenStr = localStorage.getItem('token');
+    if (tokenStr) headers.Authorization = `Bearer ${JSON.parse(tokenStr).accessToken}`;
+  } catch {
+    // 토큰을 못 읽으면 그대로 보낸다(401 로 '로그인 필요' 표시)
+  }
+  let res: Response | null = null;
+  try {
+    res = await fetch(`${getApiBaseUrl()}/system/health-check`, { signal: ctrl.signal, cache: 'no-store', headers });
+  } catch {
+    throw new Error('noresponse');
   } finally {
     clearTimeout(timer);
   }
+  if (!res) throw new Error('noresponse');
+  if (res.status === 401) throw new Error('auth');
+  const j = await res.json();
+  if (!j?.data) throw new Error('noresponse');
+  return j.data as HealthCheck;
 };
 export const getSystemInfo = async (): Promise<SystemInfo> => {
   try {
