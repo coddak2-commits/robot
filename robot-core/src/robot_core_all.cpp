@@ -7186,7 +7186,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.301"
+#define APP_VERSION_STRING "1.1.302"
 #ifndef _WIN32
 #include <cstdio>
 #include <map>
@@ -7369,6 +7369,81 @@ set -o pipefail
     --ignore-table="$DB.app_logs" --ignore-table="$DB.debug_logs" "$DB"; } | gzip > "$OUT"
 )SH";
 }  // namespace PendantDbBackup
+// [v1.1.302] 펜던트 DB 복원 (설정 > 업데이트 > 'DB 백업·복원'). 우리 백업 파일(robot_welding_버전_날짜_시각.sql.gz)만 받는다.
+// USB 의 vot-db-backup 또는 펜던트의 ~/vot/db-backup 에서 고른다. 복원 순서(아래 스크립트, systemd-run 으로 따로 실행):
+// 파일 검사 -> 지금 DB 전체를 먼저 백업(~/vot/db-restore/before_restore_*.sql.gz, 로그 표 포함) -> vot-core·vot-back 정지
+// -> 복원 -> 실패하면 방금 백업으로 되돌림 -> vot-back·vot-core 시작. 복원하면 DB 전체가 백업 내용으로 바뀌고 로그 표는 비워진다.
+namespace PendantDbRestore {
+static fs::path workDir() { return PendantUpdate::votDir() / "db-restore"; }
+// robot_welding_1.1.301_20261116_113701.sql.gz 형식만. 맞으면 버전 문자열, 아니면 ""
+static std::string versionOf(const std::string& name) {
+    const std::string pre = "robot_welding_", suf = ".sql.gz";
+    if (name.size() <= pre.size() + suf.size() + 16 || name.compare(0, pre.size(), pre) != 0 ||
+        name.compare(name.size() - suf.size(), suf.size(), suf) != 0) return "";
+    std::string mid = name.substr(pre.size(), name.size() - pre.size() - suf.size());  // 1.1.301_20261116_113701
+    for (char c : mid) if (!((c >= '0' && c <= '9') || c == '.' || c == '_')) return "";
+    size_t u = mid.find('_');
+    if (u == std::string::npos || mid.size() - u != 16) return "";
+    return mid.substr(0, u);
+}
+static std::map<std::string, std::string> readStatus() {
+    std::map<std::string, std::string> m;
+    std::ifstream in(workDir() / "status");
+    std::string line;
+    while (std::getline(in, line)) {
+        size_t eq = line.find('=');
+        if (eq != std::string::npos) m[line.substr(0, eq)] = line.substr(eq + 1);
+    }
+    return m;
+}
+static bool statusStale() {
+    std::error_code ec;
+    auto t = fs::last_write_time(workDir() / "status", ec);
+    if (ec) return true;
+    return fs::file_time_type::clock::now() - t > std::chrono::minutes(30);
+}
+static void writeCnf(const fs::path& cnf) {
+    auto& cfg = ConfigService::instance();
+    std::ofstream c(cnf, std::ios::trunc);
+    c << "[client]\nuser=" << cfg.getDbUser() << "\npassword=" << cfg.getDbPassword()
+      << "\nhost=" << cfg.getDbHost() << "\nport=" << cfg.getDbPort() << "\n";
+    c.close();
+    std::error_code ec;
+    fs::permissions(cnf, fs::perms::owner_read | fs::perms::owner_write, ec);
+}
+static const char* kScript = R"SH(#!/bin/bash
+W="$1"; CNF="$2"; DB="$3"; SRC="$4"; NAME="$5"
+ST="$W/status"; LOG="$W/restore.log"
+st() { printf 'phase=%s\nmessage=%s\nfile=%s\ntime=%s\n' "$1" "$2" "$NAME" "$(date '+%F %T')" > "$ST.tmp" && mv "$ST.tmp" "$ST"; echo "[$(date '+%T')] $2" >> "$LOG"; }
+fail() { st error "$1"; rm -f "$CNF"; exit 1; }
+: > "$LOG"
+st check "백업 파일 확인 중"
+gzip -t "$SRC" >>"$LOG" 2>&1 || fail "백업 파일이 깨졌습니다 (아무것도 바꾸지 않음)"
+zcat "$SRC" | head -c 50000 | grep -q "CREATE DATABASE" || fail "우리 프로그램의 DB 백업 파일이 아닙니다 (아무것도 바꾸지 않음)"
+st safety "지금 DB 를 먼저 백업 중 (되돌리기용)"
+SAFE="$W/before_restore_$(date +%Y%m%d_%H%M%S).sql.gz"
+set -o pipefail
+mysqldump --defaults-extra-file="$CNF" --single-transaction --default-character-set=utf8mb4 --databases "$DB" 2>>"$LOG" | gzip > "$SAFE" || { rm -f "$SAFE"; fail "지금 DB 백업 실패 (아무것도 바꾸지 않음)"; }
+st stop "프로그램 멈추는 중 (화면이 잠시 끊깁니다)"
+sudo -n systemctl stop vot-core vot-back >>"$LOG" 2>&1
+st restore "복원 중 (전원을 끄지 마세요)"
+if ! zcat "$SRC" | mysql --defaults-extra-file="$CNF" --default-character-set=utf8mb4 >>"$LOG" 2>&1; then
+  echo "[$(date '+%T')] 복원 실패 - 복원 전 DB 로 되돌림" >> "$LOG"
+  if zcat "$SAFE" | mysql --defaults-extra-file="$CNF" --default-character-set=utf8mb4 >>"$LOG" 2>&1; then
+    MSG="복원 실패 (복원 전 DB 로 되돌렸습니다)"
+  else
+    MSG="복원 실패, 되돌리기도 실패. 터미널 확인 필요: $SAFE"
+  fi
+  sudo -n systemctl start vot-back vot-core >>"$LOG" 2>&1
+  fail "$MSG"
+fi
+st start "프로그램 다시 켜는 중"
+sudo -n systemctl start vot-back vot-core >>"$LOG" 2>&1 || fail "프로그램 시작 실패. 터미널에서 sudo systemctl start vot-back vot-core"
+rm -f "$CNF"
+ls -1t "$W"/before_restore_*.sql.gz 2>/dev/null | tail -n +4 | xargs -r rm -f
+st done "완료"
+)SH";
+}  // namespace PendantDbRestore
 #endif
 void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
@@ -7733,6 +7808,150 @@ void registerSystemRoutes(httplib::Server& server, DatabaseService* dbService) {
         if (!unmounted) { d["message"] = "저장은 됐지만 USB 해제 실패. 터미널에서 cd ~ && sync && sudo umount /mnt/usb"; reply(500, d); return; }
         d["message"] = "저장 완료";
         reply(200, d);
+#endif
+    });
+    // [v1.1.302] 펜던트 DB 복원. 설명은 위 namespace PendantDbRestore. 이 기기 화면(localhost)에서만 받는다.
+    server.Options(R"(/system/db-restore/.*)", [](const httplib::Request&, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        res.status = 200;
+    });
+    server.Get("/system/db-restore/status", [](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        json d = json::object();
+#ifdef _WIN32
+        (void)req;
+        d["supported"] = false;
+#else
+        d["supported"] = true;
+        auto m = PendantDbRestore::readStatus();
+        std::string phase = m.count("phase") ? m["phase"] : "idle";
+        d["phase"] = phase;
+        d["message"] = m.count("message") ? m["message"] : "";
+        d["file"] = m.count("file") ? m["file"] : "";
+        d["time"] = m.count("time") ? m["time"] : "";
+        d["running"] = PendantUpdate::isRunningPhase(phase) && !PendantDbRestore::statusStale();
+        std::vector<std::string> lines;
+        std::ifstream in(PendantDbRestore::workDir() / "restore.log");
+        std::string line;
+        while (std::getline(in, line)) {
+            lines.push_back(line);
+            if (lines.size() > 30) lines.erase(lines.begin());
+        }
+        d["log_tail"] = lines;
+#endif
+        res.set_content(HttpRouteHelpers::makeStatusResponse(200, d).dump(), "application/json");
+    });
+    server.Post("/system/db-restore/scan", [](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        auto reply = [&res](int code, const json& d) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(code, d).dump(), "application/json");
+        };
+#ifdef _WIN32
+        (void)req;
+        reply(400, {{"message", "펜던트(리눅스)에서만 사용할 수 있습니다."}});
+#else
+        bool isLoopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        if (!isLoopback) { reply(403, {{"message", "펜던트 화면에서만 사용할 수 있습니다."}}); return; }
+        json files = json::array();
+        std::error_code ec;
+        auto add = [&files, &ec](const fs::path& dir, const char* source) {
+            for (auto& e : fs::directory_iterator(dir, ec)) {
+                std::string n = e.path().filename().string();
+                std::string v = PendantDbRestore::versionOf(n);
+                if (v.empty() || !e.is_regular_file(ec)) continue;
+                files.push_back({{"source", source}, {"file", n}, {"version", v},
+                                 {"size", (long long)fs::file_size(e.path(), ec)}});
+            }
+        };
+        add(PendantUpdate::votDir() / "db-backup", "local");
+        std::string usbMsg;
+        {
+            std::lock_guard<std::mutex> lk(PendantUsb::mtx());
+            std::string err;
+            if (PendantUsb::mount(err)) {
+                add(fs::path(PendantUsb::kMountPoint) / "vot-db-backup", "usb");
+                PendantUsb::unmount();
+            } else {
+                usbMsg = err;
+            }
+        }
+        // 새것부터 (이름 끝 날짜_시각 기준)
+        std::sort(files.begin(), files.end(), [](const json& a, const json& b) {
+            std::string x = a["file"].get<std::string>(), y = b["file"].get<std::string>();
+            return x.substr(x.size() - 22) > y.substr(y.size() - 22);
+        });
+        reply(200, {{"files", files}, {"usb_message", usbMsg}, {"current_version", APP_VERSION_STRING}});
+#endif
+    });
+    server.Post("/system/db-restore/start", [](const httplib::Request& req, httplib::Response& res) {
+        HttpRouteHelpers::setCorsHeaders(res);
+        auto reply = [&res](int code, const std::string& msg) {
+            res.set_content(HttpRouteHelpers::makeStatusResponse(code, {{"message", msg}}).dump(), "application/json");
+        };
+#ifdef _WIN32
+        (void)req;
+        reply(400, "펜던트(리눅스)에서만 사용할 수 있습니다.");
+#else
+        bool isLoopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        if (!isLoopback) { reply(403, "펜던트 화면에서만 사용할 수 있습니다."); return; }
+        if (g_arcActive.load()) { reply(409, "용접 중에는 복원할 수 없습니다."); return; }
+        if (g_robotService && g_robotService->isConnected()) {
+            ROBOT_STATE_PKG st = g_robotService->getCachedState();
+            if (st.robot_state == 2) { reply(409, "로봇 이동 중에는 복원할 수 없습니다."); return; }
+        }
+        json body = json::parse(req.body.empty() ? "{}" : req.body, nullptr, false);
+        std::string file = (body.is_object() && body.contains("file") && body["file"].is_string()) ? body["file"].get<std::string>() : "";
+        std::string source = (body.is_object() && body.contains("source") && body["source"].is_string()) ? body["source"].get<std::string>() : "";
+        if (PendantDbRestore::versionOf(file).empty() || (source != "usb" && source != "local")) {
+            reply(400, "백업 파일 이름이 올바르지 않습니다."); return;
+        }
+        auto m = PendantDbRestore::readStatus();
+        if (m.count("phase") && PendantUpdate::isRunningPhase(m["phase"]) && !PendantDbRestore::statusStale()) {
+            reply(409, "이미 복원 중입니다."); return;
+        }
+        std::error_code ec;
+        fs::path wd = PendantDbRestore::workDir();
+        fs::create_directories(wd, ec);
+        fs::path src = wd / "restore_source.sql.gz";
+        if (source == "local") {
+            fs::copy_file(PendantUpdate::votDir() / "db-backup" / file, src, fs::copy_options::overwrite_existing, ec);
+            if (ec) { reply(404, "펜던트에서 백업 파일을 찾지 못했습니다."); return; }
+        } else {
+            std::lock_guard<std::mutex> lk(PendantUsb::mtx());
+            std::string err;
+            if (!PendantUsb::mount(err)) { reply(500, err); return; }
+            fs::copy_file(fs::path(PendantUsb::kMountPoint) / "vot-db-backup" / file, src, fs::copy_options::overwrite_existing, ec);
+            PendantUsb::unmount();
+            if (ec) { reply(404, "USB 에서 백업 파일을 복사하지 못했습니다."); return; }
+        }
+        fs::path cnf = wd / ".restore.cnf", script = wd / "run_restore.sh";
+        PendantDbRestore::writeCnf(cnf);
+        {
+            std::string sbody(PendantDbRestore::kScript);
+            sbody.erase(std::remove(sbody.begin(), sbody.end(), '\r'), sbody.end());
+            std::ofstream out(script, std::ios::binary | std::ios::trunc);
+            out << sbody;
+            if (!out.good()) { reply(500, "복원 스크립트를 만들지 못했습니다."); return; }
+        }
+        {
+            std::ofstream st(wd / "status", std::ios::trunc);
+            st << "phase=start\nmessage=시작\nfile=" << file << "\n";
+        }
+        std::string cmd = "systemd-run --no-block --collect --unit=vot-db-restore-" + std::to_string(std::time(nullptr)) +
+                          " --uid=" + std::to_string(getuid()) + " --gid=" + std::to_string(getgid()) +
+                          " /bin/bash " + script.string() + " " + wd.string() + " " + cnf.string() + " " +
+                          ConfigService::instance().getDbName() + " " + src.string() + " " + file;
+        if (geteuid() != 0) cmd = "sudo -n " + cmd;
+        FLOG_WARN("System", "DB restore requested: " + file + " (" + source + ")");
+        int rc = std::system(cmd.c_str());
+        if (rc != 0) {
+            fs::remove(cnf, ec);
+            std::ofstream st(wd / "status", std::ios::trunc);
+            st << "phase=error\nmessage=복원을 시작하지 못했습니다 (rc=" << rc << ")\nfile=" << file << "\n";
+            reply(500, "복원을 시작하지 못했습니다 (rc=" + std::to_string(rc) + ")");
+            return;
+        }
+        reply(200, "시작");
 #endif
     });
     // [v1.1.298] 상태 점검(대시보드 '시스템 점검' 카드). 로봇 연결, DB 조회, 저장 공간, USB, 서비스, 시각.

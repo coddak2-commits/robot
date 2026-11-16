@@ -613,6 +613,24 @@ export const backupDbToUsb = async (): Promise<{ ok: boolean; message: string; f
   if (!j) return { ok: false, message: '응답 없음' };
   return { ok: j.status_code === 200, message: j.data?.message ?? j.message ?? '', file: j.data?.file, sizeKb: j.data?.size_kb };
 };
+// [v1.1.302] 펜던트 DB 복원
+export interface DbRestoreFile { source: 'usb' | 'local'; file: string; version: string; size: number }
+export interface DbRestoreStatus { supported: boolean; phase: string; message: string; file: string; time: string; running: boolean; log_tail: string[] }
+export const scanDbRestore = async (): Promise<{ ok: boolean; message?: string; usbMessage?: string; files: DbRestoreFile[] }> => {
+  const j = await coreFetch<{ files?: DbRestoreFile[]; usb_message?: string; message?: string }>('/system/db-restore/scan', 'POST', {}, 30000);
+  if (!j) return { ok: false, message: '응답 없음', files: [] };
+  if (j.status_code !== 200) return { ok: false, message: j.data?.message ?? j.message ?? '실패', files: [] };
+  return { ok: true, usbMessage: j.data?.usb_message, files: j.data?.files ?? [] };
+};
+export const startDbRestore = async (source: string, file: string): Promise<{ ok: boolean; message: string }> => {
+  const j = await coreFetch<{ message?: string }>('/system/db-restore/start', 'POST', { source, file }, 30000);
+  if (!j) return { ok: false, message: '응답 없음' };
+  return { ok: j.status_code === 200, message: j.data?.message ?? j.message ?? '' };
+};
+export const getDbRestoreStatus = async (): Promise<DbRestoreStatus | null> => {
+  const j = await coreFetch<DbRestoreStatus>('/system/db-restore/status', 'GET', undefined, 5000);
+  return j?.data ?? null;
+};
 export const getSystemInfo = async (): Promise<SystemInfo> => {
   try {
     const response = await api.get('/system/system-info');

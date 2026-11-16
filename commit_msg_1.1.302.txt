@@ -1,0 +1,9 @@
+v1.1.302: 펜던트 DB 복원
+
+- robot_core_all.cpp: namespace PendantDbRestore(복원 스크립트: 검사 -> 지금 DB 백업 -> 정지 -> 복원/실패 시 되돌림 -> 시작), /system/db-restore/status|scan|start
+- DbBackupSection.tsx: 복원할 백업 찾기·복원('복원' 입력 확인)·진행 표시
+- robotApi: scanDbRestore, startDbRestore, getDbRestoreStatus
+- 버전 1.1.302
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77
