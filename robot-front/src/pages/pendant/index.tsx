@@ -4,6 +4,7 @@ import { UnifiedWorkspaceCanvas, UCellConfig } from '../UcellSelect/components';
 import { paramApi, Posture, deviationApi } from '../../lib/gapApi';
 import { pulseWireFeed, stopAllWireFeed, wireFeedDurationMs, WIRE_STOP_FAILED_MESSAGE } from '../../lib';
 import { getRobotError, resetRobotError, connectRobotSDK, getWeldingPartOrder } from '../../lib/robotApi/index';
+import { getAlarmGuide } from '../../lib/robotAlarmGuide';
 import { setWeldingPartOrder, hasCornerParts, DEFAULT_SECOND_PASS_SETTINGS, SecondPassSettings } from '../UcellSelect';
 import { TwoPassControl } from '../UcellSelect/components/TwoPassControl';
 import { RequireRole } from '../../contexts/gapAuth';
@@ -116,17 +117,20 @@ const getPosture = (pointId: string): Posture => {
 };
 
 
-type RealAlert = { id: string; type: 'error' | 'warning' | 'info'; message: string; timestamp: string };
+type RealAlert = { id: string; type: 'error' | 'warning' | 'info'; message: string; timestamp: string; action?: string };
 
 const fetchRealAlerts = async (): Promise<RealAlert[]> => {
   const alerts: RealAlert[] = [];
   try {
     const err = await getRobotError();
     if (err?.has_error) {
+      // [v1.1.304] 코드만 나오던 것을 이름 + 조치로
+      const g = getAlarmGuide(err.main_code, err.sub_code);
       alerts.push({
         id: `robot-err-${err.main_code}-${err.sub_code}`,
         type: 'error',
-        message: `로봇 오류: ${err.message} (${err.main_code}-${err.sub_code})`,
+        message: `로봇 오류 ${err.main_code}-${err.sub_code}: ${g.name}`,
+        action: g.action,
         timestamp: new Date().toISOString(),
       });
     }
@@ -895,6 +899,11 @@ const PendantInner: React.FC = () => {
                 borderLeft: `4px solid ${a.type === 'error' ? '#f87171' : a.type === 'warning' ? '#fbbf24' : '#60a5fa'}`,
               }}>
                 <div>{a.message}</div>
+                {a.action && (
+                  <div style={{ marginTop: 6, padding: '6px 8px', background: 'rgba(0,0,0,0.25)', borderRadius: 4, fontSize: 13, color: '#fde68a' }}>
+                    조치: {a.action}
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
                   {new Date(a.timestamp).toLocaleString('ko-KR')}
                 </div>

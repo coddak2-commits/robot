@@ -7,7 +7,7 @@ import { getAutoLogoutMinutes } from '../../lib/appSettings';
 import { APP_VERSION } from '../../lib';
 import { Axios as axios } from '../../lib';
 import { setRobotMode, setAutoReconnect, getRealtimeRobotStatus, RealtimeRobotStatus, getRobotError, resetRobotError, RobotErrorData } from '../../lib';
-import { getRobotAlarmMessage } from '../../lib/api';
+import { getAlarmGuide } from '../../lib/robotAlarmGuide';
 import { Wifi, WifiOff, Home, AlertTriangle, RefreshCw } from 'lucide-react';
 const PAGE_TITLE_KEYS: Record<string, string> = {
   '/': 'pageMain',
@@ -125,7 +125,9 @@ const Header: React.FC = () => {
   }, [connText, fetchRobotError]);
   useEffect(() => {
     if (robotError?.has_error && (robotError.main_code !== 0 || robotError.sub_code !== 0)) {
-      setErrorMessage(getRobotAlarmMessage(robotError.main_code, robotError.sub_code));
+      // [v1.1.304] 이름 + 작업자용 조치
+      const g = getAlarmGuide(robotError.main_code, robotError.sub_code);
+      setErrorMessage(`${g.name} — 조치: ${g.action}`);
     } else {
       setErrorMessage(null);
     }

@@ -11,6 +11,7 @@ import { getStatusColor, getStatusText, getStatusBg } from '../../utils';
 import { OperationHistoryPanel } from '../UcellSelect/components/OperationHistoryPanel';
 import { CameraExportButton } from '../UcellSelect/components/CameraExportButton';
 import { SystemCheckCard } from './SystemCheckCard';
+import { getAlarmGuide } from '../../lib/robotAlarmGuide';
 
 type RealAlert = { id: string; type: 'error' | 'warning' | 'info'; message: string; timestamp: string };
 type RobotStatus = 'idle' | 'running' | 'error' | 'maintenance';
@@ -23,7 +24,7 @@ const fetchRealAlerts = async (): Promise<RealAlert[]> => {
       alerts.push({
         id: `robot-err-${err.main_code}-${err.sub_code}`,
         type: 'error',
-        message: `로봇 오류: ${err.message} (${err.main_code}-${err.sub_code})`,
+        message: `로봇 오류 ${err.main_code}-${err.sub_code}: ${getAlarmGuide(err.main_code, err.sub_code).name} — 조치: ${getAlarmGuide(err.main_code, err.sub_code).action}`,
         timestamp: new Date().toISOString(),
       });
     }

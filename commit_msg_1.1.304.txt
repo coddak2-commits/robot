@@ -1,0 +1,9 @@
+v1.1.304: 로봇 알람 이름·조치 안내
+
+- robotAlarmGuide.ts 신규 (getAlarmGuide, RULES)
+- pendant/index.tsx: 알람 목록에 이름 + 조치 줄
+- Dashboard.tsx, layout/index.tsx: 같은 안내 사용
+- 버전 1.1.304
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77
