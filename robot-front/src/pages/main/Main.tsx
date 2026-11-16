@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Cpu, ClipboardList, Settings, Target, CheckSquare, Gamepad2, Power } from 'lucide-react';
+import { LayoutDashboard, Cpu, ClipboardList, Settings, Target, CheckSquare, Gamepad2, Power, HelpCircle } from 'lucide-react';
 import { useLang } from '../../contexts';
 import { getSystemInfo, shutdownPendant, getApiBaseUrl } from '../../lib';
+import { HelpModal } from './HelpModal';
 interface MenuItem {
   id: string;
   label: string;
@@ -36,6 +37,8 @@ const Main: React.FC = () => {
   const [isPendant, setIsPendant] = useState(false);
   const [shutdownPhase, setShutdownPhase] = useState<ShutdownPhase>('idle');
   const [shutdownMessage, setShutdownMessage] = useState('');
+  // [v1.1.305] 작업자용 도움말 창
+  const [helpOpen, setHelpOpen] = useState(false);
   useEffect(() => {
     getSystemInfo()
       .then(info => setIsPendant(info?.platform === 'Linux'))
@@ -142,7 +145,14 @@ const Main: React.FC = () => {
   return (
     <div className="mn-root min-h-screen bg-black p-6">
       <style>{`@media (max-width: 1280px), (max-height: 800px) { .mn-root.mn-root { padding: 12px 12px 56px; } .mn-head.mn-head { margin-bottom: 12px; } .mn-head h1 { font-size: 28px; margin-bottom: 0; } .mn-grid.mn-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; } .mn-card.mn-card { min-height: calc((100vh - 200px) / 2); padding: 16px; gap: 14px; } .mn-icon.mn-icon { width: 80px; height: 80px; } .mn-foot.mn-foot { padding: 8px; } }`}</style>
-      <div className="mn-head text-center mb-8">
+      <div className="mn-head relative text-center mb-8">
+        <button
+          onClick={() => setHelpOpen(true)}
+          className="absolute right-0 top-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-200 text-sm"
+        >
+          <HelpCircle className="w-4 h-4 text-cyan-400" />
+          도움말
+        </button>
         <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">{t('mainTitle')}</h1>
         <p className="text-gray-400">{t('mainSubtitle')}</p>
       </div>
@@ -199,6 +209,7 @@ const Main: React.FC = () => {
         })}
       </div>
       {}
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
       {shutdownPhase !== 'idle' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
           <div className="w-[480px] max-w-[90vw] rounded-2xl border border-gray-700 bg-gray-900 p-8 text-center">

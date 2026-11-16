@@ -82,7 +82,7 @@ function buildRows(h: HealthCheck | null, hErr: string, backOk: boolean, cam: bo
     rows.push(h.version === APP_VERSION
       ? { name: '버전', level: 'ok', text: APP_VERSION }
       : { name: '버전', level: 'warn', text: `화면 ${APP_VERSION} / 코어 ${h.version} — 업데이트가 덜 됨` });
-    rows.push({ name: '기기 시각', level: 'off', text: `${h.time} (휴대폰 시각과 다르면 알려 주세요)` });
+    rows.push({ name: '기기 시각', level: 'off', text: h.time });
   }
   return rows;
 }

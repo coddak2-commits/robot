@@ -1,0 +1,9 @@
+v1.1.305: 메뉴 화면 도움말, 기기 시각 문구 정리
+
+- main/HelpModal.tsx 신규 (작업자용 도움말, SECTIONS)
+- main/Main.tsx: 제목 줄 오른쪽 '도움말' 버튼 + 창
+- dashboard/SystemCheckCard.tsx: 기기 시각 괄호 문구 삭제
+- 버전 1.1.305
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77
