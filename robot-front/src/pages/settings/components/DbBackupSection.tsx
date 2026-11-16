@@ -3,7 +3,11 @@
 // 펜던트에도 최근 5개를 남긴다(~/vot/db-backup).
 // [v1.1.302] 복원 추가. USB 또는 펜던트 보관본에서 고른다. 복원 전에 지금 DB 를 자동으로 백업하고,
 // 실패하면 그 백업으로 되돌린다. 복원 중에는 프로그램이 잠시 꺼진다. 끝나면 화면을 새로 불러온다.
+// [v1.1.303] 복원 확인을 window.prompt('복원' 입력) 대신 화면 안 확인 창(체크 + 버튼)으로 바꿈.
+// 펜던트 키보드로는 한글을 칠 수 없고, USB 포트가 하나라 키보드를 꽂으면 USB 를 뽑아야 하며,
+// Chromium 기본 입력 창은 터치로 취소가 안 됐다(2026-11-16).
 import React, { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Database, CheckCircle, AlertCircle, RotateCcw, RefreshCw } from 'lucide-react';
 import { backupDbToUsb, scanDbRestore, startDbRestore, getDbRestoreStatus, DbRestoreFile, DbRestoreStatus } from '../../../lib';
 
@@ -21,6 +25,8 @@ export const DbBackupSection: React.FC = () => {
   const [rst, setRst] = useState<DbRestoreStatus | null>(null);
   const [polling, setPolling] = useState(false);
   const [coreDown, setCoreDown] = useState(false);
+  const [confirmFile, setConfirmFile] = useState<DbRestoreFile | null>(null);
+  const [agreed, setAgreed] = useState(false);
 
   const refresh = useCallback(async () => {
     const s = await getDbRestoreStatus();
@@ -70,17 +76,13 @@ export const DbBackupSection: React.FC = () => {
     if (r.files.length === 0) setResult({ ok: false, text: `복원할 백업이 없습니다.${r.usbMessage ? ` (USB: ${r.usbMessage})` : ''}` });
   };
 
+  const openConfirm = (f: DbRestoreFile) => {
+    setAgreed(false);
+    setConfirmFile(f);
+  };
+
   const handleRestore = async (f: DbRestoreFile) => {
-    const where = f.source === 'usb' ? 'USB' : '펜던트 보관본';
-    const typed = window.prompt(
-      `[${where}] ${fileTime(f.file)} 백업(v${f.version})으로 DB 전체를 되돌립니다.\n\n` +
-      '- 그 시각 이후에 저장한 교시·설정·작업내역은 사라집니다\n' +
-      '- 복원 전 DB 는 자동으로 따로 백업합니다(실패하면 그걸로 되돌림)\n' +
-      '- 복원 중 프로그램이 잠시 꺼집니다. 전원을 끄지 마세요\n\n' +
-      '진행하려면 아래 칸에 복원 이라고 입력하세요.',
-    );
-    if (typed === null) return;
-    if (typed.trim() !== '복원') { setResult({ ok: false, text: '입력이 맞지 않아 취소했습니다.' }); return; }
+    setConfirmFile(null);
     setResult(null);
     const r = await startDbRestore(f.source, f.file);
     if (!r.ok) { setResult({ ok: false, text: r.message || '시작 실패' }); return; }
@@ -149,7 +151,7 @@ export const DbBackupSection: React.FC = () => {
               <span className="text-xs text-gray-400 font-mono">v{f.version}</span>
               <span className="text-xs text-gray-500">{(f.size / 1024).toFixed(0)}KB</span>
               <button
-                onClick={() => void handleRestore(f)}
+                onClick={() => openConfirm(f)}
                 className="ml-auto px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded-lg text-white text-sm"
               >
                 복원
@@ -157,6 +159,44 @@ export const DbBackupSection: React.FC = () => {
             </div>
           ))}
         </div>
+      )}
+      {confirmFile && createPortal(
+        <div onClick={() => setConfirmFile(null)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 300,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            width: 'min(520px, 92vw)', background: '#0f172a', border: '1px solid #7f1d1d', borderRadius: 14,
+            padding: 20, color: '#e2e8f0', fontSize: 15,
+          }}>
+            <h2 style={{ margin: '0 0 10px', fontSize: 19, color: '#fca5a5' }}>DB 복원</h2>
+            <div style={{ marginBottom: 10 }}>
+              <b>[{confirmFile.source === 'usb' ? 'USB' : '펜던트 보관본'}] {fileTime(confirmFile.file)}</b> 백업(v{confirmFile.version})으로
+              DB 전체를 되돌립니다.
+            </div>
+            <ul style={{ margin: '0 0 14px', paddingLeft: 18, color: '#cbd5e1', fontSize: 14, lineHeight: 1.6 }}>
+              <li>그 시각 이후에 저장한 교시·설정·작업내역은 사라집니다</li>
+              <li>복원 전 DB 는 자동으로 따로 백업합니다 (실패하면 그걸로 되돌림)</li>
+              <li>복원 중 프로그램이 잠시 꺼집니다. 전원을 끄지 마세요</li>
+            </ul>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px', background: '#1e293b', borderRadius: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} style={{ width: 24, height: 24 }} />
+              <span>위 내용을 확인했습니다</span>
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16 }}>
+              <button onClick={() => setConfirmFile(null)}
+                style={{ padding: '14px 0', fontSize: 16, border: 'none', borderRadius: 8, background: '#334155', color: '#fff', cursor: 'pointer' }}
+              >취소</button>
+              <button onClick={() => void handleRestore(confirmFile)} disabled={!agreed}
+                style={{
+                  padding: '14px 0', fontSize: 16, fontWeight: 'bold', border: 'none', borderRadius: 8, color: '#fff',
+                  background: '#b91c1c', opacity: agreed ? 1 : 0.4, cursor: agreed ? 'pointer' : 'not-allowed',
+                }}
+              >복원 진행</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
       {rst && rst.log_tail.length > 0 && (running || rst.phase === 'error') && (
         <details className="mt-3" open={rst.phase === 'error'}>

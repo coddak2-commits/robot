@@ -1,0 +1,7 @@
+v1.1.303: DB 복원 확인을 화면 안 확인 창(체크 + 버튼)으로 변경
+
+- DbBackupSection.tsx: window.prompt 제거, createPortal 확인 창
+- 버전 1.1.303
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcD3YjGZ8hrJmDswW77
