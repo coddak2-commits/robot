@@ -8,6 +8,8 @@ import { useRobotWebSocket } from '../../hooks';
 import { createLogger } from '../../lib';
 import { getTeachingJobs, getRealtimeRobotStatus, getWeldingPartOrder } from '../../lib';
 import { getRobotError, resetRobotError } from '../../lib/robotApi/index';
+import { readLastJobId, writeLastJobId } from '../../lib/lastJob';
+import { setOperationBusy, isOperationBusy, OPERATION_BUSY_MESSAGE } from '../../lib/operationBusy';
 import { useAlert } from '../../contexts';
 const log = createLogger('CellSelectionCore');
 interface CellSelectionCoreProps {
@@ -22,25 +24,6 @@ interface CellSelectionCoreProps {
     width?: number;
     selectedCell?: UCellData | null;
   }) => void;
-}
-const LAST_JOB_ID_KEY = 'vot.lastJobId';
-// 브라우저 저장소를 쓸 수 없는 환경(차단/시크릿 등)에서도 화면이 동작하도록 실패는 무시한다.
-function readLastJobId(): number | null {
-  try {
-    const v = localStorage.getItem(LAST_JOB_ID_KEY);
-    if (v === null) return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  } catch {
-    return null;
-  }
-}
-function writeLastJobId(id: number): void {
-  try {
-    localStorage.setItem(LAST_JOB_ID_KEY, String(id));
-  } catch {
-    // 무시
-  }
 }
 export function CellSelectionCore({
   selectedHeight: propSelectedHeight,
@@ -434,6 +417,11 @@ export function CellSelectionCore({
   useEffect(() => {
     if (currentJobId != null) writeLastJobId(currentJobId);
   }, [currentJobId]);
+  // [v1.1.307] 용접·터치센싱·아크 테스트 중에는 메뉴·로그아웃·관리자 버튼으로 나가지 못하게 한다.
+  useEffect(() => {
+    setOperationBusy(isWelding || isTouchSensing || isArcTesting);
+  }, [isWelding, isTouchSensing, isArcTesting]);
+  useEffect(() => () => setOperationBusy(false), []);
   useEffect(() => {
     if (propSelectedHeight !== undefined) setSelectedHeight(propSelectedHeight);
     if (propSelectedType !== undefined) {
@@ -516,7 +504,13 @@ export function CellSelectionCore({
           selectedType={selectedType}
           onTypeSelect={handleTypeSelect}
           onNavigate={navigate}
-          onAdminClick={() => navigate('/settings')}
+          onAdminClick={() => {
+            if (isOperationBusy()) {
+              showAlert(OPERATION_BUSY_MESSAGE, { type: 'warning' });
+              return;
+            }
+            navigate('/settings');
+          }}
         />
         {showSecondarySidebar && (
           <SecondarySidebar
@@ -925,6 +919,18 @@ export const getExecutableParts = (
     };
   });
 };
+// [v1.1.307] 실제 용접 전 터치 보정 확인. 보정값은 화면 메모리에만 있어 화면을 나가면 사라지고,
+// 없으면 교시 좌표 그대로 용접한다. 실행할 파트 중 보정된 포인트가 하나도 없는 파트 이름을 돌려준다.
+export const findPartsWithoutTouch = (
+  teachingPoints: TeachingPoint[],
+  partWeldEnabled?: PartWeldEnabled,
+): string[] =>
+  getExecutableParts(teachingPoints, partWeldEnabled)
+    .filter(part => part.shouldExecute && !part.savedPoints.some(pt => pt.touchOffset))
+    .map(part => part.name);
+export const touchRequiredMessage = (partNames: string[]): string =>
+  `터치센싱 보정값이 없습니다 (${partNames.join(', ')}).\n` +
+  '터치센싱을 먼저 하세요. 화면을 나갔다 오면 보정값이 지워집니다.';
 // [v1.1.285] 수평 2패스(사용자 요청 2026-11-04). 각장이 5~5.5mm 로 목표(6.5~7mm)보다 작아
 // 수평 파트마다 1패스 직후 같은 방향으로 한 번 더 돈다. 화면의 '수평 2패스' 체크 시에만.
 // 2패스는 1패스 포인트를 base +Z 로 올린 복사본이다. 조건(전류·전압·속도·위빙)은 1패스와 같다.

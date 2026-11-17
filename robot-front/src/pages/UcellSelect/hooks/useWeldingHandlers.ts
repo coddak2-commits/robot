@@ -3,7 +3,7 @@ import { RealtimeRobotStatus, emergencyStop } from '../../../lib';
 import { createLogger } from '../../../lib';
 import { autoCaptureBeforeWeld, collectPointGaps } from '../../../lib/cameraApi';
 import { useCallback } from 'react';
-import { getBlockPointIds, getPartConditionPointIds, getPartConditionPointId } from '..';
+import { getBlockPointIds, getPartConditionPointIds, getPartConditionPointId, findPartsWithoutTouch, touchRequiredMessage } from '..';
 import { TouchSensingOptions, TouchSensingResult, WeldingStartOptions, WeldingResult, ClosestCenterlineResult, UseWeldingOperationsReturn } from './weldingCore';
 
 const log_useWeldingHandlers = createLogger('WeldingHandlers');
@@ -85,6 +85,14 @@ export function useWeldingHandlers({
 }: UseWeldingHandlersProps) {
   const handleStartWelding = useCallback(async () => {
     const isActualWelding = !(simulationMode || dryRunMode);
+    // [v1.1.307] 자동 터치센싱을 안 쓰는 실제 용접은 터치 보정이 있어야 시작한다.
+    if (isActualWelding && !autoTouchSensing) {
+      const missing = findPartsWithoutTouch(teachingPoints, partWeldEnabled);
+      if (missing.length > 0) {
+        showAlert(touchRequiredMessage(missing), { type: 'warning', title: '터치센싱 필요' });
+        return;
+      }
+    }
     // [v1.1.283] 실제 용접 시작 직전(로봇이 홈, 터치센싱 전) 카메라 자동 촬영.
     // 카메라가 연결돼 있을 때만, 실패해도 용접은 그대로 진행
     if (isActualWelding) {
@@ -174,6 +182,14 @@ export function useWeldingHandlers({
       return;
     }
     const isActualWelding = !(simulationMode || dryRunMode);
+    // [v1.1.307] 용접 계속도 터치 보정이 있어야 한다 (화면을 나갔다 오면 보정값이 없다).
+    if (isActualWelding) {
+      const missing = findPartsWithoutTouch(teachingPoints, partWeldEnabled);
+      if (missing.length > 0) {
+        showAlert(touchRequiredMessage(missing), { type: 'warning', title: '터치센싱 필요' });
+        return;
+      }
+    }
     startTracking(isActualWelding);
     const currentJob = jobList.find(job => job.id === currentJobId);
     try {

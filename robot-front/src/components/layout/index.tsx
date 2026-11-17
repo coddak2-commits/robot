@@ -2,7 +2,8 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import styles from './Footer.module.scss';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { ToggleSwitch_ToggleSwitch as ToggleSwitch } from '../common';
-import { useLang } from '../../contexts';
+import { useLang, useAlert } from '../../contexts';
+import { useOperationBusy, isOperationBusy, OPERATION_BUSY_MESSAGE } from '../../lib/operationBusy';
 import { getAutoLogoutMinutes } from '../../lib/appSettings';
 import { APP_VERSION } from '../../lib';
 import { Axios as axios } from '../../lib';
@@ -25,6 +26,14 @@ const Header: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useLang();
+  const { show: showAlert } = useAlert();
+  // [v1.1.307] 용접·터치센싱 중(용접부 선택 화면)에는 메뉴·로그아웃으로 나가지 못하게 한다.
+  const operationBusy = useOperationBusy();
+  const warnIfBusy = (): boolean => {
+    if (!isOperationBusy()) return false;
+    showAlert(OPERATION_BUSY_MESSAGE, { type: 'warning' });
+    return true;
+  };
   const titleKey = PAGE_TITLE_KEYS[location.pathname];
   const pageTitle = titleKey ? t(titleKey) : '';
   const [connText, setConnText] = React.useState<string>('연결 상태 확인중...');
@@ -231,7 +240,7 @@ const Header: React.FC = () => {
             {}
             <div
               className="flex flex-col items-start leading-none cursor-pointer"
-              onClick={() => navigate('/menu')}
+              onClick={() => { if (warnIfBusy()) return; navigate('/menu'); }}
             >
               <span className="text-2xl font-bold text-cyan-400 hover:text-cyan-300 transition">
                 The VoT
@@ -358,9 +367,9 @@ const Header: React.FC = () => {
           >
             {}
             <button
-              onClick={() => navigate('/menu')}
+              onClick={() => { if (warnIfBusy()) return; navigate('/menu'); }}
               className="flex items-center gap-1.5 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded-lg text-white transition"
-              style={{ flexShrink: 0 }}
+              style={{ flexShrink: 0, opacity: operationBusy ? 0.4 : 1 }}
             >
               <Home className="w-4 h-4" />
               <span className="text-sm">{t('menu')}</span>
@@ -384,6 +393,7 @@ const Header: React.FC = () => {
       </header>
       <button
         onClick={() => {
+          if (warnIfBusy()) return;
           if (!window.confirm('로그아웃 하시겠습니까?')) return;
           localStorage.removeItem('token');
           localStorage.removeItem('user');
@@ -395,6 +405,7 @@ const Header: React.FC = () => {
           position: 'fixed', top: 12, right: 12, zIndex: 200,
           padding: '8px 14px', fontSize: 13, fontWeight: 'bold',
           background: '#475569', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer',
+          opacity: operationBusy ? 0.4 : 1,
         }}
       >{t('logout')}</button>
       {}
@@ -455,6 +466,11 @@ const Layout: React.FC = () => {
     resetActivity();
     ACTIVITY_EVENTS.forEach(evt => window.addEventListener(evt, resetActivity, { passive: true }));
     const interval = setInterval(() => {
+      // [v1.1.307] 용접·터치센싱 중에는 자동 로그아웃하지 않는다 (끝난 뒤부터 다시 잰다).
+      if (isOperationBusy()) {
+        resetActivity();
+        return;
+      }
       if (Date.now() - lastActivityRef.current >= timeoutMs) {
         localStorage.removeItem('token');
         localStorage.removeItem('user');

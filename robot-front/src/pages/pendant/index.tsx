@@ -2,10 +2,12 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useTeachingPoints, useRobotControl, useSchematicCalculations, useJobManagement, useWeldingOperations, usePathTracking, useWeldingHandlers } from '../UcellSelect/hooks';
 import { UnifiedWorkspaceCanvas, UCellConfig } from '../UcellSelect/components';
 import { paramApi, Posture, deviationApi } from '../../lib/gapApi';
-import { pulseWireFeed, stopAllWireFeed, wireFeedDurationMs, WIRE_STOP_FAILED_MESSAGE } from '../../lib';
+import { pulseWireFeed, stopAllWireFeed, wireFeedDurationMs, WIRE_STOP_FAILED_MESSAGE, getTeachingJobs } from '../../lib';
+import { readLastJobId, writeLastJobId } from '../../lib/lastJob';
+import { setOperationBusy, OPERATION_BUSY_MESSAGE } from '../../lib/operationBusy';
 import { getRobotError, resetRobotError, connectRobotSDK, getWeldingPartOrder } from '../../lib/robotApi/index';
 import { getAlarmGuide } from '../../lib/robotAlarmGuide';
-import { setWeldingPartOrder, hasCornerParts, DEFAULT_SECOND_PASS_SETTINGS, SecondPassSettings } from '../UcellSelect';
+import { setWeldingPartOrder, hasCornerParts, DEFAULT_SECOND_PASS_SETTINGS, SecondPassSettings, findPartsWithoutTouch, touchRequiredMessage } from '../UcellSelect';
 import { TwoPassControl } from '../UcellSelect/components/TwoPassControl';
 import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
@@ -224,6 +226,48 @@ const PendantInner: React.FC = () => {
     const result = await loadJob(jobId);
     if (result) loadPointsFromJob(result.points);
     setJobPickerOpen(false);
+  };
+  // [v1.1.307] 마지막으로 연 작업 자동 로드. 용접부 선택 화면과 같은 저장 값(vot.lastJobId)을 쓴다.
+  // 저장된 번호가 없거나 그 작업에 포인트가 없으면 포인트 있는 최신 작업을 연다. 화면이 열릴 때 한 번만.
+  const autoLoadDoneRef = useRef(false);
+  useEffect(() => {
+    if (autoLoadDoneRef.current) return;
+    autoLoadDoneRef.current = true;
+    const loadLastJob = async () => {
+      try {
+        await fetchJobList();
+        const response = await getTeachingJobs();
+        const jobs = response?.data?.jobs ?? [];
+        const hasPoints = (job: { total_points?: number }) => (job.total_points ?? 0) > 0;
+        const savedId = readLastJobId();
+        const savedJob =
+          savedId !== null
+            ? jobs.find((job: { id: number; total_points?: number }) => job.id === savedId && hasPoints(job))
+            : undefined;
+        const target = savedJob ?? jobs.find(hasPoints);
+        if (!target) return;
+        const result = await loadJob(target.id);
+        if (result) loadPointsFromJob(result.points);
+      } catch {
+        // 실패하면 지금처럼 '작업 불러오기'로 직접 고른다.
+      }
+    };
+    loadLastJob();
+  }, [fetchJobList, loadJob, loadPointsFromJob]);
+  // 현재 작업이 바뀔 때마다 번호를 저장한다 (불러오기, 새로 저장 모두 포함).
+  useEffect(() => {
+    if (currentJobId != null) writeLastJobId(currentJobId);
+  }, [currentJobId]);
+  // [v1.1.307] 용접·터치센싱 중에는 메뉴·로그아웃으로 나가지 못하게 한다.
+  const operationBusy = isWelding || isTouchSensing;
+  useEffect(() => {
+    setOperationBusy(operationBusy);
+  }, [operationBusy]);
+  useEffect(() => () => setOperationBusy(false), []);
+  const warnIfBusy = (): boolean => {
+    if (!operationBusy) return false;
+    showAlert(OPERATION_BUSY_MESSAGE, { type: 'warning' });
+    return true;
   };
   // [v1.1.220] 작업 저장. 펜던트에는 불러오기만 있고 저장이 없어서, 여기서 포인트를
   // 다시 잡아도 DB에 남길 방법이 없었다. 작업을 불러온 상태면 덮어쓰기/새로 저장을
@@ -485,6 +529,14 @@ const PendantInner: React.FC = () => {
 
   const startWithGapLookup = async () => {
     if (isWelding || isRobotMoving) return;
+    // [v1.1.307] 실제 용접은 터치 보정이 있어야 시작한다 (화면을 나갔다 오면 보정값이 없다).
+    if (!dryRun) {
+      const missing = findPartsWithoutTouch(teachingPoints, partWeldEnabledMap);
+      if (missing.length > 0) {
+        showAlert(touchRequiredMessage(missing), { type: 'warning', title: '터치센싱 필요' });
+        return;
+      }
+    }
     try {
       // [v1.1.284] 실제 용접 시작 직전 카메라 자동 촬영 (카메라 연결 시에만, 실패해도 용접 진행)
       if (!dryRun) {
@@ -806,10 +858,11 @@ const PendantInner: React.FC = () => {
       {/* 좌상단 작업 선택 */}
       <div style={{ position: 'fixed', top: 16, left: 16, zIndex: 30, display: 'flex', gap: 8, alignItems: 'center' }}>
         {/* v1.1.188: 메인 메뉴로 이동 */}
-        <button onClick={() => { window.location.href = '/menu'; }}
+        <button onClick={() => { if (warnIfBusy()) return; window.location.href = '/menu'; }}
           style={{
             padding: '10px 16px', fontSize: 14, fontWeight: 'bold',
             background: '#1e293b', color: '#fff', border: '1px solid #334155', borderRadius: 10, cursor: 'pointer',
+            opacity: operationBusy ? 0.4 : 1,
           }}
         >메뉴</button>
         <button onClick={openJobPicker}
@@ -839,6 +892,7 @@ const PendantInner: React.FC = () => {
       {/* 우상단 알람 배지 + 로그아웃 */}
       <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 30, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
         <button onClick={() => {
+          if (warnIfBusy()) return;
           if (!window.confirm('로그아웃 하시겠습니까?')) return;
           localStorage.removeItem('token');
           localStorage.removeItem('user');
@@ -849,6 +903,7 @@ const PendantInner: React.FC = () => {
           style={{
             padding: '10px 16px', fontSize: 14, fontWeight: 'bold',
             background: '#334155', color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer',
+            opacity: operationBusy ? 0.4 : 1,
           }}
         >로그아웃</button>
         {errorCount > 0 && (

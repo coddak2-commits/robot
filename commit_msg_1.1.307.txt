@@ -1,0 +1,12 @@
+v1.1.307: 펜던트 화면 마지막 작업 자동 불러오기, 작업 중 화면 이탈 막기, 터치센싱 없는 용접 막기
+
+- lib/lastJob.ts: readLastJobId/writeLastJobId 를 용접부 선택 화면에서 옮김 (vot.lastJobId 공용)
+- pendant/index.tsx: 화면이 열릴 때 마지막으로 연 작업(없으면 포인트 있는 최신 작업) 자동 로드, 작업이 바뀌면 번호 저장
+- lib/operationBusy.ts: 용접·터치센싱·아크 테스트 중 상태, 그동안 페이지를 떠나면 브라우저 경고
+- 펜던트 화면 메뉴·로그아웃, 용접부 선택 화면 관리자 버튼, Layout 메뉴·로그아웃: 작업 중 이동 막고 안내, 자동 로그아웃도 작업 중엔 안 함
+- UcellSelect/index.tsx: findPartsWithoutTouch/touchRequiredMessage. 실제 용접 시작·용접 계속(펜던트, 용접부 선택 화면)에서 실행할 파트에 터치 보정이 없으면 시작 안 함 (Dry Run·시뮬레이션·자동 터치센싱은 제외)
+- HelpModal.tsx: 용접 순서 1번 문구 (작업 이름 확인, 자동 불러오기)
+- 버전 1.1.307
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcAzNvgE4EahHeBhhER
