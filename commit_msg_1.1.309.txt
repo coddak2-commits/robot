@@ -1,0 +1,7 @@
+v1.1.309: 수직 끝 -> 홈 관절 이동 속도 30 -> 40
+
+- moveStopCheck.ts VERTICAL_END_HOME_JOINT_SPEED 30 -> 40 (1.1.307 이전 50 대비 약 1.25배 시간)
+- 버전 1.1.309
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcAzNvgE4EahHeBhhER
