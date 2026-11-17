@@ -150,6 +150,9 @@ const HOME_LIN_ARRIVE_TOL_MM = 5;
 // 홈 버튼은 기본값(속도 최대 30, 가속 100) 그대로.
 // [v1.1.275] 15/50 은 P7 -> 홈이 너무 느려 30/100 으로 원복(2026-10-26 현장). 아래로 150mm 는 유지.
 export const VERTICAL_END_HOME_LIN = { linVel: 30, linAcc: 100 };
+// [v1.1.308] 수직 끝 -> 홈의 관절 이동(팔 접기, J1 회전) 최대 속도. 앞 직선 이동(30)과 맞춤.
+// 50 일 때 팔을 뻗은 자세에서 접고 도는 구간만 유독 빨랐다(2026-11-17 15:47 영상).
+const VERTICAL_END_HOME_JOINT_SPEED = 30;
 const verifyHomeLinArrival = async (
   target: { x: number; y: number; z: number },
   what = '홈 TCP',
@@ -219,7 +222,7 @@ export const moveHomeFromVerticalEnd = async (
   if (!homePoint.joints || homePoint.joints.length !== 6) return { success: false, stopped: false };
   const tool = homePoint.toolNum ?? 3;
   const user = homePoint.userNum ?? 0;
-  const speed = homePoint.moveSpeed || 50;
+  const speed = Math.min(homePoint.moveSpeed || VERTICAL_END_HOME_JOINT_SPEED, VERTICAL_END_HOME_JOINT_SPEED);
   // [v1.1.294] skipLin: 홈 직선 없이 바로 팔 접기 -> 홈 MoveJ (P7 -> P8 높이 -> 홈 경로)
   if (homePoint.tcp && !opts?.skipLin) {
     const linVel = opts?.linVel ?? Math.min(speed, 30);

@@ -1,0 +1,8 @@
+v1.1.308: 수직 끝 -> 홈 관절 이동 속도 50 -> 30
+
+- moveStopCheck.ts moveHomeFromVerticalEnd: 팔 접기·J1 회전 MoveJ 속도를 최대 30 으로 (홈 포인트 이동 속도가 더 낮으면 그 값)
+  터치센싱 끝(P1/P7), 용접 끝, P1->P10 전환 홈 복귀에 적용
+- 버전 1.1.308
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcAzNvgE4EahHeBhhER
