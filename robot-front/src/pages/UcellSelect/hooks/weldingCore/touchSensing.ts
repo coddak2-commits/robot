@@ -7,6 +7,7 @@ import { PointTouchResult, performDryRunForPoint } from './touchDryRun';
 import { getTouchDirections } from './touchDirections';
 import { loadWeldingSettings } from './sequenceSettings';
 import { moveToCartesianWithStopCheck, moveToJointWithStopCheck, moveHomeFromVerticalEnd, moveHomeFromP7ViaP8, VERTICAL_END_HOME_LIN } from './moveStopCheck';
+import { getUcellShiftForTouch, applyUcellShift } from '../../../../lib/cameraApi';
 
 const log_touchSensing = createLogger('weldingCore.touchSensing');
 export interface TouchSensingContext {
@@ -262,6 +263,22 @@ export async function executeTouchSensing(
     });
     return [];
   }
+  // [v1.1.310] Gemini U셀 위치 대략 보정. 카메라 연결 + 기준 등록돼 있을 때만.
+  // 티칭 포인트를 U셀이 움직인 만큼 옮겨서 터치를 시작하고, 저장하는 보정값은 '카메라 이동 + 터치 측정'이다
+  // (용접은 종전처럼 교시 좌표 + 보정값). 카메라가 없거나 기준이 없으면 shift 가 null 이라 종전과 같다.
+  // 보정을 못 쓰는 경우(홈이 아님, 판정 실패)도 종전처럼 교시 좌표로 진행하고 완료 알림에 사유를 붙인다.
+  // 토치 자세(rx,ry,rz)는 그대로 둔다(회전 3도 이내만 씀).
+  const camera = await getUcellShiftForTouch();
+  if (stopRef.current) return [];
+  const camShift = camera.shift;
+  const camOffsets = new Map<string, number[]>();
+  const shiftPoint = (pt: TeachingPoint): TeachingPoint => {
+    if (!camShift || !pt.tcp) return pt;
+    const tcp = applyUcellShift(pt.tcp, camShift);
+    camOffsets.set(pt.id, [tcp.x - pt.tcp.x, tcp.y - pt.tcp.y, tcp.z - pt.tcp.z]);
+    return { ...pt, tcp };
+  };
+  const camOffsetOf = (id: string) => camOffsets.get(id) ?? [0, 0, 0];
   setCurrentPointIndex(0);
   const touchResults: TouchSensingResult[] = [];
   const Z_APPROACH_OFFSET = sequenceSettings.touchApproachOffset;
@@ -319,7 +336,7 @@ export async function executeTouchSensing(
     };
     for (let i = 0; i < savedPoints.length; i++) {
       if (stopRef.current) break;
-      const point = savedPoints[i];
+      const point = shiftPoint(savedPoints[i]);
       setCurrentPointIndex(i);
       log_touchSensing.info('touchSensing.point', `[${i + 1}/${savedPoints.length}] ${point.name} 터치 센싱`);
       const pointIdLower = point.id.toLowerCase();
@@ -437,11 +454,12 @@ export async function executeTouchSensing(
         failure = touchResult.error;
         break;
       }
+      const camOff = camOffsetOf(point.id);
       const result: TouchSensingResult = {
         pointId: point.id,
-        dx: touchResult.dx,
-        dy: touchResult.dy,
-        dz: touchResult.dz,
+        dx: touchResult.dx + camOff[0],
+        dy: touchResult.dy + camOff[1],
+        dz: touchResult.dz + camOff[2],
       };
       touchResults.push(result);
       pendingUpdates.push(result);
@@ -521,7 +539,11 @@ export async function executeTouchSensing(
               // (2026-10-19 P7 약 24mm) 달라, 같은 P7 자세에서 용접 끝 홈 직선은 되고 터치센싱 끝 홈 직선만
               // J1 지령속도 초과(1-23)·J1 충돌(4-1)로 멈춰 팔 접기로 넘어갔다(08:01/08:03/08:03).
               const lastTouch = touchResults.find(r => r.pointId === lastPoint!.id);
-              const touchBase = lastTouch ? [lastTouch.dx ?? 0, lastTouch.dy ?? 0, lastTouch.dz ?? 0] : [0, 0, 0];
+              // [v1.1.310] lastPoint 는 카메라 보정으로 옮긴 좌표라 저장 보정값에서 카메라 몫을 뺀다
+              const lastCam = camOffsetOf(lastPoint.id);
+              const touchBase = lastTouch
+                ? [(lastTouch.dx ?? 0) - lastCam[0], (lastTouch.dy ?? 0) - lastCam[1], (lastTouch.dz ?? 0) - lastCam[2]]
+                : [0, 0, 0];
               log_touchSensing.info(
                 'touchSensing.homeReturn.exit.base',
                 `${lastPoint.name} 빠져나오기 기준: 교시 + 터치 보정`,
@@ -594,7 +616,7 @@ export async function executeTouchSensing(
           if (lastIdForHome === 'p7') {
             // [v1.1.279] P7 은 P8 높이까지 내려간 뒤 홈. moveStopCheck.ts moveHomeFromP7ViaP8 참고.
             const p8 = teachingPoints.find(pt => pt.id.toLowerCase() === 'p8' && pt.isSaved && pt.tcp);
-            await moveHomeFromP7ViaP8(lastPoint?.tcp, p8, homePoint, stopRef, VERTICAL_END_HOME_LIN);
+            await moveHomeFromP7ViaP8(lastPoint?.tcp, p8 ? shiftPoint(p8) : p8, homePoint, stopRef, VERTICAL_END_HOME_LIN);
           } else if (lastIdForHome === 'p1') {
             // [v1.1.261] 수직 끝에서는 직선 -> (거부 시) 팔 접기 -> 회전. moveStopCheck.ts 참고.
             await moveHomeFromVerticalEnd(homePoint, stopRef, VERTICAL_END_HOME_LIN);
@@ -613,7 +635,7 @@ export async function executeTouchSensing(
       }
     }
     const elapsedMs = totalTimer.end('touchSensing.complete', `${modeLabel} 완료`);
-    const elapsedText = `소요 시간: ${(elapsedMs / 1000).toFixed(1)}초`;
+    const elapsedText = `소요 시간: ${(elapsedMs / 1000).toFixed(1)}초${camera.note ? `\n${camera.note}` : ''}`;
     if (!suppressAlerts) {
       if (isDryRun) {
         showAlert(`${touchResults.length}개 포인트 터치 테스트 완료\n${elapsedText}`, {

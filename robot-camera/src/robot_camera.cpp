@@ -1,11 +1,13 @@
 // robot_camera: Orbbec Gemini 435Le 촬영 프로그램 (robot_core 와 별도로 실행)
 // HTTP(기본 127.0.0.1:8002) GET /camera/status, POST /camera/capture,
 //      GET /camera/captures?limit=N, GET /camera/file?id=N&kind=color|depth|meta
+// [v1.1.310] U셀 위치 대략 보정: GET /camera/align/status, POST /camera/align/reference, POST /camera/align/estimate
 // 설정: 실행 인자 1 = config.ini 경로 (없으면 실행 파일 옆 config.ini). [database] 는 robot_core 와 같이 씀.
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <mysql.h>
 #include <libobsensor/ObSensor.hpp>
+#include "ucell_align.h"
 
 #include <algorithm>
 #include <atomic>
@@ -32,7 +34,7 @@
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
-static const char *CAMERA_APP_VERSION = "1.1.289";
+static const char *CAMERA_APP_VERSION = "1.1.310";
 
 struct Settings {
     std::string dbHost = "localhost", dbUser = "root", dbPass, dbName = "robot_welding";
@@ -590,12 +592,9 @@ int main(int argc, char **argv) {
 
     svr.Get("/camera/status", [&](const httplib::Request &, httplib::Response &res) { sendJson(res, cam.status()); });
 
-    svr.Post("/camera/capture", [&](const httplib::Request &req, httplib::Response &res) {
-        json body = json::object();
-        if (!req.body.empty()) {
-            body = json::parse(req.body, nullptr, false);
-            if (body.is_discarded() || !body.is_object()) return sendJson(res, {{"ok", false}, {"error", "JSON 형식 오류"}}, 400);
-        }
+    // 촬영 + 메타 json + DB 기록. 실패하면 {"ok":false,"error"} (status 503)
+    auto captureAndRecord = [&](json body, int &status) -> json {
+        status = 200;
         std::string trigger = body.value("trigger", "manual");
         if (trigger != "manual" && trigger != "auto") trigger = "manual";
         auto now = std::chrono::system_clock::now();
@@ -611,7 +610,8 @@ int main(int argc, char **argv) {
             saved = cam.capture(base);
         } catch (const std::exception &e) {
             logLine(std::string("[CAPTURE] 실패: ") + e.what());
-            return sendJson(res, {{"ok", false}, {"error", e.what()}}, 503);
+            status = 503;
+            return json{{"ok", false}, {"error", e.what()}};
         }
         std::ostringstream at;
         at << fmtTime(now, "%Y-%m-%d %H:%M:%S") << "." << std::setw(3) << std::setfill('0') << ms;
@@ -636,7 +636,128 @@ int main(int argc, char **argv) {
         long long id = db.insert(sql.str());
         logLine("[CAPTURE] " + trigger + " id=" + std::to_string(id) + " " + base + " 유효 깊이 " +
                 std::to_string((int)(saved["depth_valid_ratio"].get<double>() * 100)) + "%");
-        sendJson(res, {{"ok", true}, {"id", id}, {"db_saved", id > 0}, {"captured_at", at.str()}, {"capture", saved}, {"meta_path", metaPath}});
+        return json{{"ok", true}, {"id", id}, {"db_saved", id > 0}, {"captured_at", at.str()}, {"capture", saved}, {"meta_path", metaPath}};
+    };
+
+    svr.Post("/camera/capture", [&](const httplib::Request &req, httplib::Response &res) {
+        json body = json::object();
+        if (!req.body.empty()) {
+            body = json::parse(req.body, nullptr, false);
+            if (body.is_discarded() || !body.is_object()) return sendJson(res, {{"ok", false}, {"error", "JSON 형식 오류"}}, 400);
+        }
+        int status = 200;
+        json out = captureAndRecord(body, status);
+        sendJson(res, out, status);
+    });
+
+    // ---------------- [v1.1.310] U셀 위치 대략 보정 ----------------
+    // 기준은 data_dir/ucell_ref 에 둔다(날짜 폴더가 아니라 USB 내보내기로 지워지지 않음).
+    fs::path refDir = fs::path(s.dataDir) / "ucell_ref";
+    fs::path refJson = refDir / "reference.json";
+    std::mutex alignMx;
+    auto loadRef = [&]() -> json {
+        std::ifstream f(refJson);
+        if (!f) return nullptr;
+        json j = json::parse(f, nullptr, false);
+        return j.is_discarded() ? json(nullptr) : j;
+    };
+    auto parseBody = [](const httplib::Request &req) -> json {
+        if (req.body.empty()) return json::object();
+        json b = json::parse(req.body, nullptr, false);
+        return b.is_object() ? b : json(nullptr);
+    };
+    auto tcpXyz = [](const json &t, double out[3]) {
+        if (t.is_array() && t.size() >= 3 && t[0].is_number()) { for (int i = 0; i < 3; i++) out[i] = t[i].get<double>(); return true; }
+        if (t.is_object() && t.contains("x")) { out[0] = t.value("x", 0.0); out[1] = t.value("y", 0.0); out[2] = t.value("z", 0.0); return true; }
+        return false;
+    };
+    auto intrOf = [](const json &capture, ualign::Intr &k) {
+        if (!capture.contains("intrinsics") || !capture["intrinsics"].is_object() || !capture["intrinsics"].contains("depth")) return false;
+        const json &d = capture["intrinsics"]["depth"];
+        k.fx = d.value("fx", 0.0); k.fy = d.value("fy", 0.0); k.cx = d.value("cx", 0.0); k.cy = d.value("cy", 0.0);
+        return k.fx > 0 && k.fy > 0;
+    };
+
+    svr.Get("/camera/align/status", [&](const httplib::Request &, httplib::Response &res) {
+        json ref = loadRef();
+        json out = {{"ok", true}, {"has_reference", ref.is_object()}};
+        if (ref.is_object()) out["reference"] = {{"captured_at", ref.value("captured_at", "")}, {"robot_tcp", ref.value("robot_tcp", json(nullptr))},
+                                                 {"job_name", ref.value("job_name", json(nullptr))}};
+        sendJson(res, out);
+    });
+
+    // 기준 등록: 로봇 홈, U셀이 티칭한 자리 그대로일 때 1회
+    svr.Post("/camera/align/reference", [&](const httplib::Request &req, httplib::Response &res) {
+        json body = parseBody(req);
+        if (body.is_null()) return sendJson(res, {{"ok", false}, {"error", "JSON 형식 오류"}}, 400);
+        std::lock_guard<std::mutex> lk(alignMx);
+        fs::create_directories(refDir, ec);
+        std::string base = (refDir / ("ref_" + fmtTime(std::chrono::system_clock::now(), "%Y%m%d_%H%M%S"))).string();
+        json saved;
+        try {
+            saved = cam.capture(base);
+        } catch (const std::exception &e) {
+            return sendJson(res, {{"ok", false}, {"error", e.what()}}, 503);
+        }
+        ualign::Depth d; ualign::Intr k;
+        if (!intrOf(saved, k) || !ualign::loadPgm(saved["depth_path"].get<std::string>(), d))
+            return sendJson(res, {{"ok", false}, {"error", "기준 깊이 사진을 읽지 못했습니다"}}, 500);
+        std::vector<ualign::V3> pts;
+        ualign::buildCloud(d, k, ualign::CLOUD_STEP, pts);
+        if (pts.size() < 2000) return sendJson(res, {{"ok", false}, {"error", "U셀 깊이 점이 너무 적습니다 (" + std::to_string(pts.size()) + "개)"}}, 422);
+        json ref = {{"captured_at", fmtTime(std::chrono::system_clock::now(), "%Y-%m-%d %H:%M:%S")}, {"capture", saved},
+                    {"robot_tcp", body.value("robot_tcp", json(nullptr))}, {"job_id", body.value("job_id", json(nullptr))},
+                    {"job_name", body.value("job_name", json(nullptr))}, {"points", (int)pts.size()}};
+        { std::ofstream f(refJson); f << ref.dump(2); }
+        logLine("[ALIGN] 기준 등록 " + base + " 점 " + std::to_string(pts.size()));
+        sendJson(res, {{"ok", true}, {"captured_at", ref["captured_at"]}, {"points", (int)pts.size()}});
+    });
+
+    // 지금 U셀이 기준에서 얼마나 움직였는지(로봇 좌표). 보정 위치 = R * p + t
+    svr.Post("/camera/align/estimate", [&](const httplib::Request &req, httplib::Response &res) {
+        json body = parseBody(req);
+        if (body.is_null()) return sendJson(res, {{"ok", false}, {"error", "JSON 형식 오류"}}, 400);
+        std::lock_guard<std::mutex> lk(alignMx);
+        json ref = loadRef();
+        if (!ref.is_object()) return sendJson(res, {{"ok", false}, {"code", "no_reference"}, {"error", "기준이 등록되지 않았습니다"}}, 409);
+        double a[3], b[3];
+        if (tcpXyz(ref.value("robot_tcp", json(nullptr)), a) && tcpXyz(body.value("robot_tcp", json(nullptr)), b)) {
+            double dist = std::sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) + (a[2] - b[2]) * (a[2] - b[2]));
+            if (dist > 10) return sendJson(res, {{"ok", false}, {"code", "not_home"},
+                                                 {"error", "로봇이 기준 촬영 위치(홈)에서 " + std::to_string((int)dist) + "mm 떨어져 있습니다"}}, 409);
+        }
+        ualign::Depth rd, cd; ualign::Intr rk, ck;
+        if (!intrOf(ref["capture"], rk) || !ualign::loadPgm(ref["capture"].value("depth_path", ""), rd))
+            return sendJson(res, {{"ok", false}, {"error", "기준 깊이 사진을 읽지 못했습니다. 기준을 다시 등록하세요"}}, 500);
+        json cbody = body;
+        cbody["trigger"] = "auto";
+        cbody["note"] = "U셀 위치 보정";
+        int status = 200;
+        json cap = captureAndRecord(cbody, status);
+        if (!cap.value("ok", false)) return sendJson(res, cap, status);
+        if (!intrOf(cap["capture"], ck) || !ualign::loadPgm(cap["capture"].value("depth_path", ""), cd))
+            return sendJson(res, {{"ok", false}, {"error", "깊이 사진을 읽지 못했습니다"}}, 500);
+        auto t0 = std::chrono::steady_clock::now();
+        ualign::Result r = ualign::estimate(rd, rk, cd, ck);
+        int ms = (int)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+        if (!r.ok) return sendJson(res, {{"ok", false}, {"error", r.error}, {"capture_id", cap["id"]}}, 422);
+        // 판정: 맞은 점 60% 이상, 오차 3mm 이하, 기준점 이동 40mm·회전 3도 이내
+        double move = std::sqrt(r.center[0] * r.center[0] + r.center[1] * r.center[1] + r.center[2] * r.center[2]);
+        std::string reason;
+        if (r.inlier < 0.6) reason = "기준과 맞는 점이 적습니다 (" + std::to_string((int)(r.inlier * 100)) + "%)";
+        else if (r.rms > 3.0) reason = "맞춤 오차가 큽니다";
+        else if (move > 40) reason = "이동량이 40mm 를 넘습니다";
+        else if (r.rotDeg > 3) reason = "회전이 3도를 넘습니다";
+        json out = {{"ok", true}, {"valid", reason.empty()}, {"reason", reason}, {"capture_id", cap["id"]},
+                    {"R", std::vector<double>(r.robot.R, r.robot.R + 9)}, {"t", std::vector<double>(r.robot.t, r.robot.t + 3)},
+                    {"center", std::vector<double>(r.center, r.center + 3)}, {"yaw_deg", r.yawDeg}, {"rot_deg", r.rotDeg},
+                    {"rms", r.rms}, {"inlier", r.inlier}, {"elapsed_ms", ms}};
+        std::ostringstream os;
+        os << std::fixed << std::setprecision(1) << "[ALIGN] 이동 X " << r.center[0] << " Y " << r.center[1] << " Z " << r.center[2]
+           << " 회전 " << std::setprecision(2) << r.yawDeg << "도 맞음 " << (int)(r.inlier * 100) << "% " << ms << "ms"
+           << (reason.empty() ? "" : " 사용 안 함: " + reason);
+        logLine(os.str());
+        sendJson(res, out);
     });
 
     svr.Get("/camera/captures", [&](const httplib::Request &req, httplib::Response &res) {

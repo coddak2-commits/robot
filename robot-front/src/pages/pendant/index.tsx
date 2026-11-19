@@ -13,6 +13,7 @@ import { RequireRole } from '../../contexts/gapAuth';
 import { useAlert } from '../../contexts';
 import { playSaveOkBeep, playErrorBeep } from '../../lib/audio';
 import { CameraCaptureButton } from '../UcellSelect/components/CameraCaptureButton';
+import { UcellReferenceButton } from '../UcellSelect/components/UcellReferenceButton';
 import { autoCaptureBeforeWeld, collectPointGaps } from '../../lib/cameraApi';
 
 const CELL_CONFIG: UCellConfig = {
@@ -887,6 +888,8 @@ const PendantInner: React.FC = () => {
         </span>
         {/* [v1.1.284] 카메라(robot_camera)가 연결돼 있을 때만 보임 */}
         <CameraCaptureButton jobId={currentJobId} jobName={currentJobName} points={teachingPoints} disabled={isWelding || isTouchSensing} />
+        {/* [v1.1.310] U셀 기준 등록(카메라 위치 보정). 카메라 연결 시만 보임 */}
+        <UcellReferenceButton jobId={currentJobId} jobName={currentJobName} points={teachingPoints} disabled={isWelding || isTouchSensing} />
       </div>
 
       {/* 우상단 알람 배지 + 로그아웃 */}

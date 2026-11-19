@@ -130,6 +130,114 @@ export async function startCameraExport(): Promise<{ ok: boolean; error?: string
   }
 }
 
+// [v1.1.310] U셀 위치 대략 보정 (robot_camera /camera/align/*)
+export interface UcellAlignStatus {
+  ok: boolean;
+  has_reference: boolean;
+  reference?: { captured_at: string; robot_tcp: number[] | null; job_name: string | null };
+}
+
+export interface UcellShiftResponse {
+  ok: boolean;
+  valid?: boolean;
+  reason?: string;
+  code?: string;
+  error?: string;
+  R?: number[];
+  t?: number[];
+  center?: number[];
+  yaw_deg?: number;
+  rot_deg?: number;
+  rms?: number;
+  inlier?: number;
+  elapsed_ms?: number;
+}
+
+/** 기준 대비 U셀 이동(로봇 좌표). 보정 위치 = R * p + t */
+export interface UcellShift {
+  R: number[];
+  t: number[];
+  center: number[];
+  yawDeg: number;
+}
+
+async function readRobotTcp(): Promise<number[] | null> {
+  try {
+    const st = await getRealtimeRobotStatus();
+    return st?.tcp ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getUcellAlignStatus(timeoutMs = 2000): Promise<UcellAlignStatus | null> {
+  try {
+    return await fetchJson<UcellAlignStatus>('/camera/align/status', { method: 'GET' }, timeoutMs);
+  } catch {
+    return null;
+  }
+}
+
+/** 기준 등록: 로봇 홈, U셀이 티칭한 자리 그대로일 때 */
+export async function registerUcellReference(input: { job_id?: number | null; job_name?: string | null }): Promise<{ ok: boolean; error?: string; points?: number }> {
+  const robot_tcp = await readRobotTcp();
+  try {
+    const r = await fetchJson<{ ok: boolean; error?: string; points?: number }>(
+      '/camera/align/reference',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...input, robot_tcp }) },
+      20000,
+    );
+    if (r.ok) log.info('camera.align.reference', `U셀 기준 등록 (점 ${r.points})`);
+    else log.warn('camera.align.reference.fail', `U셀 기준 등록 실패: ${r.error}`);
+    return r;
+  } catch (e) {
+    return { ok: false, error: e instanceof Error && e.name === 'AbortError' ? '응답 시간 초과' : String(e) };
+  }
+}
+
+/** 점 p 를 U셀 이동만큼 옮긴다 (자세 rx,ry,rz 는 그대로) */
+export function applyUcellShift<T extends { x: number; y: number; z: number }>(p: T, s: UcellShift): T {
+  const R = s.R;
+  return {
+    ...p,
+    x: R[0] * p.x + R[1] * p.y + R[2] * p.z + s.t[0],
+    y: R[3] * p.x + R[4] * p.y + R[5] * p.z + s.t[1],
+    z: R[6] * p.x + R[7] * p.y + R[8] * p.z + s.t[2],
+  };
+}
+
+/**
+ * 터치센싱 직전 호출. 카메라 미연결·기준 없음이면 { shift: null, note: null } (종전 동작).
+ * 보정을 못 쓰면 shift 는 null, note 에 사유. 쓰면 shift 와 이동량 note.
+ */
+export async function getUcellShiftForTouch(): Promise<{ shift: UcellShift | null; note: string | null }> {
+  const st = await getCameraStatus();
+  if (!st || !st.connected) return { shift: null, note: null };
+  const align = await getUcellAlignStatus();
+  if (!align?.has_reference) return { shift: null, note: null };
+  const robot_tcp = await readRobotTcp();
+  let r: UcellShiftResponse;
+  try {
+    r = await fetchJson<UcellShiftResponse>(
+      '/camera/align/estimate',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ robot_tcp }) },
+      40000,
+    );
+  } catch (e) {
+    r = { ok: false, error: e instanceof Error && e.name === 'AbortError' ? '응답 시간 초과' : String(e) };
+  }
+  if (!r.ok || !r.valid || !r.R || !r.t || !r.center) {
+    const why = r.ok ? r.reason : r.error;
+    log.warn('camera.align.skip', `U셀 카메라 보정 안 함: ${why}`, r);
+    return { shift: null, note: `카메라 위치 보정 안 함: ${why ?? '알 수 없음'} (교시 좌표로 진행)` };
+  }
+  const c = r.center;
+  const f = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(1)}`;
+  const note = `카메라 위치 보정: X ${f(c[0])} / Y ${f(c[1])} / Z ${f(c[2])} mm, 회전 ${f(r.yaw_deg ?? 0)}°`;
+  log.info('camera.align.apply', note, { rms: r.rms, inlier: r.inlier, elapsed_ms: r.elapsed_ms });
+  return { shift: { R: r.R, t: r.t, center: c, yawDeg: r.yaw_deg ?? 0 }, note };
+}
+
 /** 용접 시작 직전 자동 촬영. 카메라가 연결돼 있을 때만, 실패해도 용접은 그대로 진행 */
 export async function autoCaptureBeforeWeld(input: Omit<CameraCaptureInput, 'trigger'>): Promise<void> {
   const st = await getCameraStatus();

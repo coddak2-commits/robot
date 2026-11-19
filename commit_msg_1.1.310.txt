@@ -1,0 +1,11 @@
+v1.1.310: Gemini U셀 위치 대략 보정
+
+- robot-camera: ucell_align.h 신규(깊이 point-to-plane ICP, 카메라-로봇 보정값 내장)
+- robot-camera: /camera/align/status, /camera/align/reference, /camera/align/estimate. 기준은 data_dir/ucell_ref (USB 내보내기 대상 아님)
+- touchSensing.ts: 카메라 연결 + 기준 있으면 터치 시작 위치를 보정 이동, 저장 보정값 = 카메라 이동 + 터치 측정. 판정 실패·홈 아님이면 교시 좌표로 진행하고 완료 알림에 사유
+- cameraApi.ts: 기준 등록·보정 조회 함수
+- 펜던트 화면: U셀 기준 버튼(UcellReferenceButton)
+- 버전 1.1.310 (CAMERA_APP_VERSION 포함)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcAzNvgE4EahHeBhhER
