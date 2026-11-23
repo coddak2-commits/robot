@@ -1,0 +1,8 @@
+v1.1.311: 설치 파일에서 소스맵 제외
+
+- installer.iss: robot-front\build 복사 시 Excludes "*.map", [InstallDelete] 로 기존 www\static\js|css\*.map 삭제
+- 소스맵은 사무실 PC build 폴더에만 남김 (펜던트 묶음은 원래 .map 미포함)
+- 버전 1.1.311
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcAzNvgE4EahHeBhhER

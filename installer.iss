@@ -1,5 +1,5 @@
 ﻿#define MyAppName "Robot Welding Control"
-#define MyAppVersion "1.1.310"
+#define MyAppVersion "1.1.311"
 #define MyAppPublisher "Robot Welding"
 #define MyAppExeName "robot_core.exe"
 
@@ -62,7 +62,13 @@ Source: "launcher.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "database\migrations\*.sql"; DestDir: "{app}\database\migrations"; Flags: ignoreversion
 
 ; 프론트엔드 빌드 결과물 (robot-model, sound 포함)
-Source: "robot-front\build\*"; DestDir: "{app}\www"; Flags: ignoreversion recursesubdirs createallsubdirs
+; [v1.1.311] 소스맵(*.map)은 원본 코드가 들어 있어 설치 파일에서 뺀다 (사무실 PC build 폴더에만 남김)
+Source: "robot-front\build\*"; DestDir: "{app}\www"; Excludes: "*.map"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+; [v1.1.311] 이전 버전이 설치해 둔 소스맵 지우기
+Type: files; Name: "{app}\www\static\js\*.map"
+Type: files; Name: "{app}\www\static\css\*.map"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\launcher.bat"; IconFilename: "{app}\{#MyAppExeName}"
