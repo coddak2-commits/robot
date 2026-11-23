@@ -638,7 +638,7 @@ export function CellSelectionCore({
                             <option value={23}>23mm</option>
                           </select>
                         </span>
-                        {/* [v1.1.312] 형상 선택 + P1·P7 로 나머지 포인트 만들기 (자동 저장됨) */}
+                        {/* [v1.1.312] 형상 선택 + P3·P9 로 나머지 포인트 만들기 (자동 저장됨, 1.1.313 에서 P1·P7 -> P3·P9) */}
                         <ShapeTemplateControl
                           jobId={currentJobId}
                           points={teachingPoints}

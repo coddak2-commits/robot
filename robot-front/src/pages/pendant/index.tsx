@@ -891,7 +891,7 @@ const PendantInner: React.FC = () => {
         <CameraCaptureButton jobId={currentJobId} jobName={currentJobName} points={teachingPoints} disabled={isWelding || isTouchSensing} />
         {/* [v1.1.310] U셀 기준 등록(카메라 위치 보정). 카메라 연결 시만 보임 */}
         <UcellReferenceButton jobId={currentJobId} jobName={currentJobName} points={teachingPoints} disabled={isWelding || isTouchSensing} />
-        {/* [v1.1.312] 형상 선택 + P1·P7 로 나머지 포인트 만들기 */}
+        {/* [v1.1.312] 형상 선택 + P3·P9 로 나머지 포인트 만들기 (1.1.313 에서 P1·P7 -> P3·P9) */}
         <ShapeTemplateControl
           jobId={currentJobId}
           points={teachingPoints}
