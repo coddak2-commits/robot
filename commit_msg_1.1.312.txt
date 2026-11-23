@@ -1,0 +1,13 @@
+v1.1.312: U셀 형상으로 나머지 포인트 만들기
+
+- ShapeTemplateControl.tsx 신규: 형상 = 이름이 '[형상]' 또는 '[SHAPE]' 로 시작하는 작업
+  P1·P7 로 평면 이동·회전(yaw) 계산 -> 형상 포인트를 옮겨 채움. Z 는 형상 값, rz 에 회전 더함
+  속도·용접 조건·위빙·갭은 형상 값, 관절값은 역기구학(형상 관절 기준), 홈은 지금 것 우선
+  P1~P7 거리 차 15mm 초과, 회전 5도 초과, 툴 번호 다름이면 거부. 직접 저장한 포인트 덮어쓰기는 확인 창
+  형상 선택은 작업별 localStorage(vot.shape.<jobId>)
+- useJobManagement.ts: toTeachingPoint export
+- 펜던트 화면(작업 저장 줄), 용접부 선택 화면(판두께 옆)에 배치
+- 버전 1.1.312
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcAzNvgE4EahHeBhhER

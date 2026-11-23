@@ -14,6 +14,7 @@ import { useAlert } from '../../contexts';
 import { playSaveOkBeep, playErrorBeep } from '../../lib/audio';
 import { CameraCaptureButton } from '../UcellSelect/components/CameraCaptureButton';
 import { UcellReferenceButton } from '../UcellSelect/components/UcellReferenceButton';
+import { ShapeTemplateControl } from '../UcellSelect/components/ShapeTemplateControl';
 import { autoCaptureBeforeWeld, collectPointGaps } from '../../lib/cameraApi';
 
 const CELL_CONFIG: UCellConfig = {
@@ -890,6 +891,14 @@ const PendantInner: React.FC = () => {
         <CameraCaptureButton jobId={currentJobId} jobName={currentJobName} points={teachingPoints} disabled={isWelding || isTouchSensing} />
         {/* [v1.1.310] U셀 기준 등록(카메라 위치 보정). 카메라 연결 시만 보임 */}
         <UcellReferenceButton jobId={currentJobId} jobName={currentJobName} points={teachingPoints} disabled={isWelding || isTouchSensing} />
+        {/* [v1.1.312] 형상 선택 + P1·P7 로 나머지 포인트 만들기 */}
+        <ShapeTemplateControl
+          jobId={currentJobId}
+          points={teachingPoints}
+          onApply={loadPointsFromJob}
+          disabled={isWelding || isTouchSensing}
+          saveHint="'작업 저장'을 눌러 저장하세요."
+        />
       </div>
 
       {/* 우상단 알람 배지 + 로그아웃 */}

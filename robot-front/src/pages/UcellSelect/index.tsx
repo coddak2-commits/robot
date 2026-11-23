@@ -4,6 +4,7 @@ import { MapPin } from 'lucide-react';
 import { useTeachingPoints, useRobotControl, useJobManagement, useWeldingOperations, usePathTracking, useSchematicCalculations, usePathVisualization, useCenterlineNavigation, useWeldingHandlers, useWireControl, useCellSelectionHandlers, useAutoSavePoints } from './hooks';
 import { UnifiedWorkspaceCanvas, UCellConfig, TeachingTabContent, JobListModal, LeftSidebar, SecondarySidebar, ToolbarControls } from './components/index';
 import { CameraCaptureButton } from './components/CameraCaptureButton';
+import { ShapeTemplateControl } from './components/ShapeTemplateControl';
 import { useRobotWebSocket } from '../../hooks';
 import { createLogger } from '../../lib';
 import { getTeachingJobs, getRealtimeRobotStatus, getWeldingPartOrder } from '../../lib';
@@ -637,6 +638,13 @@ export function CellSelectionCore({
                             <option value={23}>23mm</option>
                           </select>
                         </span>
+                        {/* [v1.1.312] 형상 선택 + P1·P7 로 나머지 포인트 만들기 (자동 저장됨) */}
+                        <ShapeTemplateControl
+                          jobId={currentJobId}
+                          points={teachingPoints}
+                          onApply={loadPointsFromJob}
+                          disabled={isWelding || isTouchSensing}
+                        />
                       </div>
                     </>
                   ) : (

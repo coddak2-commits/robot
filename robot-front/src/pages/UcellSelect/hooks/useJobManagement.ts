@@ -29,8 +29,9 @@ const buildPointsData = (savedPoints: TeachingPoint[]): TeachingPointData[] =>
   }));
 
 // [v1.1.264] loadJob 과 savePoint 가 같은 변환을 쓰도록 분리.
+// [v1.1.312] 형상으로 포인트 만들기(ShapeTemplateControl)에서도 쓰도록 export
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const toTeachingPoint = (pt: any) => {
+export const toTeachingPoint = (pt: any) => {
   const tcpData = pt.tcp;
   return {
     id: pt.point_id,
