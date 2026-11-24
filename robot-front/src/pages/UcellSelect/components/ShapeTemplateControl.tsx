@@ -2,12 +2,14 @@
 // [v1.1.313] 기준점을 P1·P7(수직 윗단) -> P3·P9(바닥 코너)로 변경 (사용자 요청 2026-11-24).
 //   윗단 P7 은 위치가 흔들려 회전 계산을 틀어지게 했고, 코너는 위치가 일정하다.
 //   P4·P10 은 형상에서 P3·P9 와 같은 위치면 지금 P3·P9 값을 그대로 복사한다.
+// [v1.1.314] 형상에서는 위치·자세·관절(+툴 번호)만 가져오고 용접 조건(전류·전압·속도·위빙·갭)은
+//   지금 작업에 입력한 값을 그대로 둔다 (사용자 지적 2026-11-24: 조건은 갭 따라 바뀌어야 함).
 // 형상 = 이름이 '[형상]' 또는 '[SHAPE]' 로 시작하는 작업 (예: '[형상] 연습용 U셀'). 모든 포인트를 최적으로 티칭해 둔 작업.
 // 새 작업에서 P3·P9 만 저장하고 형상을 골라 버튼을 누르면, P3·P9 로 U셀의 평면 이동·회전을 구해
 // 형상의 나머지 포인트를 옮겨 채운다.
 //   - 높이(Z)는 형상 값 그대로 (U셀은 늘 같은 바닥. 실제 바닥은 터치센싱이 찾음)
 //   - 토치 자세는 형상 값 + 회전량(rz)
-//   - 속도·용접 조건·위빙·갭도 형상 값 (P3·P9 는 위치만 그대로 두고 조건은 형상 값)
+//   - 속도·용접 조건·위빙·갭은 지금 작업 값 그대로 (1.1.314)
 //   - 관절값은 새 위치로 역기구학(형상 관절값을 기준으로) 계산. 로봇 연결 필요
 //   - 홈은 지금 작업에 저장돼 있으면 그대로, 없으면 형상 홈
 // 형상 선택은 작업마다 localStorage 에 기억한다.
@@ -96,21 +98,19 @@ export function buildFromShape(shape: TeachingPoint[], current: TeachingPoint[])
   const points = current.map(cur => {
     const s = shape.find(p => p.id === cur.id && p.isSaved && p.tcp);
     if (!s || !s.tcp) return cur;
-    const params = {
-      moveSpeed: s.moveSpeed, velMode: s.velMode, weldVoltage: s.weldVoltage, weldCurrent: s.weldCurrent,
-      weavingType: s.weavingType, weaveParams: s.weaveParams, gap: s.gap, toolNum: s.toolNum, userNum: s.userNum,
-    };
+    // 좌표가 형상 툴 기준이라 툴 번호만 형상 값. 용접 조건은 지금 작업 값 그대로 (1.1.314)
+    const params = { toolNum: s.toolNum, userNum: s.userNum };
     if (cur.id === 'home') {
       return cur.isSaved && cur.tcp ? cur : { ...cur, ...params, tcp: s.tcp, joints: s.joints, isSaved: true, touchOffset: null };
     }
-    if (ANCHOR_IDS.includes(cur.id)) return { ...cur, ...params, toolNum: cur.toolNum, userNum: cur.userNum, touchOffset: null };
+    if (ANCHOR_IDS.includes(cur.id)) return { ...cur, touchOffset: null };
     const twinId = TWIN_OF[cur.id];
     const sTwin = twinId ? sp(twinId)?.tcp : undefined;
     const cTwin = twinId ? cp(twinId) : undefined;
     const sameSpot = !!sTwin && Math.hypot(s.tcp.x - sTwin.x, s.tcp.y - sTwin.y, s.tcp.z - sTwin.z) <= TWIN_TOL_MM;
     if (cur.isSaved) overwritten.push(cur.name || cur.id);
     if (sameSpot && cTwin?.tcp) {
-      // 형상에서 기준점과 같은 자리 -> 지금 기준점 위치·관절값 그대로 (조건은 형상 값)
+      // 형상에서 기준점과 같은 자리 -> 지금 기준점 위치·관절값 그대로 (조건은 지금 작업 값)
       const twin: TeachingPoint = { ...cur, ...params, tcp: { ...cTwin.tcp }, joints: cTwin.joints ?? null, toolNum: cTwin.toolNum, userNum: cTwin.userNum, isSaved: true, touchOffset: null };
       if (!twin.joints || twin.joints.length !== 6) targets.push({ point: twin, shapeJoints: s.joints && s.joints.length === 6 ? s.joints : null });
       return twin;
@@ -251,7 +251,7 @@ export function ShapeTemplateControl({ jobId, points, onApply, disabled = false,
           <div className="w-96 rounded-xl border border-gray-600 bg-gray-800 p-4 text-sm text-gray-200" onClick={e => e.stopPropagation()}>
             <div className="mb-3 font-semibold text-white">직접 저장한 포인트 덮어쓰기</div>
             <p className="mb-4 text-gray-300">
-              이미 저장된 {confirm.result.overwritten.join(', ')} 을(를) '{confirm.label}' 형상 값으로 덮어씁니다. P3·P9 위치는 그대로 둡니다.
+              이미 저장된 {confirm.result.overwritten.join(', ')} 의 위치·자세를 '{confirm.label}' 형상으로 덮어씁니다. P3·P9 위치와 용접 조건은 그대로 둡니다.
             </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setConfirm(null)} className="rounded-lg border border-gray-600 px-3 py-1.5 text-gray-300 hover:bg-gray-700">
