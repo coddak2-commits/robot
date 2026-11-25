@@ -104,14 +104,19 @@ type WireProfile = Record<WireDirection, { deadTimeMs: number; speedMmPerSec: nu
 //   이번 값은 식은 쪽(117ms, 8.46mm/s)과 거의 같다. 238 의 12.02mm/s 는 10-09
 //   하루만 빨랐던 셈이다. '뜨거우면 빨라진다'는 전제 자체가 약하다. 롤러 압력·
 //   라이너·스풀 같은 다른 요인으로 날마다 달라지는 것일 수 있다.
+//
+// v1.1.317 재보정 (2026-11-25, 사용자 실측). 242 값(식은 117ms/8.46mm/s, 당기기 306ms/23.42mm/s)으로
+//   밀기·당기기 모두 요청 25mm -> 20mm, 요청 5mm -> 2~3mm (2.5 로 계산). 사용자: '항상' 그렇게 나옴,
+//   식은 상태와 용접 직후도 비슷 -> 두 프로파일을 같은 값으로 둔다.
+//   밀기 명령 시간 708/3072ms -> 속도 (20-2.5)/(3.072-0.708) = 7.40mm/s, 지연 0.708 - 2.5/7.40 = 370ms
+//   당기기 명령 시간 519/1374ms -> 속도 (20-2.5)/(1.374-0.519) = 20.48mm/s, 지연 0.519 - 2.5/20.48 = 397ms
+//   검산: 밀기 25mm -> 3748ms -> 25.0 / 5mm -> 1046ms -> 5.0
+//         당기기 25mm -> 1618ms -> 25.0 / 5mm -> 641ms -> 5.0
 export const WIRE_FEED_PROFILE_COLD: WireProfile = {
-  forward: { deadTimeMs: 117, speedMmPerSec: 8.46 },
-  reverse: { deadTimeMs: 306, speedMmPerSec: 23.42 },
+  forward: { deadTimeMs: 370, speedMmPerSec: 7.40 },
+  reverse: { deadTimeMs: 397, speedMmPerSec: 20.48 },
 };
-export const WIRE_FEED_PROFILE_HOT: WireProfile = {
-  forward: { deadTimeMs: 59, speedMmPerSec: 8.41 },
-  reverse: { deadTimeMs: 306, speedMmPerSec: 23.42 },
-};
+export const WIRE_FEED_PROFILE_HOT: WireProfile = WIRE_FEED_PROFILE_COLD;
 // 마지막 아크 OFF 로부터 이 시간 안이면 뜨거운 값을 쓴다.
 // 5분은 임의로 잡은 값이다. 실제로 몇 분이면 식는지 확인되면 바꾼다.
 export const WIRE_HOT_WINDOW_MS = 5 * 60 * 1000;
