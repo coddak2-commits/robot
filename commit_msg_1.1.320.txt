@@ -1,0 +1,11 @@
+v1.1.320: 수평 2패스 좌우 따로 설정 + 2패스 위빙 종류 + 위빙 파트별 판단
+
+- UcellSelect/index.tsx: SecondPassSettings 를 left/right 두 세트로 나눔, weavingType 항목 추가
+  addHorizontalSecondPass 가 왼쪽 수평은 left, 오른쪽 수평은 right 값을 씀
+- TwoPassControl.tsx: 2패스 창에 왼쪽/오른쪽 탭, 위빙 종류 선택 추가
+- weldingExecution.ts: 위빙 여부를 첫 파트 하나가 아니라 파트마다 조건 포인트로 판단
+  (첫 파트에 위빙이 없으면 실행 전체에서 위빙·아크 트래킹이 꺼지던 문제, 11-25 15:53)
+- 버전 1.1.320
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K

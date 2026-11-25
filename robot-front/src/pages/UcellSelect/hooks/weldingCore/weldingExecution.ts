@@ -656,14 +656,16 @@ export async function executeWelding(
     twoPassSettings,
   );
   if (twoPassHorizontal) {
-    const tp = twoPassSettings;
+    // [v1.1.320] 왼쪽/오른쪽 수평 2패스 조건을 따로 받는다.
     const same = '1패스와 같음';
+    const describe = (tp: typeof twoPassSettings.left) =>
+      `+Z ${tp.offsetZ}mm, 전류 ${tp.current ?? same}, 전압 ${tp.voltage ?? same}, `
+      + `속도 ${tp.speed ?? same}, 위빙 ${tp.weavingType ?? same}, 폭 ${tp.weaveRange ?? same}, `
+      + `주파수 ${tp.weaveFreq ?? same}, 체류 ${tp.weaveLeftStay ?? same}/${tp.weaveRightStay ?? same}`;
     log_weldingExecution.info(
       'welding.twoPass',
-      `수평 2패스 ON: +Z ${tp.offsetZ}mm, 전류 ${tp.current ?? same}, 전압 ${tp.voltage ?? same}, `
-      + `속도 ${tp.speed ?? same}, 위빙 폭 ${tp.weaveRange ?? same}, 주파수 ${tp.weaveFreq ?? same}, `
-      + `체류(왼쪽 수평 기준) ${tp.weaveLeftStay ?? same}/${tp.weaveRightStay ?? same}`,
-      { parts: executableParts.filter(p => p.shouldExecute).map(p => p.name), settings: tp },
+      `수평 2패스 ON: 왼쪽 [${describe(twoPassSettings.left)}] / 오른쪽 [${describe(twoPassSettings.right)}]`,
+      { parts: executableParts.filter(p => p.shouldExecute).map(p => p.name), settings: twoPassSettings },
     );
   }
   const weldingPoints = flattenExecutableParts(executableParts);
@@ -802,6 +804,19 @@ export async function executeWelding(
     if (hasWelding && !simMode) blackflyRunId = newBlackflyRunId();
     const hasWeaving = !!(firstWeldPoint.weavingType && firstWeldPoint.weavingType !== 'none');
     const weaveTypeCode = getWeaveTypeCode(firstWeldPoint.weavingType);
+    // [v1.1.320] 위빙은 파트마다 그 파트 조건 포인트의 위빙 종류로 정한다.
+    // 1.1.319 까지는 첫 파트(위 hasWeaving) 하나로 실행 전체를 정해서, 첫 파트에 위빙이
+    // 없으면 뒤 파트에 위빙을 설정해 둬도 위빙·아크 트래킹이 모두 꺼졌다
+    // (2026-11-25 15:53 오른쪽 2패스 실행, P10 위빙 없음).
+    // 조건 포인트에 종류가 비어 있으면 예전처럼 첫 파트 값을 쓴다(startPartWelding 과 같은 순서).
+    const partWeave = (pt?: TeachingPoint) => {
+      const type = pt?.weavingType || firstWeldPoint.weavingType || null;
+      const code = getWeaveTypeCode(type);
+      return { has: !!type && type !== 'none' && code >= 0, code };
+    };
+    const runHasWeaving = (hasWeaving && weaveTypeCode >= 0) || partBoundaryInfo.partStartIndices
+      .filter(idx => idx > startPointIndex)
+      .some(idx => partWeave(conditionPointAt(idx) ?? weldingPoints[idx]).has);
     // v1.1.131: 1.0으로 복원(=보정 없음). 거리 x 6 / cpm 은 mm와 cm/min 사이의
     // 물리적으로 정확한 소요시간 계산이다. 0.68은 CPM 설정값이 실제 이동속도와
     // 어긋나 있던 시절(설정의 41~70%만 실제로 나감) 팝업 숫자를 억지로 맞추려고
@@ -870,14 +885,14 @@ export async function executeWelding(
     // 보이므로 위빙이 없는 구간에는 걸지 않는다. (v1.1.148)
     // 위빙 없이도 동작하는지는 아직 실측으로 확인되지 않았다. 확인되면 이 조건을 완화할 것.
     const arcTrackingActive =
-      sequenceSettings.arcTrackingEnabled && hasWelding && hasWeaving && weaveTypeCode >= 0 &&
+      sequenceSettings.arcTrackingEnabled && hasWelding && runHasWeaving &&
       !simMode && !isWeldingTest;
     if (sequenceSettings.arcTrackingEnabled && hasWelding && !simMode && !isWeldingTest &&
-        !(hasWeaving && weaveTypeCode >= 0)) {
+        !runHasWeaving) {
       log_weldingExecution.warn(
         'welding.arcTrace.skipped',
         '아크 트래킹이 켜져 있지만 위빙이 없어 적용하지 않습니다',
-        { hasWeaving, weaveTypeCode },
+        { hasWeaving, weaveTypeCode, runHasWeaving },
       );
       showAlert('위빙이 없어 아크 트래킹을 적용하지 않습니다.', {
         type: 'warning',
@@ -1267,12 +1282,13 @@ export async function executeWelding(
           'welding.partEnd.crater',
           `파트 종료: ${endedPt?.id ?? '?'} 크레이터 ${craterOnPartEnd ? '적용' : '생략(이어짐)'}`,
         );
+        const endedWeave = partWeave(endedCond);
         await endPartWelding(
-          hasWeaving,
+          endedWeave.has,
           hasWelding,
           simMode && !isWeldingTest,
           safetySettings.gasPostFlowTime,
-          weaveTypeCode,
+          endedWeave.code,
           craterOnPartEnd ? (endedCond?.weldCurrent ?? firstWeldPoint?.weldCurrent) : undefined,
           craterOnPartEnd ? (endedCond?.weldVoltage ?? firstWeldPoint?.weldVoltage) : undefined,
         );
@@ -1342,11 +1358,11 @@ export async function executeWelding(
             await startPartWelding(
               condPoint,
               firstWeldPoint,
-              hasWeaving,
+              partWeave(condPoint).has,
               hasWelding,
               simMode && !isWeldingTest,
               safetySettings.gasPreFlowTime,
-              weaveTypeCode,
+              partWeave(condPoint).code,
             );
             setArcActive?.(true);
             if (hasWelding && !(simMode && !isWeldingTest)) arcMayBeOn = true;
@@ -1694,11 +1710,11 @@ export async function executeWelding(
         await startPartWelding(
           condPoint,
           firstWeldPoint,
-          hasWeaving,
+          partWeave(condPoint).has,
           hasWelding,
           simMode && !isWeldingTest,
           safetySettings.gasPreFlowTime,
-          weaveTypeCode,
+          partWeave(condPoint).code,
         );
         setArcActive?.(true);
         if (hasWelding && !(simMode && !isWeldingTest)) arcMayBeOn = true;
@@ -1903,7 +1919,7 @@ export async function executeWelding(
       return stoppedResult;
     }
     setArcActive?.(false);
-    if (hasWeaving && weaveTypeCode >= 0) {
+    if (runHasWeaving) {
       await endWeave();
       await new Promise(resolve => setTimeout(resolve, 500));
     }

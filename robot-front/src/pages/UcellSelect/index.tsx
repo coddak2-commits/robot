@@ -946,29 +946,41 @@ export const touchRequiredMessage = (partNames: string[]): string =>
 // 다시 계산해서 +Z 가 사라진다. 터치 보정은 1패스 값을 그대로 쓴다.
 // [v1.1.286] 2패스 조건을 화면 팝업에서 수동으로 바꾼다(DB 없음, 화면을 새로 열면 초기화).
 // null 인 항목은 1패스 값을 그대로 쓴다. 위빙 폭을 바꾸면 좌/우 폭은 같은 비율로 바꾼다.
+// [v1.1.320] 왼쪽·오른쪽 수평 2패스 조건을 따로 둔다(갭이 양쪽 다를 수 있음, 사용자 요청 2026-11-25).
+// 위빙 종류(weavingType)도 2패스만 따로 정할 수 있다(1패스 위빙 없음 + 2패스 위빙 등).
 export const HORIZONTAL_SECOND_PASS_Z_MM = 5;
-export interface SecondPassSettings {
+export interface SecondPassSideSettings {
   offsetZ: number;
   current: number | null;
   voltage: number | null;
   speed: number | null;
+  weavingType: string | null;
   weaveRange: number | null;
   weaveFreq: number | null;
   // [v1.1.290] 체류(ms). 왼쪽 수평([P4,P5,P6]) 기준. 오른쪽 수평은 1패스처럼 좌우를 바꿔 넣는다
   weaveLeftStay: number | null;
   weaveRightStay: number | null;
 }
-export const DEFAULT_SECOND_PASS_SETTINGS: SecondPassSettings = {
+export interface SecondPassSettings {
+  left: SecondPassSideSettings;
+  right: SecondPassSideSettings;
+}
+export const DEFAULT_SECOND_PASS_SIDE: SecondPassSideSettings = {
   offsetZ: HORIZONTAL_SECOND_PASS_Z_MM,
   current: null,
   voltage: null,
   speed: null,
+  weavingType: null,
   weaveRange: null,
   weaveFreq: null,
   weaveLeftStay: null,
   weaveRightStay: null,
 };
-const applySecondPassWeave = (wp: WeaveParams, s: SecondPassSettings, mirror: boolean): WeaveParams => {
+export const DEFAULT_SECOND_PASS_SETTINGS: SecondPassSettings = {
+  left: DEFAULT_SECOND_PASS_SIDE,
+  right: DEFAULT_SECOND_PASS_SIDE,
+};
+const applySecondPassWeave = (wp: WeaveParams, s: SecondPassSideSettings, mirror: boolean): WeaveParams => {
   if (s.weaveRange === null && s.weaveFreq === null && s.weaveLeftStay === null && s.weaveRightStay === null) return wp;
   const next: WeaveParams = { ...wp };
   // 오른쪽 수평(mirror)은 입력한 좌/우 체류를 바꿔 넣는다 (1패스 300/0 <-> 0/300 과 같은 방식)
@@ -991,8 +1003,7 @@ export const addHorizontalSecondPass = (
   settings?: SecondPassSettings,
 ): ExecutablePart[] => {
   if (!enabled) return executableParts;
-  const s = settings ?? DEFAULT_SECOND_PASS_SETTINGS;
-  const offsetZ = Number.isFinite(s.offsetZ) ? s.offsetZ : HORIZONTAL_SECOND_PASS_Z_MM;
+  const all = settings ?? DEFAULT_SECOND_PASS_SETTINGS;
   const groups = getPartEnableGroups();
   const result: ExecutablePart[] = [];
   for (const part of executableParts) {
@@ -1000,6 +1011,8 @@ export const addHorizontalSecondPass = (
     if (!part.shouldExecute) continue;
     const groupIndex = groups.findIndex(g => part.pointIds.every(p => g.includes(p)));
     if (groupIndex !== 0 && groupIndex !== 2) continue;
+    const s = groupIndex === 2 ? all.right : all.left;
+    const offsetZ = Number.isFinite(s.offsetZ) ? s.offsetZ : HORIZONTAL_SECOND_PASS_Z_MM;
     result.push({
       ...part,
       name: `${part.name} 2패스`,
@@ -1011,6 +1024,7 @@ export const addHorizontalSecondPass = (
         weldCurrent: pt.weldCurrent !== null && s.current !== null ? s.current : pt.weldCurrent,
         weldVoltage: pt.weldVoltage !== null && s.voltage !== null ? s.voltage : pt.weldVoltage,
         moveSpeed: s.speed !== null ? s.speed : pt.moveSpeed,
+        weavingType: s.weavingType !== null ? s.weavingType : pt.weavingType,
         weaveParams: applySecondPassWeave(pt.weaveParams, s, groupIndex === 2),
       })),
     });

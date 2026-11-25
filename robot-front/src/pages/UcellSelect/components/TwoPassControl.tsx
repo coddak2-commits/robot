@@ -1,11 +1,14 @@
 // [v1.1.286] 수평 2패스 체크박스 + 2패스 조건 팝업 (펜던트·용접부 선택 화면 공용)
 // 체크하면 팝업이 뜬다. 체크된 상태에서는 옆의 요약 버튼으로 다시 연다.
 // 값을 비우면 1패스 값을 그대로 쓴다(위치 오프셋은 비울 수 없음). DB 에 저장하지 않는다.
+// [v1.1.320] 왼쪽/오른쪽 수평을 탭으로 나눠 따로 입력한다. 위빙 종류도 2패스만 바꿀 수 있다.
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { SecondPassSettings, DEFAULT_SECOND_PASS_SETTINGS } from '..';
+import { SecondPassSettings, SecondPassSideSettings, DEFAULT_SECOND_PASS_SIDE, WEAVING_TYPE_OPTIONS } from '..';
 
-type FieldKey = keyof SecondPassSettings;
+type FieldKey = Exclude<keyof SecondPassSideSettings, 'weavingType'>;
+type Side = 'left' | 'right';
+const SIDE_LABEL: Record<Side, string> = { left: '왼쪽 수평 (P4~P6)', right: '오른쪽 수평 (P10~P12)' };
 
 const FIELDS: { key: FieldKey; label: string; unit: string; min: number; max: number; nullable: boolean }[] = [
   { key: 'offsetZ', label: '위치 (위로)', unit: 'mm', min: 0, max: 10, nullable: false },
@@ -19,17 +22,22 @@ const FIELDS: { key: FieldKey; label: string; unit: string; min: number; max: nu
   { key: 'weaveRightStay', label: '우 체류', unit: 'ms', min: 0, max: 2000, nullable: true },
 ];
 
-export const summarizeSecondPass = (s: SecondPassSettings): string => {
+const summarizeSide = (s: SecondPassSideSettings): string => {
   const parts: string[] = [];
   if (s.current !== null) parts.push(`${s.current}A`);
   if (s.voltage !== null) parts.push(`${s.voltage}V`);
   if (s.speed !== null) parts.push(`${s.speed}cpm`);
+  if (s.weavingType !== null)
+    parts.push(WEAVING_TYPE_OPTIONS.find(o => o.value === s.weavingType)?.label ?? s.weavingType);
   if (s.weaveRange !== null) parts.push(`위빙 ${s.weaveRange}mm`);
   if (s.weaveFreq !== null) parts.push(`${s.weaveFreq}Hz`);
   if (s.weaveLeftStay !== null || s.weaveRightStay !== null)
     parts.push(`체류 ${s.weaveLeftStay ?? '-'}/${s.weaveRightStay ?? '-'}`);
   return `+${s.offsetZ}mm · ${parts.length ? parts.join('/') : '1패스 조건'}`;
 };
+
+export const summarizeSecondPass = (s: SecondPassSettings): string =>
+  `왼 ${summarizeSide(s.left)}\n오 ${summarizeSide(s.right)}`;
 
 interface TwoPassControlProps {
   enabled: boolean;
@@ -48,31 +56,48 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<SecondPassSettings>(settings);
+  const [side, setSide] = useState<Side>('left');
   const [activeKey, setActiveKey] = useState<FieldKey>('offsetZ');
   const [buffer, setBuffer] = useState('');
 
   const openPopup = () => {
     setDraft(settings);
+    setSide('left');
     setActiveKey('offsetZ');
-    setBuffer(String(settings.offsetZ));
+    setBuffer(String(settings.left.offsetZ));
     setOpen(true);
   };
 
-  const commitBuffer = (base: SecondPassSettings, key: FieldKey, text: string): SecondPassSettings => {
+  const commitBuffer = (base: SecondPassSettings, sd: Side, key: FieldKey, text: string): SecondPassSettings => {
     const f = FIELDS.find(x => x.key === key)!;
-    if (text === '') return { ...base, [key]: f.nullable ? null : DEFAULT_SECOND_PASS_SETTINGS.offsetZ };
+    const cur = base[sd];
+    if (text === '')
+      return { ...base, [sd]: { ...cur, [key]: f.nullable ? null : DEFAULT_SECOND_PASS_SIDE.offsetZ } };
     const n = parseFloat(text);
     if (!Number.isFinite(n)) return base;
     const v = +Math.min(f.max, Math.max(f.min, n)).toFixed(1);
-    return { ...base, [key]: v };
+    return { ...base, [sd]: { ...cur, [key]: v } };
   };
 
   const selectField = (key: FieldKey) => {
-    const next = commitBuffer(draft, activeKey, buffer);
+    const next = commitBuffer(draft, side, activeKey, buffer);
     setDraft(next);
     setActiveKey(key);
-    const v = next[key];
+    const v = next[side][key];
     setBuffer(v === null ? '' : String(v));
+  };
+
+  const selectSide = (sd: Side) => {
+    if (sd === side) return;
+    const next = commitBuffer(draft, side, activeKey, buffer);
+    setDraft(next);
+    setSide(sd);
+    const v = next[sd][activeKey];
+    setBuffer(v === null ? '' : String(v));
+  };
+
+  const setWeavingType = (value: string) => {
+    setDraft(d => ({ ...d, [side]: { ...d[side], weavingType: value === '' ? null : value } }));
   };
 
   const pressKey = (k: string) => {
@@ -82,7 +107,7 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
   };
 
   const save = () => {
-    onSettingsChange(commitBuffer(draft, activeKey, buffer));
+    onSettingsChange(commitBuffer(draft, side, activeKey, buffer));
     setOpen(false);
   };
 
@@ -108,6 +133,7 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
           style={{
             padding: '8px 6px', fontSize: 12, fontWeight: 'bold', color: '#bbf7d0', background: '#0f2a1a',
             border: '1px solid #166534', borderRadius: 6, cursor: disabled ? 'not-allowed' : 'pointer', textAlign: 'center',
+            whiteSpace: 'pre-line',
           }}
         >{summarizeSecondPass(settings)}</button>
       )}
@@ -129,13 +155,25 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
               비워 두면 1패스 값을 그대로 씁니다. 화면을 새로 열면 초기화됩니다.<br />
-              체류는 왼쪽 수평(P4~P6) 기준이고, 오른쪽 수평은 좌우를 바꿔 넣습니다.
+              체류는 양쪽 모두 왼쪽 수평(P4~P6) 기준으로 입력하고, 오른쪽 수평은 좌우를 바꿔 넣습니다.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
+              {(['left', 'right'] as Side[]).map(sd => (
+                <button key={sd} onClick={() => selectSide(sd)}
+                  style={{
+                    padding: '10px 0', fontSize: 15, fontWeight: 'bold', color: '#fff', cursor: 'pointer',
+                    background: side === sd ? '#166534' : '#1e293b',
+                    border: `1px solid ${side === sd ? '#4ade80' : '#334155'}`, borderRadius: 8,
+                  }}
+                >{SIDE_LABEL[sd]}</button>
+              ))}
             </div>
             <div style={{ display: 'flex', gap: 12 }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {FIELDS.map(f => {
                   const isActive = f.key === activeKey;
-                  const value = isActive ? buffer : (draft[f.key] === null ? '' : String(draft[f.key]));
+                  const stored = draft[side][f.key];
+                  const value = isActive ? buffer : (stored === null ? '' : String(stored));
                   return (
                     <button key={f.key} onClick={() => selectField(f.key)}
                       style={{
@@ -152,6 +190,17 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
                     </button>
                   );
                 })}
+                <label style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                  padding: '6px 10px', fontSize: 15, background: '#1e293b', border: '1px solid #334155', borderRadius: 8,
+                }}>
+                  <span>위빙 종류</span>
+                  <select value={draft[side].weavingType ?? ''} onChange={e => setWeavingType(e.target.value)}
+                    style={{ fontSize: 15, padding: '6px 4px', background: '#0f172a', color: '#fff', border: '1px solid #475569', borderRadius: 6 }}>
+                    <option value="">1패스와 같음</option>
+                    {WEAVING_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
               </div>
               <div style={{ width: 210, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
@@ -161,7 +210,7 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
                 </div>
                 <button onClick={() => setBuffer('')}
                   style={{ ...btn, fontSize: 14, padding: '10px 0', background: '#334155' }}
-                >{FIELDS.find(f => f.key === activeKey)?.nullable ? '비우기 (1패스와 같음)' : `기본값 (${DEFAULT_SECOND_PASS_SETTINGS.offsetZ}mm)`}</button>
+                >{FIELDS.find(f => f.key === activeKey)?.nullable ? '비우기 (1패스와 같음)' : `기본값 (${DEFAULT_SECOND_PASS_SIDE.offsetZ}mm)`}</button>
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14 }}>
