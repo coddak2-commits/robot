@@ -2,6 +2,16 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getApiBaseUrl } from '../../../lib';
 import type { RobotStatus, RobotStatusInfo, MoveResult } from '../components';
 const MAX_DISCONNECT_COUNT = 5;
+// [v1.1.318] 코어가 /robot_sdk/* 에 로그인 토큰을 요구하므로 fetch 에 토큰을 붙인다.
+// (토큰 없이 보내 전부 401 -> 이 화면이 '연결 안됨'으로만 보였음)
+const authFetch = (url: string, init: RequestInit = {}) => {
+  const headers = new Headers(init.headers);
+  try {
+    const tokenStr = localStorage.getItem('token');
+    if (tokenStr) headers.set('Authorization', `Bearer ${JSON.parse(tokenStr).accessToken}`);
+  } catch { /* 토큰 없음 */ }
+  return fetch(url, { ...init, headers });
+};
 export function useRobotTestControl() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -29,7 +39,7 @@ export function useRobotTestControl() {
     setIsConnecting(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE}/connect`, {
+      const response = await authFetch(`${API_BASE}/connect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ip: robotIp })
@@ -37,8 +47,8 @@ export function useRobotTestControl() {
       const data = await response.json();
       if (data.success || data.data?.success) {
         try {
-          await fetch(`${API_BASE}/robot/enable`, { method: 'POST' });
-          await fetch(`${API_BASE}/robot/mode?mode=0`, { method: 'POST' });
+          await authFetch(`${API_BASE}/robot/enable`, { method: 'POST' });
+          await authFetch(`${API_BASE}/robot/mode?mode=0`, { method: 'POST' });
         } catch (enableErr) {
           console.warn('서보 활성화/모드 전환 실패:', enableErr);
         }
@@ -56,7 +66,7 @@ export function useRobotTestControl() {
   }, [API_BASE, robotIp]);
   const disconnectRobot = useCallback(async () => {
     try {
-      await fetch(`${API_BASE}/disconnect`, { method: 'POST' });
+      await authFetch(`${API_BASE}/disconnect`, { method: 'POST' });
       setIsConnected(false);
       setIsPolling(false);
       setJoints([0, 0, 0, 0, 0, 0]);
@@ -72,7 +82,7 @@ export function useRobotTestControl() {
     setActiveJog({ axis, direction });
     try {
       const ref = jogMode === 'joint' ? 0 : (jogMode === 'cartesian' ? 2 : 4);
-      await fetch(`${API_BASE}/jog/start`, {
+      await authFetch(`${API_BASE}/jog/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -90,14 +100,14 @@ export function useRobotTestControl() {
     setActiveJog(null);
     try {
       const ref = jogMode === 'joint' ? 1 : (jogMode === 'cartesian' ? 3 : 5);
-      await fetch(`${API_BASE}/jog/stop?ref=${ref}`, { method: 'POST' });
+      await authFetch(`${API_BASE}/jog/stop?ref=${ref}`, { method: 'POST' });
     } catch (e) {
       console.error('조그 정지 오류:', e);
     }
   }, [API_BASE, jogMode]);
   const emergencyStop = useCallback(async () => {
     try {
-      await fetch(`${API_BASE}/jog/stop_immediate`, { method: 'POST' });
+      await authFetch(`${API_BASE}/jog/stop_immediate`, { method: 'POST' });
       setActiveJog(null);
     } catch (e) {
       console.error('비상 정지 오류:', e);
@@ -107,8 +117,8 @@ export function useRobotTestControl() {
     if (isServoLoading) return;
     setIsServoLoading(true);
     try {
-      await fetch(`${API_BASE}/robot/mode?mode=0`, { method: 'POST' });
-      const response = await fetch(`${API_BASE}/robot/enable`, { method: 'POST' });
+      await authFetch(`${API_BASE}/robot/mode?mode=0`, { method: 'POST' });
+      const response = await authFetch(`${API_BASE}/robot/enable`, { method: 'POST' });
       const data = await response.json();
       if (data.status_code !== 200) {
         console.error('서보 활성화 실패:', data.message);
@@ -123,7 +133,7 @@ export function useRobotTestControl() {
     if (isServoLoading) return;
     setIsServoLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/robot/disable`, { method: 'POST' });
+      const response = await authFetch(`${API_BASE}/robot/disable`, { method: 'POST' });
       const data = await response.json();
       if (data.status_code !== 200) {
         console.error('서보 비활성화 실패:', data.message);
@@ -139,7 +149,7 @@ export function useRobotTestControl() {
     setIsMoving(true);
     setMoveResult(null);
     try {
-      const response = await fetch(`${API_BASE}/move/joint`, {
+      const response = await authFetch(`${API_BASE}/move/joint`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -151,7 +161,7 @@ export function useRobotTestControl() {
         }),
       });
       const data = await response.json();
-      if (data.status_code === 200 && data.data?.result === 0) {
+      if (data.status_code === 200 && (data.result ?? data.data?.result) === 0) {
         setMoveResult({ success: true, message: '이동 명령 전송 완료' });
       } else {
         setMoveResult({ success: false, message: data.message || '이동 실패' });
@@ -191,7 +201,7 @@ export function useRobotTestControl() {
   ], []);
   const executeMoveJ = useCallback(async (jointPos: number[]): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_BASE}/move/joint`, {
+      const response = await authFetch(`${API_BASE}/move/joint`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -203,7 +213,7 @@ export function useRobotTestControl() {
         }),
       });
       const data = await response.json();
-      return data.status_code === 200 && data.data?.result === 0;
+      return data.status_code === 200 && (data.result ?? data.data?.result) === 0;
     } catch {
       return false;
     }
@@ -239,7 +249,7 @@ export function useRobotTestControl() {
   const fetchRobotStatus = useCallback(async () => {
     if (!isPolling) return;
     try {
-      const response = await fetch(`${API_BASE}/realtime`);
+      const response = await authFetch(`${API_BASE}/realtime`);
       const data: RobotStatus = await response.json();
       if (data.connected) {
         disconnectCountRef.current = 0;

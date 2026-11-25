@@ -1,0 +1,9 @@
+v1.1.313: 형상 기준점 P1·P7 -> P3·P9
+
+- ShapeTemplateControl.tsx: 기준점을 바닥 코너 P3·P9 로 변경 (윗단 P7 위치 흔들림이 회전 계산에 들어가던 문제)
+  P4·P10 은 형상에서 P3·P9 와 같은 자리면 지금 P3·P9 위치·관절값을 그대로 복사
+  안내·오류 문구 P3·P9 로 변경
+- 버전 1.1.313
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcAzNvgE4EahHeBhhER

@@ -1,0 +1,7 @@
+v1.1.316: 도움말에 네 점 방식 사용법 추가
+
+- HelpModal.tsx: '2. 새 작업 포인트 찍기 (네 점)' 추가, 이후 항목 번호 하나씩 뒤로
+- 버전 1.1.316
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcAzNvgE4EahHeBhhER

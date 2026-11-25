@@ -4,13 +4,14 @@
 //   P4·P10 은 형상에서 P3·P9 와 같은 위치면 지금 P3·P9 값을 그대로 복사한다.
 // [v1.1.314] 형상에서는 위치·자세·관절(+툴 번호)만 가져오고 용접 조건(전류·전압·속도·위빙·갭)은
 //   지금 작업에 입력한 값을 그대로 둔다 (사용자 지적 2026-11-24: 조건은 갭 따라 바뀌어야 함).
+//   관절값 계산 실패 시: 실패한 포인트만 원래 상태로 두고 나머지는 적용 (전부 실패면 적용 안 함).
 // 형상 = 이름이 '[형상]' 또는 '[SHAPE]' 로 시작하는 작업 (예: '[형상] 연습용 U셀'). 모든 포인트를 최적으로 티칭해 둔 작업.
 // 새 작업에서 P3·P9 만 저장하고 형상을 골라 버튼을 누르면, P3·P9 로 U셀의 평면 이동·회전을 구해
 // 형상의 나머지 포인트를 옮겨 채운다.
 //   - 높이(Z)는 형상 값 그대로 (U셀은 늘 같은 바닥. 실제 바닥은 터치센싱이 찾음)
 //   - 토치 자세는 형상 값 + 회전량(rz)
 //   - 속도·용접 조건·위빙·갭은 지금 작업 값 그대로 (1.1.314)
-//   - 관절값은 새 위치로 역기구학(형상 관절값을 기준으로) 계산. 로봇 연결 필요
+//   - 관절값은 새 위치로 역기구학(형상 관절값을 기준으로) 계산. 로봇 연결 필요 (실패한 포인트는 그대로 둠)
 //   - 홈은 지금 작업에 저장돼 있으면 그대로, 없으면 형상 홈
 // 형상 선택은 작업마다 localStorage 에 기억한다.
 import { useCallback, useEffect, useState } from 'react';
@@ -168,27 +169,38 @@ export function ShapeTemplateControl({ jobId, points, onApply, disabled = false,
     setConfirm(null);
     setBusy(true);
     try {
+      // [v1.1.314] 관절값 계산이 실패한 포인트만 원래 상태로 두고 나머지는 적용한다.
+      //   (전부 막으면 닿지 않는 포인트 하나 때문에 버튼을 계속 못 쓰게 됨. 직접 찍은 값은 그대로 남음)
+      const failedIds = new Set<string>();
       const failed: string[] = [];
       for (const t of result.targets) {
         const tcp = t.point.tcp!;
         const joints = t.shapeJoints ? await getInverseKin([tcp.x, tcp.y, tcp.z, tcp.rx, tcp.ry, tcp.rz], t.shapeJoints) : null;
         if (joints) t.point.joints = joints;
-        else failed.push(t.point.name || t.point.id);
+        else {
+          failedIds.add(t.point.id);
+          failed.push(t.point.name || t.point.id);
+        }
       }
-      if (failed.length > 0) {
-        showAlert(`관절값 계산 실패: ${failed.join(', ')}. 로봇 연결을 확인하거나 그 포인트를 직접 티칭하세요. 포인트는 바꾸지 않았습니다.`, { type: 'error' });
+      if (result.targets.length > 0 && failed.length === result.targets.length) {
+        showAlert(`관절값 계산 실패: ${failed.join(', ')}. 로봇 연결을 확인하세요. 포인트는 바꾸지 않았습니다.`, { type: 'error' });
         return;
       }
-      onApply(result.points);
+      onApply(result.points.map(p => (failedIds.has(p.id) ? points.find(c => c.id === p.id) ?? p : p)));
       const m = result.moved;
-      showAlert(
-        `'${label}' 형상으로 포인트를 만들었습니다. 이동 X ${m.dx.toFixed(1)} / Y ${m.dy.toFixed(1)} mm, 회전 ${m.yawDeg.toFixed(2)}°, P3~P9 거리 차 ${m.distDiff.toFixed(1)}mm${saveHint ? `\n${saveHint}` : ''}`,
-        { type: 'success', title: '나머지 포인트 만들기' },
-      );
+      const moved = `이동 X ${m.dx.toFixed(1)} / Y ${m.dy.toFixed(1)} mm, 회전 ${m.yawDeg.toFixed(2)}°, P3~P9 거리 차 ${m.distDiff.toFixed(1)}mm`;
+      if (failed.length > 0) {
+        showAlert(
+          `'${label}' 형상으로 포인트를 만들었지만 ${failed.join(', ')} 은(는) 관절값 계산에 실패해 바꾸지 않았습니다. 그 포인트는 직접 티칭하세요. ${moved}${saveHint ? `\n${saveHint}` : ''}`,
+          { type: 'warning', title: '나머지 포인트 만들기' },
+        );
+      } else {
+        showAlert(`'${label}' 형상으로 포인트를 만들었습니다. ${moved}${saveHint ? `\n${saveHint}` : ''}`, { type: 'success', title: '나머지 포인트 만들기' });
+      }
     } finally {
       setBusy(false);
     }
-  }, [onApply, showAlert, saveHint]);
+  }, [onApply, showAlert, saveHint, points]);
 
   const start = useCallback(async () => {
     if (shapeId == null) {

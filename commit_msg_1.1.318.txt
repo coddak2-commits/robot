@@ -1,0 +1,9 @@
+v1.1.318: 로봇 제어 화면 연결 안 되던 문제 수정
+
+- robot-test/hooks/useRobotTestControl.ts: 코어가 /robot_sdk/* 에 로그인 토큰을 요구하는데 이 화면만
+  fetch 로 토큰 없이 보내 전부 401 -> '연결 안됨'. authFetch 로 Authorization 헤더 추가
+- 관절 이동 결과 판정: 코어 응답의 result 가 최상위에 있어 성공해도 '이동 실패'로 표시되던 것 수정
+- 버전 1.1.318
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K

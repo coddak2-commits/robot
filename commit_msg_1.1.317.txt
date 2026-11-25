@@ -1,0 +1,8 @@
+v1.1.317: 와이어 송급 보정값 재조정
+
+- lib/wireFeed.ts: 사용자 실측(밀기·당기기 모두 요청 25mm -> 20mm, 5mm -> 2~3mm, 식은 상태와 용접 직후 비슷)
+  밀기 지연 370ms / 7.40mm/s, 당기기 지연 397ms / 20.48mm/s. 용접 직후 프로파일도 같은 값
+- 버전 1.1.317
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcAzNvgE4EahHeBhhER

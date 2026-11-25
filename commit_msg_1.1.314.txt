@@ -1,0 +1,13 @@
+v1.1.314: 형상 방식 -> 네 점(P1·P3·P7·P9) 방식으로 교체
+
+- FourPointControl.tsx 신규: P1·P3·P7·P9 저장 후 '나머지 포인트 만들기'
+  P4=P3, P10=P9 복사 / P2·P8 은 수직 중간 / P6·P12 는 P3·P9 가운데에서 각 2.5mm 넘어감(5mm 겹침) / P5·P11 은 그 중간
+  토치 자세도 중간값, 관절값은 역기구학(끝점 관절 중간값 기준). 용접 조건·홈은 그대로
+  좌우 수직 기울기 차이 20mm 초과면 경고 후 계속/취소. 이미 저장된 포인트 덮어쓰기 확인
+  관절값 계산 실패 포인트만 원래대로 두고 나머지 적용 (전부 실패면 적용 안 함)
+- ShapeTemplateControl.tsx 삭제 (형상 방식 1.1.312~313)
+- 펜던트 화면·용접부 선택 화면 버튼 교체
+- 버전 1.1.314
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcAzNvgE4EahHeBhhER
