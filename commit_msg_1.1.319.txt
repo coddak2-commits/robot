@@ -1,0 +1,9 @@
+v1.1.319: 수평 끝(P6/P12)에도 크레이터 적용
+
+- weldingExecution.ts: CRATER_END_POINT_IDS 에 p6, p12 추가 (1.1.228 에서 수직 끝만 남겼던 것)
+  수평 끝나면 와이어 25mm -> 10mm 미만(수직 끝은 정상). 300A/31V 그대로 끄던 것을 낮춘 뒤 끔
+- 크레이터 시작 전류·전압을 끝점 대신 그 파트의 조건 포인트(아크 켤 때 쓴 값)에서 읽음
+- 버전 1.1.319
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K

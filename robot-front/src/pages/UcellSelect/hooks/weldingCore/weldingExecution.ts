@@ -53,7 +53,11 @@ const VERTICAL_POINT_NUMBERS = [1, 2, 3, 7, 8, 9];
 //   모서리 끝 P3/P9 : 수직 파트가 같은 자리에서 이어받는다
 //   수직 끝 P1/P7   : 여기만 끊긴다
 // 파트 구성을 또 바꿀 때는 이 목록만 보면 된다.
-const CRATER_END_POINT_IDS = ['p1', 'p7'];
+// [v1.1.319] 수평 끝 P6/P12 에도 다시 크레이터를 건다(사용자 요청 2026-11-25).
+// 수평이 끝나면 와이어가 25mm -> 10mm 미만으로 짧아졌다(수직 끝은 정상).
+// 300A/31V 그대로 끄던 것을 크레이터로 낮춘 뒤 끈다. 번백 레벨은 코어가 원래 값으로
+// 되돌리므로 그대로이고, 끝에서 머무는 시간은 0.5초 -> 0.9초로 늘어난다.
+const CRATER_END_POINT_IDS = ['p1', 'p7', 'p6', 'p12'];
 const isCraterEndPointId = (pointId?: string): boolean =>
   CRATER_END_POINT_IDS.includes((pointId ?? '').toLowerCase());
 // 파트 시작 체류 (v1.1.158). 아크를 켠 자리에서 잠깐 머물러 시작부를 채운다.
@@ -1254,6 +1258,11 @@ export async function executeWelding(
         // [v1.1.228] 비드가 끊기는 자리(P1/P7)에서만. 그 외는 전류를 안 넘겨 끈다.
         const endedPt = weldingPoints[i - 1];
         const craterOnPartEnd = isCraterEndPointId(endedPt?.id);
+        // [v1.1.319] 크레이터 시작 전류·전압은 그 파트를 켤 때 쓴 조건 포인트에서 읽는다.
+        // 끝점(P6/P12)은 네 점 방식에서 조건을 따로 갖고 있어 켤 때 값과 다를 수 있다.
+        const endedStarts = partBoundaryInfo.partStartIndices.filter(s => s <= i - 1);
+        const endedStartIdx = endedStarts.length ? Math.max(...endedStarts) : 0;
+        const endedCond = conditionPointAt(endedStartIdx) ?? endedPt;
         log_weldingExecution.info(
           'welding.partEnd.crater',
           `파트 종료: ${endedPt?.id ?? '?'} 크레이터 ${craterOnPartEnd ? '적용' : '생략(이어짐)'}`,
@@ -1264,8 +1273,8 @@ export async function executeWelding(
           simMode && !isWeldingTest,
           safetySettings.gasPostFlowTime,
           weaveTypeCode,
-          craterOnPartEnd ? (endedPt?.weldCurrent ?? firstWeldPoint?.weldCurrent) : undefined,
-          craterOnPartEnd ? (endedPt?.weldVoltage ?? firstWeldPoint?.weldVoltage) : undefined,
+          craterOnPartEnd ? (endedCond?.weldCurrent ?? firstWeldPoint?.weldCurrent) : undefined,
+          craterOnPartEnd ? (endedCond?.weldVoltage ?? firstWeldPoint?.weldVoltage) : undefined,
         );
         arcMayBeOn = false;
         // v1.1.201: 파트 종료 직후 트래킹을 끈다. 문서 4.3.1 예제와 예전 Lua 모두
@@ -1903,6 +1912,10 @@ export async function executeWelding(
       // [v1.1.228] 비드가 끊기는 자리(P1/P7)에서만.
       const lastPt = weldingPoints[weldingPoints.length - 1];
       const craterOnFinal = isCraterEndPointId(lastPt?.id);
+      // [v1.1.319] 파트 끝과 같게 마지막 파트의 조건 포인트에서 읽는다.
+      const lastStarts = partBoundaryInfo.partStartIndices.filter(s => s <= weldingPoints.length - 1);
+      const lastStartIdx = lastStarts.length ? Math.max(...lastStarts) : 0;
+      const lastCond = conditionPointAt(lastStartIdx) ?? lastPt;
       log_weldingExecution.info(
         'welding.final.crater',
         `전체 종료: ${lastPt?.id ?? '?'} 크레이터 ${craterOnFinal ? '적용' : '생략(이어짐)'}`,
@@ -1914,8 +1927,8 @@ export async function executeWelding(
         safetySettings.gasPostFlowTime,
         craterOnFinal
           ? buildCraterFill(
-              lastPt?.weldCurrent ?? firstWeldPoint?.weldCurrent,
-              lastPt?.weldVoltage ?? firstWeldPoint?.weldVoltage,
+              lastCond?.weldCurrent ?? firstWeldPoint?.weldCurrent,
+              lastCond?.weldVoltage ?? firstWeldPoint?.weldVoltage,
             )
           : undefined,
       );
