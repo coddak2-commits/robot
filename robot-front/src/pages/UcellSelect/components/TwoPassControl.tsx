@@ -11,7 +11,8 @@ type Side = 'left' | 'right';
 const SIDE_LABEL: Record<Side, string> = { left: '왼쪽 수평 (P4~P6)', right: '오른쪽 수평 (P10~P12)' };
 
 const FIELDS: { key: FieldKey; label: string; unit: string; min: number; max: number; nullable: boolean }[] = [
-  { key: 'offsetZ', label: '위치 (위로)', unit: 'mm', min: 0, max: 10, nullable: false },
+  // [v1.1.321] 바닥과 앞판 사이 45도 방향으로 떨어지는 거리
+  { key: 'offsetZ', label: '위치 (45도 방향)', unit: 'mm', min: 0, max: 10, nullable: false },
   { key: 'current', label: '전류', unit: 'A', min: 50, max: 500, nullable: true },
   { key: 'voltage', label: '전압', unit: 'V', min: 10, max: 50, nullable: true },
   { key: 'speed', label: '속도', unit: 'cpm', min: 5, max: 100, nullable: true },
@@ -33,7 +34,7 @@ const summarizeSide = (s: SecondPassSideSettings): string => {
   if (s.weaveFreq !== null) parts.push(`${s.weaveFreq}Hz`);
   if (s.weaveLeftStay !== null || s.weaveRightStay !== null)
     parts.push(`체류 ${s.weaveLeftStay ?? '-'}/${s.weaveRightStay ?? '-'}`);
-  return `+${s.offsetZ}mm · ${parts.length ? parts.join('/') : '1패스 조건'}`;
+  return `45° ${s.offsetZ}mm · ${parts.length ? parts.join('/') : '1패스 조건'}`;
 };
 
 export const summarizeSecondPass = (s: SecondPassSettings): string =>

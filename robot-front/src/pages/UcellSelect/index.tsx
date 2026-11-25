@@ -948,6 +948,9 @@ export const touchRequiredMessage = (partNames: string[]): string =>
 // null 인 항목은 1패스 값을 그대로 쓴다. 위빙 폭을 바꾸면 좌/우 폭은 같은 비율로 바꾼다.
 // [v1.1.320] 왼쪽·오른쪽 수평 2패스 조건을 따로 둔다(갭이 양쪽 다를 수 있음, 사용자 요청 2026-11-25).
 // 위빙 종류(weavingType)도 2패스만 따로 정할 수 있다(1패스 위빙 없음 + 2패스 위빙 등).
+// [v1.1.321] 2패스 위치를 Base +Z(바로 위)에서 '바닥과 앞판 사이 45도 방향'으로 바꾼다(사용자 요청 2026-11-25).
+// 앞판은 터치센싱이 항상 Base -X 로 찾는 면(touchSensing findDx(-1))이므로, 앞판에서 멀어지는 쪽은 Base +X.
+// offsetZ 값(필드 이름은 그대로)을 45도 방향 거리로 쓴다: X +d·cos45, Z +d·sin45. 토치 자세는 1패스 그대로.
 export const HORIZONTAL_SECOND_PASS_Z_MM = 5;
 export interface SecondPassSideSettings {
   offsetZ: number;
@@ -1020,7 +1023,9 @@ export const addHorizontalSecondPass = (
         ...pt,
         name: `${pt.name}(2패스)`,
         joints: null,
-        tcp: pt.tcp ? { ...pt.tcp, z: pt.tcp.z + offsetZ } : pt.tcp,
+        tcp: pt.tcp
+          ? { ...pt.tcp, x: pt.tcp.x + offsetZ * Math.SQRT1_2, z: pt.tcp.z + offsetZ * Math.SQRT1_2 }
+          : pt.tcp,
         weldCurrent: pt.weldCurrent !== null && s.current !== null ? s.current : pt.weldCurrent,
         weldVoltage: pt.weldVoltage !== null && s.voltage !== null ? s.voltage : pt.weldVoltage,
         moveSpeed: s.speed !== null ? s.speed : pt.moveSpeed,

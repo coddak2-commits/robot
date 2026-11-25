@@ -1,0 +1,9 @@
+v1.1.321: 수평 2패스 위치를 바닥·앞판 사이 45도 방향으로
+
+- UcellSelect/index.tsx addHorizontalSecondPass: tcp +Z d -> Base +X d·cos45, +Z d·sin45 (앞판 = Base -X 면)
+- TwoPassControl: '위치 (위로)' -> '위치 (45도 방향)', 요약 표시 45°
+- 토치 자세는 1패스 그대로
+- 버전 1.1.321
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K
