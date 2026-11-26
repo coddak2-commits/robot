@@ -951,6 +951,7 @@ export const touchRequiredMessage = (partNames: string[]): string =>
 // [v1.1.321] 2패스 위치를 Base +Z(바로 위)에서 '바닥과 앞판 사이 45도 방향'으로 바꾼다(사용자 요청 2026-11-25).
 // 앞판은 터치센싱이 항상 Base -X 로 찾는 면(touchSensing findDx(-1))이므로, 앞판에서 멀어지는 쪽은 Base +X.
 // offsetZ 값(필드 이름은 그대로)을 45도 방향 거리로 쓴다: X +d·cos45, Z +d·sin45. 토치 자세는 1패스 그대로.
+// [v1.1.322] d 음수 허용(-10~10): 같은 45도 선을 따라 아래(루트·앞판) 쪽. 1패스가 루트 접촉 위치라 1패스 비드 쪽으로 들어간다.
 export const HORIZONTAL_SECOND_PASS_Z_MM = 5;
 export interface SecondPassSideSettings {
   offsetZ: number;

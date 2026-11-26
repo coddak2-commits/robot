@@ -12,7 +12,8 @@ const SIDE_LABEL: Record<Side, string> = { left: '왼쪽 수평 (P4~P6)', right:
 
 const FIELDS: { key: FieldKey; label: string; unit: string; min: number; max: number; nullable: boolean }[] = [
   // [v1.1.321] 바닥과 앞판 사이 45도 방향으로 떨어지는 거리
-  { key: 'offsetZ', label: '위치 (45도 방향)', unit: 'mm', min: 0, max: 10, nullable: false },
+  // [v1.1.322] 음수 허용: 같은 45도 선을 따라 아래(루트) 쪽으로 (사용자 요청 2026-11-26, 0 에서도 아래가 안 덮임)
+  { key: 'offsetZ', label: '위치 (45도 방향)', unit: 'mm', min: -10, max: 10, nullable: false },
   { key: 'current', label: '전류', unit: 'A', min: 50, max: 500, nullable: true },
   { key: 'voltage', label: '전압', unit: 'V', min: 10, max: 50, nullable: true },
   { key: 'speed', label: '속도', unit: 'cpm', min: 5, max: 100, nullable: true },
@@ -103,6 +104,7 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
 
   const pressKey = (k: string) => {
     if (k === '⌫') { setBuffer(b => b.slice(0, -1)); return; }
+    if (k === '±') { setBuffer(b => (b.startsWith('-') ? b.slice(1) : `-${b}`)); return; }
     if (k === '.' && buffer.includes('.')) return;
     setBuffer(b => (b === '0' && k !== '.' ? k : b + k));
   };
@@ -156,7 +158,8 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
             </div>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
               비워 두면 1패스 값을 그대로 씁니다. 화면을 새로 열면 초기화됩니다.<br />
-              체류는 양쪽 모두 왼쪽 수평(P4~P6) 기준으로 입력하고, 오른쪽 수평은 좌우를 바꿔 넣습니다.
+              체류는 양쪽 모두 왼쪽 수평(P4~P6) 기준으로 입력하고, 오른쪽 수평은 좌우를 바꿔 넣습니다.<br />
+              위치에 - 를 넣으면 같은 45도 선을 따라 아래(루트) 쪽으로 옮깁니다.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
               {(['left', 'right'] as Side[]).map(sd => (
@@ -209,6 +212,11 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
                     <button key={k} onClick={() => pressKey(k)} style={btn}>{k}</button>
                   ))}
                 </div>
+                {activeKey === 'offsetZ' && (
+                  <button onClick={() => pressKey('±')}
+                    style={{ ...btn, fontSize: 16, padding: '10px 0', background: '#334155' }}
+                  >± (부호 바꾸기)</button>
+                )}
                 <button onClick={() => setBuffer('')}
                   style={{ ...btn, fontSize: 14, padding: '10px 0', background: '#334155' }}
                 >{FIELDS.find(f => f.key === activeKey)?.nullable ? '비우기 (1패스와 같음)' : `기본값 (${DEFAULT_SECOND_PASS_SIDE.offsetZ}mm)`}</button>

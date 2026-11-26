@@ -1,0 +1,8 @@
+v1.1.322: 수평 2패스 위치에 음수 허용 (45도 선 따라 아래쪽)
+
+- TwoPassControl: 위치(45도) 범위 0~10 -> -10~10, 위치 칸 선택 시 '± (부호 바꾸기)' 버튼, 안내 문구 추가
+- 계산은 1.1.321 그대로(X d·cos45, Z d·sin45) - d 음수면 아래·앞판 쪽
+- 버전 1.1.322
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K
