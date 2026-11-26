@@ -952,9 +952,14 @@ export const touchRequiredMessage = (partNames: string[]): string =>
 // 앞판은 터치센싱이 항상 Base -X 로 찾는 면(touchSensing findDx(-1))이므로, 앞판에서 멀어지는 쪽은 Base +X.
 // offsetZ 값(필드 이름은 그대로)을 45도 방향 거리로 쓴다: X +d·cos45, Z +d·sin45. 토치 자세는 1패스 그대로.
 // [v1.1.322] d 음수 허용(-10~10): 같은 45도 선을 따라 아래(루트·앞판) 쪽. 1패스가 루트 접촉 위치라 1패스 비드 쪽으로 들어간다.
+// [v1.1.325] 높이(liftZ, 0~10mm): 45도 위치와 따로 Base +Z 로만 올린다(사용자 요청 2026-11-26).
+// 2패스는 1패스 비드 위를 지나 팁-모재 거리가 비드 높이만큼 줄고 와이어가 짧게 남는다(-2mm 에서 10mm).
+// 수평 토치가 거의 수직(수직에서 9~13도)이라 위로만 올리면 겨누는 앞뒤 위치는 거의 그대로, 와이어는 올린 만큼 더 남는다.
+// 0 이면 1.1.324 와 같다.
 export const HORIZONTAL_SECOND_PASS_Z_MM = 5;
 export interface SecondPassSideSettings {
   offsetZ: number;
+  liftZ: number;
   current: number | null;
   voltage: number | null;
   speed: number | null;
@@ -971,6 +976,7 @@ export interface SecondPassSettings {
 }
 export const DEFAULT_SECOND_PASS_SIDE: SecondPassSideSettings = {
   offsetZ: HORIZONTAL_SECOND_PASS_Z_MM,
+  liftZ: 0,
   current: null,
   voltage: null,
   speed: null,
@@ -1017,6 +1023,7 @@ export const addHorizontalSecondPass = (
     if (groupIndex !== 0 && groupIndex !== 2) continue;
     const s = groupIndex === 2 ? all.right : all.left;
     const offsetZ = Number.isFinite(s.offsetZ) ? s.offsetZ : HORIZONTAL_SECOND_PASS_Z_MM;
+    const liftZ = Number.isFinite(s.liftZ) ? Math.min(10, Math.max(0, s.liftZ)) : 0;
     result.push({
       ...part,
       name: `${part.name} 2패스`,
@@ -1025,7 +1032,7 @@ export const addHorizontalSecondPass = (
         name: `${pt.name}(2패스)`,
         joints: null,
         tcp: pt.tcp
-          ? { ...pt.tcp, x: pt.tcp.x + offsetZ * Math.SQRT1_2, z: pt.tcp.z + offsetZ * Math.SQRT1_2 }
+          ? { ...pt.tcp, x: pt.tcp.x + offsetZ * Math.SQRT1_2, z: pt.tcp.z + offsetZ * Math.SQRT1_2 + liftZ }
           : pt.tcp,
         weldCurrent: pt.weldCurrent !== null && s.current !== null ? s.current : pt.weldCurrent,
         weldVoltage: pt.weldVoltage !== null && s.voltage !== null ? s.voltage : pt.weldVoltage,

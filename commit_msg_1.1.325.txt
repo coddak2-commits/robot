@@ -1,0 +1,11 @@
+v1.1.325: 수평 2패스 높이(위로) 칸 추가
+
+- 2패스가 1패스 비드 위를 지나 팁-모재 거리가 줄고 와이어가 짧게 남음(11-26 -2mm 에서 10mm)
+- SecondPassSideSettings.liftZ (0~10mm, 기본 0): 45도 위치와 따로 Base +Z 로만 더함, 토치 자세 그대로
+- TwoPassControl: '높이 (위로)' 칸, 요약에 '높이 Nmm'(0 이면 안 보임), 안내 문구
+- 2패스 로그에 높이 추가
+- 0 이면 1.1.324 와 같은 동작
+- 버전 1.1.325
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K
