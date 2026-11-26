@@ -6,7 +6,7 @@ import { setWeldingPartOrder } from '../..';
 import { WeldingResult, WeldingStartOptions, ClosestCenterlineResult } from './weldingCoreTypes';
 import { findClosestCenterlinePoint } from './pathFinding';
 import { saveStoppedLog, saveWeldingLog } from './loggingHelpers';
-import { moveToJointWithStopCheck, getWeaveTypeCode, calculateDistance, getMinimumWeavingDistance, moveHomeFromVerticalEnd, moveHomeFromP7ViaP8, VERTICAL_END_HOME_LIN } from './moveStopCheck';
+import { moveToJointWithStopCheck, getWeaveTypeCode, calculateDistance, getMinimumWeavingDistance, moveHomeFromVerticalEnd, moveHomeFromP7ViaP8, VERTICAL_END_HOME_LIN, checkStartJ1 } from './moveStopCheck';
 import { loadWeldingSettings } from './sequenceSettings';
 import { safeArcOn, setupAndStartWeave, endPartWelding, startPartWelding, safeEndWeave, safeArcOff } from './weaveHelpers';
 import { blackflyStart, blackflyStop, newBlackflyRunId } from '../../../../lib/blackflyApi';
@@ -644,6 +644,13 @@ export async function executeWelding(
   );
   if (!homePoint && !startFromClosest) {
     showAlert('Home 포인트가 저장되어 있지 않습니다.', { type: 'warning', title: '포인트 없음' });
+    return null;
+  }
+  // [v1.1.323] 시작 전 J1 확인. 뒤집힌 자세에서 홈 MoveJ 를 보내면 J1 이 크게 돈다.
+  // moveStopCheck.ts checkStartJ1 참고.
+  const j1Check = await checkStartJ1(teachingPoints);
+  if (!j1Check.ok) {
+    showAlert(j1Check.message ?? '로봇 자세 확인 필요', { type: 'error', title: '용접 시작 안 함' });
     return null;
   }
   const partWeldEnabled = options?.partWeldEnabled;

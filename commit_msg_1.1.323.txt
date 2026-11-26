@@ -1,0 +1,11 @@
+v1.1.323: 홈 근처 홈 버튼은 관절 이동만, 용접·터치 시작 전 J1 확인
+
+- 2026-11-26 10:42 홈 위 Z 222 에서 홈 버튼 -> 빠지기 직선 도중 J1 -5.61 -> 163.32 로 뒤집힘
+- moveStopCheck: isNearHomeForJointMove (J1 15도, 관절 60도, 홈 TCP 300mm 이내, 앞판 쪽 30mm/아래 20mm 넘지 않음)
+- useRobotControl: 홈 근처면 빠지기·홈 직선 없이 홈 MoveJ(최대 40), 아니면 종전 경로
+- moveStopCheck: checkStartJ1 - 현재 J1 이 저장 포인트 J1 범위 +-20도 밖이면(또는 못 읽으면) 시작 안 함
+- touchSensing / weldingExecution 시작 시 checkStartJ1 적용
+- 버전 1.1.323
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K

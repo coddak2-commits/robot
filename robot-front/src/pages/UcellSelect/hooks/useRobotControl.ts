@@ -3,7 +3,7 @@ import { RealtimeRobotStatus, enableRobot, getRealtimeRobotStatus, stopRobotSDK 
 import { createLogger } from '../../../lib';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { executeRetract, executeMoveJ, executeHomeExitRetreat } from './moveHelpers';
-import { moveHomeFromVerticalEnd, moveLinToPoint } from './weldingCore/moveStopCheck';
+import { moveHomeFromVerticalEnd, moveLinToPoint, isNearHomeForJointMove, moveToJointWithStopCheck } from './weldingCore/moveStopCheck';
 
 const log_useRobotControl = createLogger('useRobotControl');
 export interface MoveToPointOptions {
@@ -25,6 +25,8 @@ export interface UseRobotControlReturn {
   ) => boolean;
 }
 const JOINT_JUMP_WARN_DEG = 45;
+// [v1.1.323] 홈 근처 홈 MoveJ 최대 속도 (수직 끝 -> 홈 관절 이동과 같은 40).
+const HOME_NEAR_JOINT_SPEED = 40;
 export function useRobotControl(): UseRobotControlReturn {
   const [isRobotMoving, setIsRobotMoving] = useState(false);
   const [teachingRobotState, setTeachingRobotState] = useState<RealtimeRobotStatus | null>(null);
@@ -112,6 +114,20 @@ export function useRobotControl(): UseRobotControlReturn {
         const userNum = point.userNum ?? 0;
         const skipRetract = opts.skipRetract ?? false;
         const isHomeTarget = (point.id ?? '').toLowerCase() === 'home';
+        // [v1.1.323] 홈 근처면 빠지기·홈 직선 없이 홈 MoveJ 만. moveStopCheck.ts isNearHomeForJointMove 참고.
+        if (isHomeTarget && point.tcp && (await isNearHomeForJointMove(point))) {
+          log_useRobotControl.info('moveToPoint.homeNearJoint', '홈 버튼: 홈 근처 - 빠지기·직선 없이 홈 MoveJ');
+          const near = await moveToJointWithStopCheck(
+            point.joints,
+            Math.min(speed || HOME_NEAR_JOINT_SPEED, HOME_NEAR_JOINT_SPEED),
+            point.toolNum ?? 3,
+            point.userNum ?? 0,
+            stopMoveRef,
+          );
+          if (!near.success) return false;
+          totalTimer.end('moveToPoint.done', `${point.name} 이동 완료`);
+          return true;
+        }
         if (isHomeTarget) {
           // [v1.1.260] 홈은 어디서든 먼저 짧게 빠진다. moveHelpers.ts executeHomeExitRetreat 참고.
           const exit = await executeHomeExitRetreat(

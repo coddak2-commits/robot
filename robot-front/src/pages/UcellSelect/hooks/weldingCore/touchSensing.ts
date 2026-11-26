@@ -6,7 +6,7 @@ import { WeldingSequenceSettings, TouchSensingOptions, TouchSensingResult } from
 import { PointTouchResult, performDryRunForPoint } from './touchDryRun';
 import { getTouchDirections } from './touchDirections';
 import { loadWeldingSettings } from './sequenceSettings';
-import { moveToCartesianWithStopCheck, moveToJointWithStopCheck, moveHomeFromVerticalEnd, moveHomeFromP7ViaP8, VERTICAL_END_HOME_LIN } from './moveStopCheck';
+import { moveToCartesianWithStopCheck, moveToJointWithStopCheck, moveHomeFromVerticalEnd, moveHomeFromP7ViaP8, VERTICAL_END_HOME_LIN, checkStartJ1 } from './moveStopCheck';
 import { getUcellShiftForTouch, applyUcellShift } from '../../../../lib/cameraApi';
 
 const log_touchSensing = createLogger('weldingCore.touchSensing');
@@ -261,6 +261,12 @@ export async function executeTouchSensing(
       type: 'warning',
       title: '포인트 없음',
     });
+    return [];
+  }
+  // [v1.1.323] 시작 전 J1 확인. moveStopCheck.ts checkStartJ1 참고.
+  const j1Check = await checkStartJ1(teachingPoints);
+  if (!j1Check.ok) {
+    showAlert(j1Check.message ?? '로봇 자세 확인 필요', { type: 'error', title: `${modeLabel} 시작 안 함` });
     return [];
   }
   // [v1.1.310] Gemini U셀 위치 대략 보정. 카메라 연결 + 기준 등록돼 있을 때만.

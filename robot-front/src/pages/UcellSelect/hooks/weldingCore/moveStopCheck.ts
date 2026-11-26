@@ -1,4 +1,4 @@
-import { WEAVING_TYPE_OPTIONS } from '../..';
+import { WEAVING_TYPE_OPTIONS, TeachingPoint } from '../..';
 import { moveToJointPositionNonBlocking, checkMotionDone, getRealtimeRobotStatus, getRobotError, resetRobotError } from '../../../../lib';
 import { createLogger } from '../../../../lib';
 import React from 'react';
@@ -208,6 +208,94 @@ const resetErrorIfAny = async (): Promise<void> => {
     log_helpers.warn('homeFromVerticalEnd.reset.failed', '에러 리셋 실패', { error: String(error) });
   }
   await new Promise(resolve => setTimeout(resolve, 500));
+};
+// [v1.1.323] 홈 버튼: 홈 근처면 빠지기·홈 직선 없이 홈 MoveJ 만 (2026-11-26 10:42).
+// 홈보다 144mm 위(Z 222)에서 빠지기 직선(+X 60, +Y 20)이 특이 자세 근처를 지나며
+// J1 이 -5.61 -> 163.32 로 뒤집힌 채 멈췄다. 같은 구역의 다른 4번(09:39, 10:45)은 code=38 로 거부됐다.
+// 관절 이동은 J1 이 남은 차이만큼만 돌아 뒤집힐 수 없다.
+// 조건: J1 차이 15도 이내, 모든 관절 차이 60도 이내, 홈 TCP 와 300mm 이내,
+//       홈보다 앞판 쪽(-X)으로 30mm 넘게 들어가 있지 않고, 홈보다 20mm 넘게 낮지 않을 것.
+// 하나라도 안 맞으면 종전 경로(빠지기 -> 홈 직선 -> 팔 접기)를 쓴다.
+const NEAR_HOME_J1_DEG = 15;
+const NEAR_HOME_JOINT_DEG = 60;
+const NEAR_HOME_DIST_MM = 300;
+const NEAR_HOME_INTO_CELL_MM = 30;
+const NEAR_HOME_BELOW_MM = 20;
+export const isNearHomeForJointMove = async (homePoint: {
+  joints?: number[] | null;
+  tcp?: { x: number; y: number; z: number } | null;
+}): Promise<boolean> => {
+  if (!homePoint.joints || homePoint.joints.length !== 6 || !homePoint.tcp) return false;
+  let st;
+  try {
+    st = await getRealtimeRobotStatus();
+  } catch (error) {
+    log_helpers.warn('nearHome.status', '홈 근처 확인용 상태 조회 실패 - 종전 경로', { error: String(error) });
+    return false;
+  }
+  const j = st?.joints;
+  const t = st?.tcp;
+  if (!j || j.length !== 6 || !t || t.length < 3) return false;
+  const h = homePoint.joints;
+  const ht = homePoint.tcp;
+  const diffs = j.map((v, i) => Math.abs(v - h[i]));
+  const maxDiff = Math.max(...diffs);
+  const dist = Math.sqrt((t[0] - ht.x) ** 2 + (t[1] - ht.y) ** 2 + (t[2] - ht.z) ** 2);
+  const near =
+    diffs[0] <= NEAR_HOME_J1_DEG
+    && maxDiff <= NEAR_HOME_JOINT_DEG
+    && dist <= NEAR_HOME_DIST_MM
+    && t[0] >= ht.x - NEAR_HOME_INTO_CELL_MM
+    && t[2] >= ht.z - NEAR_HOME_BELOW_MM;
+  log_helpers.info('nearHome.check', near ? '홈 근처 - 홈 MoveJ 만' : '홈 근처 아님 - 종전 경로', {
+    j1Diff: Number(diffs[0].toFixed(2)),
+    maxJointDiff: Number(maxDiff.toFixed(2)),
+    distanceMm: Number(dist.toFixed(1)),
+    dx: Number((t[0] - ht.x).toFixed(1)),
+    dz: Number((t[2] - ht.z).toFixed(1)),
+  });
+  return near;
+};
+// [v1.1.323] 용접·터치 시작 전 J1 확인 (2026-11-26 10:43:02).
+// J1 이 163.32 로 뒤집힌 자세에서 터치 시작점 직선(속도 80)이 받아들여졌다.
+// 현재 J1 이 저장된 포인트(홈 포함)들의 J1 범위에서 20도 넘게 벗어나 있으면 시작하지 않는다.
+// 수직 끝(P1/P7)은 홈보다 J1 이 약 42도 돌아 있어 홈 하나가 아니라 범위로 본다.
+// 현재 관절값을 못 읽어도 시작하지 않는다.
+const START_J1_MARGIN_DEG = 20;
+export const checkStartJ1 = async (
+  teachingPoints: TeachingPoint[],
+): Promise<{ ok: boolean; message?: string }> => {
+  const j1s = teachingPoints
+    .filter(pt => pt.isSaved && pt.joints && pt.joints.length === 6 && !pt.joints.every(v => v === 0))
+    .map(pt => pt.joints![0]);
+  if (j1s.length === 0) return { ok: true };
+  const min = Math.min(...j1s);
+  const max = Math.max(...j1s);
+  let current: number[] | null = null;
+  try {
+    const st = await getRealtimeRobotStatus();
+    current = st?.joints && st.joints.length === 6 ? st.joints : null;
+  } catch (error) {
+    log_helpers.warn('startJ1.status', '시작 전 J1 확인용 상태 조회 실패', { error: String(error) });
+  }
+  if (!current) {
+    return { ok: false, message: '현재 관절값을 읽지 못해 시작하지 않습니다.\n로봇 연결을 확인한 뒤 다시 시작하세요.' };
+  }
+  const j1 = current[0];
+  if (j1 >= min - START_J1_MARGIN_DEG && j1 <= max + START_J1_MARGIN_DEG) return { ok: true };
+  log_helpers.error('startJ1.out', '현재 J1 이 저장된 포인트 범위를 벗어남 - 시작 안 함', {
+    j1: Number(j1.toFixed(2)),
+    min: Number(min.toFixed(2)),
+    max: Number(max.toFixed(2)),
+    margin: START_J1_MARGIN_DEG,
+  });
+  return {
+    ok: false,
+    message:
+      `현재 J1 이 ${j1.toFixed(1)}도로, 저장된 포인트 범위(${min.toFixed(1)} ~ ${max.toFixed(1)}도)에서 벗어나 있습니다.\n`
+      + '로봇 자세가 뒤집혔을 수 있어 시작하지 않습니다.\n\n'
+      + '주변을 확인한 뒤 조그로 홈 근처까지 돌려놓고 다시 시작하세요.',
+  };
 };
 export const moveHomeFromVerticalEnd = async (
   homePoint: {
