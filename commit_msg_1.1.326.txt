@@ -1,0 +1,10 @@
+v1.1.326: 아크 트래킹 중 실제 TCP 를 코어 로그에 기록
+
+- SDK 에 트래킹 보정량 읽는 함수 없음, 상태 패킷 weldCurrent/weldVoltage 는 늘 0 -> 위치로 보정량을 구하기 위함
+- RobotService::startTraceLog/stopTraceLog: ArcWeldTraceControl 켜기 성공 시 0.1초마다 TrackLog t=.. tcp=[x,y,z,rx,ry,rz], 끄기 시 멈춤(최대 300초)
+- 용접 MoveL 이 m_mutex 를 쥐는 동안에도 읽히도록 잠금 없이 GetRobotRealTimeState(memcpy)
+- ArcTrace ON 로그에 계수(klr, kud, stepMax, sumMax 등) 추가
+- 버전 1.1.326
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K

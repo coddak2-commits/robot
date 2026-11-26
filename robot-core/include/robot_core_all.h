@@ -141,6 +141,10 @@ private:
     void monitorLoop(int intervalMs);
     bool checkConnection();
     bool tryReconnect();
+    // [v1.1.326] 아크 트래킹 중 실제 TCP 기록. 번호가 바뀌면 이전 기록 스레드는 멈춘다
+    std::atomic<int> m_traceLogGen{0};
+    void startTraceLog();
+    void stopTraceLog();
 };
 #endif
 #ifndef HTTP_SERVER_H

@@ -523,6 +523,8 @@ int main(int argc, char* argv[]) {
 RobotService::RobotService() {
 }
 RobotService::~RobotService() {
+    stopTraceLog();
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
     stopStateMonitor();
     if (m_connected) {
         disconnect();
@@ -1105,11 +1107,52 @@ int RobotService::arcWeldTraceControl(int flag, double delayTime,
               << " lr=" << isLeftRight << " ud=" << isUpLow
               << " kud=" << kud << " stepMaxUd=" << stepMaxUd << " sumMaxUd=" << sumMaxUd
               << " axisSelect=" << axisSelect << " refType=" << referenceType << std::endl;
-    return m_robot.ArcWeldTraceControl(flag, delayTime,
-                                       isLeftRight, klr, tStartLr, stepMaxLr, sumMaxLr,
-                                       isUpLow, kud, tStartUd, stepMaxUd, sumMaxUd,
-                                       axisSelect, referenceType,
-                                       referSampleStartUd, referSampleCountUd, referenceCurrent);
+    int ret = m_robot.ArcWeldTraceControl(flag, delayTime,
+                                          isLeftRight, klr, tStartLr, stepMaxLr, sumMaxLr,
+                                          isUpLow, kud, tStartUd, stepMaxUd, sumMaxUd,
+                                          axisSelect, referenceType,
+                                          referSampleStartUd, referSampleCountUd, referenceCurrent);
+    // [v1.1.326] 켜기 성공이면 TCP 기록 시작, 끄기면 멈춤
+    if (ret == 0) {
+        if (flag) startTraceLog();
+        else stopTraceLog();
+    }
+    return ret;
+}
+#include <sstream>
+#include <iomanip>
+// [v1.1.326] 아크 트래킹 중 실제 TCP 위치 기록 (사용자 요청 2026-11-27).
+// SDK 에 트래킹 보정량을 읽는 함수가 없고, 상태 패킷의 weldCurrent/weldVoltage 도 늘 0 이라(v1.1.216)
+// 트래킹이 켜져 있는 동안 0.1초마다 실제 TCP 를 코어 로그에 남긴다.
+// 계획 경로(파트 시작점 -> 끝점 직선)와 실제 위치의 차이를 위빙 한 주기씩 평균 내면 트래킹 보정량이 된다.
+// 용접 MoveL 이 m_mutex 를 쥐고 있는 동안 getState() 는 캐시만 돌려주므로 잠금 없이 SDK 상태를 읽는다
+// (GetRobotRealTimeState 는 SDK 내부 상태 버퍼를 memcpy 만 한다). 끄기 명령이 안 와도 300초 뒤 멈춘다.
+void RobotService::startTraceLog() {
+    const int gen = ++m_traceLogGen;
+    std::thread([this, gen]() {
+        const auto t0 = std::chrono::steady_clock::now();
+        FLOG_INFO("TrackLog", "start gen=" + std::to_string(gen));
+        int n = 0;
+        while (m_traceLogGen.load() == gen && n < 3000) {
+            if (m_connected) {
+                ROBOT_STATE_PKG s = {0};
+                if (m_robot.GetRobotRealTimeState(&s) == 0) {
+                    const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                    std::ostringstream os;
+                    os << std::fixed << std::setprecision(2) << "t=" << t << " tcp=["
+                       << s.tl_cur_pos[0] << "," << s.tl_cur_pos[1] << "," << s.tl_cur_pos[2] << ","
+                       << s.tl_cur_pos[3] << "," << s.tl_cur_pos[4] << "," << s.tl_cur_pos[5] << "]";
+                    FLOG_INFO("TrackLog", os.str());
+                }
+            }
+            ++n;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        FLOG_INFO("TrackLog", "end gen=" + std::to_string(gen) + " samples=" + std::to_string(n));
+    }).detach();
+}
+void RobotService::stopTraceLog() {
+    ++m_traceLogGen;
 }
 int RobotService::forwardWireFeed(int ioType, int wireFeed) {
     // emergencyStop()/stopMotion()과 동일하게 mutex 없이 호출 (v1.1.126, 용접 중 MoveL 블로킹 중에도 와이어 조정 가능하도록 테스트)
@@ -4654,7 +4697,20 @@ void registerWeldingConfigRoutes(
             if (result != 0) {
                 FLOG_SDK_ERROR("ArcWeldTraceControl", result, "flag=" + std::to_string(flag));
             } else {
-                FLOG_INFO("ArcTrace", std::string(flag ? "Arc tracking ON" : "Arc tracking OFF"));
+                // [v1.1.326] 켤 때 계수도 남긴다(그동안 ON/OFF 만 남아 어떤 값으로 돌았는지 몰랐음)
+                if (flag) {
+                    std::ostringstream os;
+                    os << "Arc tracking ON lr=" << isLeftRight << " klr=" << klr << " tStartLr=" << tStartLr
+                       << " stepMaxLr=" << stepMaxLr << " sumMaxLr=" << sumMaxLr
+                       << " ud=" << isUpLow << " kud=" << kud << " tStartUd=" << tStartUd
+                       << " stepMaxUd=" << stepMaxUd << " sumMaxUd=" << sumMaxUd
+                       << " delay=" << delayTime << " axis=" << axisSelect << " refType=" << referenceType
+                       << " refStart=" << referSampleStartUd << " refCount=" << referSampleCountUd
+                       << " refCurrent=" << referenceCurrent;
+                    FLOG_INFO("ArcTrace", os.str());
+                } else {
+                    FLOG_INFO("ArcTrace", "Arc tracking OFF");
+                }
             }
             res.set_content(HttpRouteHelpers::makeStatusResponse(
                 (result == 0) ? 200 : 500,
@@ -7186,7 +7242,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.325"
+#define APP_VERSION_STRING "1.1.326"
 #ifndef _WIN32
 #include <cstdio>
 #include <map>
