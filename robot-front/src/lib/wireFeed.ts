@@ -112,8 +112,17 @@ type WireProfile = Record<WireDirection, { deadTimeMs: number; speedMmPerSec: nu
 //   당기기 명령 시간 519/1374ms -> 속도 (20-2.5)/(1.374-0.519) = 20.48mm/s, 지연 0.519 - 2.5/20.48 = 397ms
 //   검산: 밀기 25mm -> 3748ms -> 25.0 / 5mm -> 1046ms -> 5.0
 //         당기기 25mm -> 1618ms -> 25.0 / 5mm -> 641ms -> 5.0
+//
+// v1.1.324 밀기만 11-25 와 11-26 사이로 (2026-11-26, 사용자 실측). 317 값(370ms, 7.40mm/s)으로
+//   요청 25mm(3748ms) -> 30mm. 하루 만에 20mm(3072ms) -> 30mm 로 바뀜. 사용자 요청: 두 날 명령 시간 사이로 줄이기.
+//   25mm 명령 시간 = (3072 + 3748) / 2 = 3410ms.
+//   5mm 는 11-26 실측이 없어 11-26 도 지연 370ms 로 가정(속도 30/3.378 = 8.88mm/s -> 933ms),
+//   11-25 의 1046ms 와 평균 989ms.
+//   두 점 -> 속도 20 / (3.410 - 0.989) = 8.26mm/s, 지연 0.989 - 5/8.26 = 384ms.
+//   예상: 25mm -> 3411ms -> 11-25 조건 22.5 / 11-26 조건 27.0, 5mm -> 989ms -> 4.6 / 5.5
+//   당기기는 11-26 실측이 없어 317 값 그대로.
 export const WIRE_FEED_PROFILE_COLD: WireProfile = {
-  forward: { deadTimeMs: 370, speedMmPerSec: 7.40 },
+  forward: { deadTimeMs: 384, speedMmPerSec: 8.26 },
   reverse: { deadTimeMs: 397, speedMmPerSec: 20.48 },
 };
 export const WIRE_FEED_PROFILE_HOT: WireProfile = WIRE_FEED_PROFILE_COLD;

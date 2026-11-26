@@ -1,0 +1,9 @@
+v1.1.324: 와이어 수동 밀기 보정을 11-25·11-26 실측 사이로
+
+- 317 값(370ms, 7.40mm/s)으로 11-26 요청 25mm -> 30mm (11-25 는 3072ms 로 20mm)
+- 25mm 명령 시간을 두 날 평균 3410ms 로: 밀기 지연 384ms, 8.26mm/s (뜨거운 프로파일도 같은 값)
+- 당기기는 11-26 실측 없어 그대로
+- 버전 1.1.324
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K
