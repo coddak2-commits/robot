@@ -1,0 +1,10 @@
+v1.1.332: 2패스 '뒤로' 토치 각도 33 -> 55도
+
+- 33도로 드라이런 시 여전히 바닥을 쏨(사용자). 각도계 값은 용접선 방향 기울기가 섞인 값
+- 툴 3번(플랜지->팁 8.634, 204.057, 298.694)을 P4 자세로 돌린 방향: 단면(XZ)에서 바닥으로부터 55도, 용접선 방향 약 41도
+- HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG = 55. 뒤로 10mm = X +5.7, Z +8.2
+- 안내 문구·2패스 로그 각도 표시 55도
+- 버전 1.1.332
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K

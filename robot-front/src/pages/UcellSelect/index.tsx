@@ -952,6 +952,10 @@ export const touchRequiredMessage = (partNames: string[]): string =>
 // 앞판은 터치센싱이 항상 Base -X 로 찾는 면(touchSensing findDx(-1))이므로, 앞판에서 멀어지는 쪽은 Base +X.
 // offsetZ 값(필드 이름은 그대로)을 45도 방향 거리로 쓴다: X +d·cos45, Z +d·sin45. 토치 자세는 1패스 그대로.
 // [v1.1.322] d 음수 허용(-10~10): 같은 45도 선을 따라 아래(루트·앞판) 쪽. 1패스가 루트 접촉 위치라 1패스 비드 쪽으로 들어간다.
+// [v1.1.332] 각도 33 -> 55. 33 으로 드라이런하니 여전히 바닥을 쏨(사용자). 각도계는 노즐 옆면에서 잰 값이라
+//   토치의 용접선 방향(Y) 기울기가 섞임. 툴 3번(플랜지->팁 8.634, 204.057, 298.694, 방향 0)을 11-26 P4 자세로
+//   돌리면 플랜지->팁 단위벡터 [-0.512,-0.448,-0.733]: 단면(XZ)에서 바닥으로부터 atan(0.733/0.512) = 55도,
+//   용접선 방향으로 약 41도. 토치 몸통이 플랜지->팁으로 곧다는 가정. 뒤로 10mm = X +5.7, Z +8.2.
 // [v1.1.331] liftZ 는 '뒤로 (토치 방향)': 실측한 토치 각도(바닥판에서 33도, 2026-11-27 사용자가 각도계로
 //   수평 1패스 자세 노즐에서 잼) 선을 따라 Base +X·cos33, +Z·sin33 으로 뺀다. 와이어가 닿는 자리는 그대로.
 //   위로만(1.1.329) -> 앞판 위쪽을 쏨, X 로만(1.1.330, 10mm) -> 와이어 길이는 좋았으나 바닥을 쏨.
@@ -968,7 +972,7 @@ export const touchRequiredMessage = (partNames: string[]): string =>
 // 수평 토치가 거의 수직(수직에서 9~13도)이라 위로만 올리면 겨누는 앞뒤 위치는 거의 그대로, 와이어는 올린 만큼 더 남는다.
 // 0 이면 1.1.324 와 같다.
 export const HORIZONTAL_SECOND_PASS_Z_MM = 5;
-export const HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG = 33;
+export const HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG = 55;
 export interface SecondPassSideSettings {
   offsetZ: number;
   liftZ: number;

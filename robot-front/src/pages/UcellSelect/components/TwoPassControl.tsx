@@ -163,7 +163,7 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
               비워 두면 1패스 값을 그대로 씁니다. 화면을 새로 열면 초기화됩니다.<br />
               체류는 양쪽 모두 왼쪽 수평(P4~P6) 기준으로 입력하고, 오른쪽 수평은 좌우를 바꿔 넣습니다.<br />
               위치에 - 를 넣으면 같은 45도 선을 따라 아래(루트) 쪽으로 옮깁니다.<br />
-              뒤로는 토치가 기울어진 선(바닥에서 33도)을 따라 뺍니다. 와이어가 닿는 자리는 같고, 뺀 만큼 와이어가 더 남습니다.
+              뒤로는 토치가 기울어진 선(단면에서 바닥으로부터 55도)을 따라 뺍니다. 와이어가 닿는 자리는 같고, 뺀 만큼 와이어가 더 남습니다.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
               {(['left', 'right'] as Side[]).map(sd => (
