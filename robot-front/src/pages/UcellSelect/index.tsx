@@ -952,6 +952,9 @@ export const touchRequiredMessage = (partNames: string[]): string =>
 // 앞판은 터치센싱이 항상 Base -X 로 찾는 면(touchSensing findDx(-1))이므로, 앞판에서 멀어지는 쪽은 Base +X.
 // offsetZ 값(필드 이름은 그대로)을 45도 방향 거리로 쓴다: X +d·cos45, Z +d·sin45. 토치 자세는 1패스 그대로.
 // [v1.1.322] d 음수 허용(-10~10): 같은 45도 선을 따라 아래(루트·앞판) 쪽. 1패스가 루트 접촉 위치라 1패스 비드 쪽으로 들어간다.
+// [v1.1.330] liftZ 는 '뒤로 (로봇 쪽)': 높이 그대로 Base +X(앞판에서 멀어지는 쪽)로만 뺀다(사용자 요청 2026-11-27).
+//   1.1.329 의 툴 -Z 는 툴 3번 Rx/Ry/Rz 가 0(방향 미설정, 플랜지 방향)이라 실제 토치 방향이 아니었고
+//   거의 위로만 움직여 2패스가 앞판 위쪽에 올라감(11-27 사진). 실제 토치 각도는 모름.
 // [v1.1.329] liftZ 는 '뒤로 (토치 방향)': 위로(Base +Z)가 아니라 토치축 반대(툴 -Z)로 뺀다(사용자 요청 2026-11-27).
 //   토치축을 따라 빼면 와이어가 닿는 지점이 그대로다. 위로만 올리면 토치가 수직에서 9~13도 기울어 있어
 //   10mm 에 약 1.7~2.3mm 옮겨진다. 툴 Z = R(rz)·R(ry)·R(rx) 의 3번째 열 (Fairino RPY, 11-26 로그 P4 대입 시
@@ -1028,16 +1031,6 @@ export const addHorizontalSecondPass = (
     const s = groupIndex === 2 ? all.right : all.left;
     const offsetZ = Number.isFinite(s.offsetZ) ? s.offsetZ : HORIZONTAL_SECOND_PASS_Z_MM;
     const liftZ = Number.isFinite(s.liftZ) ? Math.min(10, Math.max(0, s.liftZ)) : 0;
-    const toolBack = (tcp: { rx: number; ry: number; rz: number }) => {
-      const r = Math.PI / 180;
-      const cx = Math.cos(tcp.rx * r), sx = Math.sin(tcp.rx * r);
-      const cy = Math.cos(tcp.ry * r), sy = Math.sin(tcp.ry * r);
-      const cz = Math.cos(tcp.rz * r), sz = Math.sin(tcp.rz * r);
-      const zx = cz * sy * cx + sz * sx;
-      const zy = sz * sy * cx - cz * sx;
-      const zz = cy * cx;
-      return { x: -liftZ * zx, y: -liftZ * zy, z: -liftZ * zz };
-    };
     result.push({
       ...part,
       name: `${part.name} 2패스`,
@@ -1046,15 +1039,7 @@ export const addHorizontalSecondPass = (
         name: `${pt.name}(2패스)`,
         joints: null,
         tcp: pt.tcp
-          ? (() => {
-              const b = toolBack(pt.tcp);
-              return {
-                ...pt.tcp,
-                x: pt.tcp.x + offsetZ * Math.SQRT1_2 + b.x,
-                y: pt.tcp.y + b.y,
-                z: pt.tcp.z + offsetZ * Math.SQRT1_2 + b.z,
-              };
-            })()
+          ? { ...pt.tcp, x: pt.tcp.x + offsetZ * Math.SQRT1_2 + liftZ, z: pt.tcp.z + offsetZ * Math.SQRT1_2 }
           : pt.tcp,
         weldCurrent: pt.weldCurrent !== null && s.current !== null ? s.current : pt.weldCurrent,
         weldVoltage: pt.weldVoltage !== null && s.voltage !== null ? s.voltage : pt.weldVoltage,

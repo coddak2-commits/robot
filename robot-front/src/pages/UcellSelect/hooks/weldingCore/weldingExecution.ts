@@ -666,7 +666,7 @@ export async function executeWelding(
     // [v1.1.320] 왼쪽/오른쪽 수평 2패스 조건을 따로 받는다.
     const same = '1패스와 같음';
     const describe = (tp: typeof twoPassSettings.left) =>
-      `45도 ${tp.offsetZ}mm, 뒤로(토치) ${tp.liftZ ?? 0}mm, 전류 ${tp.current ?? same}, 전압 ${tp.voltage ?? same}, `
+      `45도 ${tp.offsetZ}mm, 뒤로(X) ${tp.liftZ ?? 0}mm, 전류 ${tp.current ?? same}, 전압 ${tp.voltage ?? same}, `
       + `속도 ${tp.speed ?? same}, 위빙 ${tp.weavingType ?? same}, 폭 ${tp.weaveRange ?? same}, `
       + `주파수 ${tp.weaveFreq ?? same}, 체류 ${tp.weaveLeftStay ?? same}/${tp.weaveRightStay ?? same}`;
     log_weldingExecution.info(
