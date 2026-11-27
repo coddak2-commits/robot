@@ -952,6 +952,11 @@ export const touchRequiredMessage = (partNames: string[]): string =>
 // 앞판은 터치센싱이 항상 Base -X 로 찾는 면(touchSensing findDx(-1))이므로, 앞판에서 멀어지는 쪽은 Base +X.
 // offsetZ 값(필드 이름은 그대로)을 45도 방향 거리로 쓴다: X +d·cos45, Z +d·sin45. 토치 자세는 1패스 그대로.
 // [v1.1.322] d 음수 허용(-10~10): 같은 45도 선을 따라 아래(루트·앞판) 쪽. 1패스가 루트 접촉 위치라 1패스 비드 쪽으로 들어간다.
+// [v1.1.333] '위치'(offsetZ)를 토치 선(55도)에 직각 방향으로 바꾼다(사용자 요청 2026-11-27).
+//   45도 대각선은 토치 선(55도)과 10도 차이라 위치를 바꿔도 거의 토치 선을 따라 움직여 닿는 자리가 안 바뀜
+//   (-2 에 약 0.3mm). 사용자는 '뒤로'로 와이어 길이는 맞췄고 살짝 아래를 쏘고 싶음.
+//   위치 d: Base X -d·sin55, Z +d·cos55. d 음수 = 로봇 쪽·아래 -> 바닥 쪽을 쏨, 양수 = 앞판 쪽·위 -> 앞판 위쪽을 쏨.
+//   와이어 길이(팁-닿는 자리 거리)는 그대로. 의미가 바뀌어 기본값 5 -> 0.
 // [v1.1.332] 각도 33 -> 55. 33 으로 드라이런하니 여전히 바닥을 쏨(사용자). 각도계는 노즐 옆면에서 잰 값이라
 //   토치의 용접선 방향(Y) 기울기가 섞임. 툴 3번(플랜지->팁 8.634, 204.057, 298.694, 방향 0)을 11-26 P4 자세로
 //   돌리면 플랜지->팁 단위벡터 [-0.512,-0.448,-0.733]: 단면(XZ)에서 바닥으로부터 atan(0.733/0.512) = 55도,
@@ -971,7 +976,7 @@ export const touchRequiredMessage = (partNames: string[]): string =>
 // 2패스는 1패스 비드 위를 지나 팁-모재 거리가 비드 높이만큼 줄고 와이어가 짧게 남는다(-2mm 에서 10mm).
 // 수평 토치가 거의 수직(수직에서 9~13도)이라 위로만 올리면 겨누는 앞뒤 위치는 거의 그대로, 와이어는 올린 만큼 더 남는다.
 // 0 이면 1.1.324 와 같다.
-export const HORIZONTAL_SECOND_PASS_Z_MM = 5;
+export const HORIZONTAL_SECOND_PASS_Z_MM = 0;
 export const HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG = 55;
 export interface SecondPassSideSettings {
   offsetZ: number;
@@ -1050,8 +1055,10 @@ export const addHorizontalSecondPass = (
         tcp: pt.tcp
           ? {
               ...pt.tcp,
-              x: pt.tcp.x + offsetZ * Math.SQRT1_2 + liftZ * Math.cos((HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG * Math.PI) / 180),
-              z: pt.tcp.z + offsetZ * Math.SQRT1_2 + liftZ * Math.sin((HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG * Math.PI) / 180),
+              x: pt.tcp.x - offsetZ * Math.sin((HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG * Math.PI) / 180)
+                + liftZ * Math.cos((HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG * Math.PI) / 180),
+              z: pt.tcp.z + offsetZ * Math.cos((HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG * Math.PI) / 180)
+                + liftZ * Math.sin((HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG * Math.PI) / 180),
             }
           : pt.tcp,
         weldCurrent: pt.weldCurrent !== null && s.current !== null ? s.current : pt.weldCurrent,

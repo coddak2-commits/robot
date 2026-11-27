@@ -1,0 +1,10 @@
+v1.1.333: 2패스 '위치'를 토치 선에 직각 방향으로
+
+- 45도 대각선은 토치 선(55도)과 10도 차이라 위치를 바꿔도 닿는 자리가 거의 안 바뀜(-2 에 약 0.3mm, 사용자 확인)
+- 위치 d: Base X -d·sin55, Z +d·cos55. 음수 = 로봇 쪽·아래(바닥 쪽을 쏨), 양수 = 앞판 쪽·위. 와이어 길이 그대로
+- -2 -> X +1.64, Z -1.15
+- 의미가 바뀌어 기본값 5 -> 0. 칸 이름 '위치 (- 아래 / + 위)', 요약 '위치 Nmm', 안내 문구, 2패스 로그 '위치(토치 직각)'
+- 버전 1.1.333
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K
