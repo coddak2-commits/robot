@@ -1,0 +1,9 @@
+v1.1.328: 터치센싱 같은 좌표 다음 포인트의 정확 위치 이동 속도 최대 20
+
+- 네 점 방식은 P4 = P3 좌표라 P3 -> P4 에서 접근 왕복 없이 정확 위치 이동만 함
+- 터치 후퇴 자리에서 티칭 위치까지 몇 mm 를 포인트 이동 속도(노트북 80)로 가며 움찔함(사용자)
+- 이동은 그대로(2026-09-11 이후 필수), 같은 좌표일 때만 속도 min(포인트 이동 속도, 20). 로그에 속도 표시
+- 버전 1.1.328
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K

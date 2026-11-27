@@ -415,10 +415,17 @@ export async function executeTouchSensing(
             `${point.name} 이전 포인트와 동일 좌표 - 오프셋 접근 생략 (정확 위치 이동은 실행)`,
           );
         }
-        log_touchSensing.info('touchSensing.move', `${point.name} 정확한 위치로 이동`);
+        // [v1.1.328] 이전 포인트와 같은 좌표(네 점 방식 P3 -> P4)면 이 이동은 터치 후퇴 자리에서
+        // 티칭 위치까지 몇 mm 라, 포인트 이동 속도(노트북 80)로는 출발하자마자 멈추며 움찔한다(사용자 2026-11-27).
+        // 이동은 그대로 하고(2026-09-11 충돌 이후 필수) 속도만 최대 20 으로.
+        const SAME_POSITION_MOVE_MAX_SPEED = 20;
+        const exactMoveSpeed = samePositionAsPrev
+          ? Math.min(sequenceSettings.touchSensingPointSpeed, SAME_POSITION_MOVE_MAX_SPEED)
+          : sequenceSettings.touchSensingPointSpeed;
+        log_touchSensing.info('touchSensing.move', `${point.name} 정확한 위치로 이동 (속도 ${exactMoveSpeed})`);
         const moveResult = await moveToCartesianWithStopCheck(
           { x: px, y: py, z: pz, rx: prx, ry: pry, rz: prz },
-          sequenceSettings.touchSensingPointSpeed,
+          exactMoveSpeed,
           100,
           100,
           -1,
