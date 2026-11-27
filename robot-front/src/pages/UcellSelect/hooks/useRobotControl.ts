@@ -27,6 +27,9 @@ export interface UseRobotControlReturn {
 const JOINT_JUMP_WARN_DEG = 45;
 // [v1.1.323] 홈 근처 홈 MoveJ 최대 속도 (수직 끝 -> 홈 관절 이동과 같은 40).
 const HOME_NEAR_JOINT_SPEED = 40;
+// [v1.1.327] 홈 버튼에서 홈 관절 맞추기(직선이 막혔을 때 팔 접기 포함) 최대 속도 40 -> 30
+// (사용자 요청 2026-11-27). 홈 직선(30)은 그대로. 용접 끝 -> 홈(weldingExecution)은 40 그대로.
+const HOME_BUTTON_JOINT_SPEED = 30;
 export function useRobotControl(): UseRobotControlReturn {
   const [isRobotMoving, setIsRobotMoving] = useState(false);
   const [teachingRobotState, setTeachingRobotState] = useState<RealtimeRobotStatus | null>(null);
@@ -165,7 +168,11 @@ export function useRobotControl(): UseRobotControlReturn {
           // 종전 MoveJ 한 번은 관절이 함께 돌며 와이어 끝(스틱아웃 25mm)이 곡선으로 휩쓸려
           // U셀 판을 긁고 휘었다(2026-10-26 현장, 와이어만 닿아 로봇 충돌 감지·로그에는 안 남음).
           log_useRobotControl.info('moveToPoint.homeLin', '홈 버튼: 홈 TCP 로 직선(MoveL) 복귀');
-          const homeResult = await moveHomeFromVerticalEnd({ ...point, moveSpeed: speed }, stopMoveRef);
+          const homeResult = await moveHomeFromVerticalEnd(
+            { ...point, moveSpeed: Math.min(speed || HOME_BUTTON_JOINT_SPEED, HOME_BUTTON_JOINT_SPEED) },
+            stopMoveRef,
+            { linVel: 30 },
+          );
           if (!homeResult.success) return false;
         } else if (!isHomeTarget && point.tcp) {
           // [v1.1.276] 포인트로 갈 때도 직선(MoveL). moveStopCheck.ts moveLinToPoint 참고.

@@ -131,6 +131,8 @@ export async function executeApproachWithOffset(
 // 결과: 'ok' 빠짐 / 'failed' 전부 거부 / 'stopped' 정지 / 'skipped' TCP 없음.
 const HOME_EXIT_BACK_STEPS_MM = [60, 45, 30];
 const HOME_EXIT_CENTER_MM = 20;
+// [v1.1.327] 빠지기 직선 최대 속도 30 -> 20 (사용자 요청 2026-11-27, 컨트롤러 가속을 알 수 없어 속도로 줄임)
+const HOME_EXIT_MAX_SPEED = 20;
 export async function executeHomeExitRetreat(
   currentTcp: number[] | null,
   speed: number,
@@ -148,7 +150,7 @@ export async function executeHomeExitRetreat(
     log.info('homeExit.try', `홈 복귀 전 빠져나오기: +X ${back}mm, Y ${center > 0 ? '+' : ''}${center}mm (높이 그대로)`);
     const result = await moveToCartesianPositionNonBlocking(
       { x: px, y: py, z: pz, rx: prx, ry: pry, rz: prz },
-      Math.min(speed, 30),
+      Math.min(speed, HOME_EXIT_MAX_SPEED),
       100,
       100,
       toolNum,
