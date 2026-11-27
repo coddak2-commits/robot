@@ -1,0 +1,11 @@
+v1.1.331: 2패스 '뒤로'를 실측 토치 각도(바닥에서 33도) 방향으로
+
+- 사용자 각도계 실측: 수평 1패스 자세 노즐이 바닥판에서 33도
+- liftZ: Base +X·cos33(0.839), +Z·sin33(0.545) 로 뺌 -> 와이어 닿는 자리 유지, 와이어만 길어짐
+- 1.1.329(위로) 앞판 위쪽, 1.1.330(X 만, 10mm) 바닥을 쏨
+- HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG = 33 (토치 바뀌면 다시 잼)
+- TwoPassControl 칸 이름 '뒤로 (토치 방향)', 안내 문구. 2패스 로그 '뒤로(토치 33도)'
+- 버전 1.1.331
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K

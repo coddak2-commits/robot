@@ -952,6 +952,10 @@ export const touchRequiredMessage = (partNames: string[]): string =>
 // 앞판은 터치센싱이 항상 Base -X 로 찾는 면(touchSensing findDx(-1))이므로, 앞판에서 멀어지는 쪽은 Base +X.
 // offsetZ 값(필드 이름은 그대로)을 45도 방향 거리로 쓴다: X +d·cos45, Z +d·sin45. 토치 자세는 1패스 그대로.
 // [v1.1.322] d 음수 허용(-10~10): 같은 45도 선을 따라 아래(루트·앞판) 쪽. 1패스가 루트 접촉 위치라 1패스 비드 쪽으로 들어간다.
+// [v1.1.331] liftZ 는 '뒤로 (토치 방향)': 실측한 토치 각도(바닥판에서 33도, 2026-11-27 사용자가 각도계로
+//   수평 1패스 자세 노즐에서 잼) 선을 따라 Base +X·cos33, +Z·sin33 으로 뺀다. 와이어가 닿는 자리는 그대로.
+//   위로만(1.1.329) -> 앞판 위쪽을 쏨, X 로만(1.1.330, 10mm) -> 와이어 길이는 좋았으나 바닥을 쏨.
+//   토치 각도가 바뀌면(토치 교체·재장착) HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG 를 다시 재서 고칠 것.
 // [v1.1.330] liftZ 는 '뒤로 (로봇 쪽)': 높이 그대로 Base +X(앞판에서 멀어지는 쪽)로만 뺀다(사용자 요청 2026-11-27).
 //   1.1.329 의 툴 -Z 는 툴 3번 Rx/Ry/Rz 가 0(방향 미설정, 플랜지 방향)이라 실제 토치 방향이 아니었고
 //   거의 위로만 움직여 2패스가 앞판 위쪽에 올라감(11-27 사진). 실제 토치 각도는 모름.
@@ -964,6 +968,7 @@ export const touchRequiredMessage = (partNames: string[]): string =>
 // 수평 토치가 거의 수직(수직에서 9~13도)이라 위로만 올리면 겨누는 앞뒤 위치는 거의 그대로, 와이어는 올린 만큼 더 남는다.
 // 0 이면 1.1.324 와 같다.
 export const HORIZONTAL_SECOND_PASS_Z_MM = 5;
+export const HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG = 33;
 export interface SecondPassSideSettings {
   offsetZ: number;
   liftZ: number;
@@ -1039,7 +1044,11 @@ export const addHorizontalSecondPass = (
         name: `${pt.name}(2패스)`,
         joints: null,
         tcp: pt.tcp
-          ? { ...pt.tcp, x: pt.tcp.x + offsetZ * Math.SQRT1_2 + liftZ, z: pt.tcp.z + offsetZ * Math.SQRT1_2 }
+          ? {
+              ...pt.tcp,
+              x: pt.tcp.x + offsetZ * Math.SQRT1_2 + liftZ * Math.cos((HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG * Math.PI) / 180),
+              z: pt.tcp.z + offsetZ * Math.SQRT1_2 + liftZ * Math.sin((HORIZONTAL_TORCH_ANGLE_FROM_BOTTOM_DEG * Math.PI) / 180),
+            }
           : pt.tcp,
         weldCurrent: pt.weldCurrent !== null && s.current !== null ? s.current : pt.weldCurrent,
         weldVoltage: pt.weldVoltage !== null && s.voltage !== null ? s.voltage : pt.weldVoltage,
