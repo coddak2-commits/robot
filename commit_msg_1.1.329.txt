@@ -1,0 +1,10 @@
+v1.1.329: 2패스 높이를 토치 방향으로 빼기로 변경
+
+- liftZ: Base +Z 로 올리던 것을 토치축 반대(툴 -Z)로 뺌. 와이어가 닿는 지점이 그대로 (사용자 요청)
+- 툴 Z = Rz·Ry·Rx 3번째 열(Fairino RPY). 11-26 P4 자세 대입: 10mm -> X +1.37, Y +0.68, Z +9.88
+- TwoPassControl 칸 이름 '뒤로 (토치 방향)', 요약 '뒤로 Nmm', 안내 문구. 2패스 로그 '뒤로(토치)'
+- 0 이면 종전과 같음
+- 버전 1.1.329
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013avNcB9UcqXNNvNt71uY7K

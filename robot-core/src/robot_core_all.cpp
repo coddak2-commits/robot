@@ -7242,7 +7242,7 @@ void registerSdkMotionTouchRoutes(
 #endif
 using json = nlohmann::json;
 namespace fs = std::filesystem;
-#define APP_VERSION_STRING "1.1.328"
+#define APP_VERSION_STRING "1.1.329"
 #ifndef _WIN32
 #include <cstdio>
 #include <map>

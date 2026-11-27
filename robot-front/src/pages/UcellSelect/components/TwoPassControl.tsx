@@ -15,7 +15,7 @@ const FIELDS: { key: FieldKey; label: string; unit: string; min: number; max: nu
   // [v1.1.322] 음수 허용: 같은 45도 선을 따라 아래(루트) 쪽으로 (사용자 요청 2026-11-26, 0 에서도 아래가 안 덮임)
   { key: 'offsetZ', label: '위치 (45도 방향)', unit: 'mm', min: -10, max: 10, nullable: false },
   // [v1.1.325] 토치를 위로만 올림(자세 그대로). 와이어가 올린 만큼 더 남는다
-  { key: 'liftZ', label: '높이 (위로)', unit: 'mm', min: 0, max: 10, nullable: false },
+  { key: 'liftZ', label: '뒤로 (토치 방향)', unit: 'mm', min: 0, max: 10, nullable: false },
   { key: 'current', label: '전류', unit: 'A', min: 50, max: 500, nullable: true },
   { key: 'voltage', label: '전압', unit: 'V', min: 10, max: 50, nullable: true },
   { key: 'speed', label: '속도', unit: 'cpm', min: 5, max: 100, nullable: true },
@@ -37,7 +37,7 @@ const summarizeSide = (s: SecondPassSideSettings): string => {
   if (s.weaveFreq !== null) parts.push(`${s.weaveFreq}Hz`);
   if (s.weaveLeftStay !== null || s.weaveRightStay !== null)
     parts.push(`체류 ${s.weaveLeftStay ?? '-'}/${s.weaveRightStay ?? '-'}`);
-  const lift = Number.isFinite(s.liftZ) && s.liftZ > 0 ? ` · 높이 ${s.liftZ}mm` : '';
+  const lift = Number.isFinite(s.liftZ) && s.liftZ > 0 ? ` · 뒤로 ${s.liftZ}mm` : '';
   return `45° ${s.offsetZ}mm${lift} · ${parts.length ? parts.join('/') : '1패스 조건'}`;
 };
 
@@ -163,7 +163,7 @@ export const TwoPassControl: React.FC<TwoPassControlProps> = ({
               비워 두면 1패스 값을 그대로 씁니다. 화면을 새로 열면 초기화됩니다.<br />
               체류는 양쪽 모두 왼쪽 수평(P4~P6) 기준으로 입력하고, 오른쪽 수평은 좌우를 바꿔 넣습니다.<br />
               위치에 - 를 넣으면 같은 45도 선을 따라 아래(루트) 쪽으로 옮깁니다.<br />
-              높이는 토치 자세 그대로 위로만 올립니다. 올린 만큼 와이어가 더 남습니다.
+              뒤로는 토치 자세 그대로 토치 방향을 따라 뺍니다. 와이어가 닿는 자리는 같고, 뺀 만큼 와이어가 더 남습니다.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
               {(['left', 'right'] as Side[]).map(sd => (
